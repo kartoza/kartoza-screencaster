@@ -1,10 +1,12 @@
 package audio
 
 import (
-	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/kartoza/kartoza-screencaster/internal/models"
 	"github.com/kartoza/kartoza-screencaster/internal/notify"
@@ -15,7 +17,7 @@ import (
 // - audio_darwin.go: uses ffmpeg with avfoundation
 // - audio_windows.go: uses ffmpeg with dshow
 
-// Processor handles audio post-processing
+// Processor handles audio post-processing using ffmpeg
 type Processor struct {
 	options models.AudioProcessingOptions
 }
@@ -25,10 +27,61 @@ func NewProcessor(opts models.AudioProcessingOptions) *Processor {
 	return &Processor{options: opts}
 }
 
-// AnalyzeLoudness performs first-pass loudnorm analysis
-func (p *Processor) AnalyzeLoudness(inputFile string) (*models.LoudnormStats, error) {
-	_ = notify.ProcessingStep("Analyzing audio levels...")
+// ProgressCallback is a function that receives progress updates during processing
+type ProgressCallback func(pass int, passName string, progress float64)
 
+// Process performs audio processing pipeline using ffmpeg
+// Returns the path to the processed output file
+func (p *Processor) Process(inputFile string, progressCallback ProgressCallback) (string, error) {
+	if !p.options.NormalizeEnabled {
+		// No processing enabled, return original file
+		return inputFile, nil
+	}
+
+	_ = notify.ProcessingStep("Processing audio with ffmpeg...")
+
+	// Step 1: Analyze
+	if progressCallback != nil {
+		progressCallback(1, "Analyzing", 0.0)
+	}
+
+	stats, err := p.AnalyzeLoudness(inputFile)
+	if err != nil {
+		// Return original file on analysis error
+		if progressCallback != nil {
+			progressCallback(1, "Analyzing", 1.0)
+			progressCallback(2, "Normalizing", 1.0)
+		}
+		return inputFile, nil
+	}
+
+	if progressCallback != nil {
+		progressCallback(1, "Analyzing", 1.0)
+	}
+
+	// Step 2: Normalize
+	if progressCallback != nil {
+		progressCallback(2, "Normalizing", 0.0)
+	}
+
+	outputFile := strings.TrimSuffix(inputFile, filepath.Ext(inputFile)) + "-normalized.wav"
+	if err := p.Normalize(inputFile, outputFile, stats); err != nil {
+		// Return original file on normalization error
+		if progressCallback != nil {
+			progressCallback(2, "Normalizing", 1.0)
+		}
+		return inputFile, nil
+	}
+
+	if progressCallback != nil {
+		progressCallback(2, "Normalizing", 1.0)
+	}
+
+	return outputFile, nil
+}
+
+// AnalyzeLoudness performs first-pass loudnorm analysis using ffmpeg
+func (p *Processor) AnalyzeLoudness(inputFile string) (*models.LoudnormStats, error) {
 	filter := fmt.Sprintf("loudnorm=I=%.1f:TP=%.1f:LRA=%.1f:print_format=json",
 		p.options.TargetLoudness,
 		p.options.TruePeak,
@@ -36,6 +89,7 @@ func (p *Processor) AnalyzeLoudness(inputFile string) (*models.LoudnormStats, er
 	)
 
 	cmd := exec.Command("ffmpeg",
+		"-nostdin", // Don't wait for stdin
 		"-i", inputFile,
 		"-af", filter,
 		"-f", "null",
@@ -56,10 +110,8 @@ func (p *Processor) AnalyzeLoudness(inputFile string) (*models.LoudnormStats, er
 	return stats, nil
 }
 
-// Normalize performs two-pass loudness normalization
+// Normalize performs two-pass loudness normalization using ffmpeg
 func (p *Processor) Normalize(inputFile, outputFile string, stats *models.LoudnormStats) error {
-	_ = notify.ProcessingStep("Normalizing audio...")
-
 	filter := fmt.Sprintf(
 		"loudnorm=I=%.1f:TP=%.1f:LRA=%.1f:measured_I=%s:measured_TP=%s:measured_LRA=%s:measured_thresh=%s:linear=true:print_format=summary",
 		p.options.TargetLoudness,
@@ -72,6 +124,7 @@ func (p *Processor) Normalize(inputFile, outputFile string, stats *models.Loudno
 	)
 
 	cmd := exec.Command("ffmpeg",
+		"-nostdin", // Don't wait for stdin
 		"-y",
 		"-i", inputFile,
 		"-af", filter,
@@ -87,22 +140,10 @@ func (p *Processor) Normalize(inputFile, outputFile string, stats *models.Loudno
 	return nil
 }
 
-// Process performs full audio processing pipeline
-func (p *Processor) Process(inputFile, outputFile string) error {
-	if p.options.NormalizeEnabled {
-		stats, err := p.AnalyzeLoudness(inputFile)
-		if err != nil {
-			_ = notify.Warning("Audio Normalization Warning", "Using original audio")
-			return nil
-		}
-
-		if err := p.Normalize(inputFile, outputFile, stats); err != nil {
-			_ = notify.Warning("Audio Normalization Warning", "Using original audio")
-			return nil
-		}
-	}
-
-	return nil
+// fileExists checks if a file exists
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // parseLoudnormOutput extracts loudnorm stats from ffmpeg output
@@ -116,13 +157,8 @@ func parseLoudnormOutput(output string) (*models.LoudnormStats, error) {
 	}
 
 	// Use the last JSON block (should be the loudnorm stats)
-	jsonStr := matches[len(matches)-1]
-
-	var stats models.LoudnormStats
-	if err := json.Unmarshal([]byte(jsonStr), &stats); err != nil {
-		// Try to parse individual values using regex
-		stats = extractLoudnormValues(output)
-	}
+	// Parse individual values using regex since JSON might not be perfect
+	stats := extractLoudnormValues(output)
 
 	return &stats, nil
 }
@@ -152,4 +188,3 @@ func extractLoudnormValues(output string) models.LoudnormStats {
 
 	return stats
 }
-

@@ -141,12 +141,15 @@ type MergeOptions struct {
 	VideoFile      string
 	AudioFile      string
 	WebcamFile     string
+	RoomNoiseFile  string             // Room noise file for audio processing calibration
 	CreateVertical bool
+	LeftSplit      bool               // Use left half of screen for vertical video
 	AddLogos       bool               // Whether to add logo overlays
 	ProductLogo1   string             // Path to product logo 1 (top-left)
 	ProductLogo2   string             // Path to product logo 2 (top-right)
 	CompanyLogo    string             // Path to company logo (lower third)
 	VideoTitle     string             // Title for lower third overlay
+	VideoNumber    int                // Recording number for output filename
 	TitleColor     string             // Color for title text (e.g., "white", "black", "yellow")
 	BgColor        string             // Background color for vertical video lower third
 	GifLoopMode    config.GifLoopMode // How to loop animated GIFs
@@ -164,6 +167,30 @@ type MergeResult struct {
 	VerticalFile     string
 	NormalizeApplied bool
 	VerticalError    error // Non-nil if vertical video creation was attempted but failed
+}
+
+// generateOutputFilename creates output filename in format: NNN_title_with_underscores.mp4
+// If title or number are not provided, falls back to the base video filename
+func generateOutputFilename(outputDir, title string, number int, suffix string) string {
+	if title == "" || number <= 0 || outputDir == "" {
+		return "" // Return empty to signal fallback to old behavior
+	}
+
+	// Sanitize title: replace spaces and special chars with underscores
+	sanitized := strings.ToLower(title)
+	// Replace common separators with underscores
+	for _, char := range []string{" ", "-", ".", ",", ":", ";", "!", "?", "'", "\"", "/", "\\"} {
+		sanitized = strings.ReplaceAll(sanitized, char, "_")
+	}
+	// Remove consecutive underscores
+	for strings.Contains(sanitized, "__") {
+		sanitized = strings.ReplaceAll(sanitized, "__", "_")
+	}
+	// Trim leading/trailing underscores
+	sanitized = strings.Trim(sanitized, "_")
+
+	filename := fmt.Sprintf("%03d_%s%s.mp4", number, sanitized, suffix)
+	return filepath.Join(outputDir, filename)
 }
 
 // concatenateParts concatenates multiple video or audio parts into a single file
@@ -299,44 +326,74 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 		return result, fmt.Errorf("no input files provided")
 	}
 
-	// Process audio if available
+	// Copy room noise file to audio options if provided
+	if opts.RoomNoiseFile != "" {
+		m.audioOpts.RoomNoiseFile = opts.RoomNoiseFile
+	}
+
+	// Process audio if available using jivetalking
 	var normalizedAudio string
 	processor := audio.NewProcessor(m.audioOpts)
 
-	// Step 1: Analyze audio levels (skip if no audio)
+	// Steps 1 & 2: Process audio with jivetalking (analysis + processing in one call)
+	// Jivetalking handles: analysis, noise removal, compression, de-essing, normalization
 	m.reportProgress(StepAnalyzingAudio, false, false, nil)
-	var stats *models.LoudnormStats
 	if hasAudio && m.audioOpts.NormalizeEnabled {
-		var err error
-		stats, err = processor.AnalyzeLoudness(opts.AudioFile)
-		if err != nil {
-			m.reportProgress(StepAnalyzingAudio, true, true, err)
-			_ = notify.Warning("Audio Analysis Warning", "Skipping normalization")
-		} else {
-			m.reportProgress(StepAnalyzingAudio, true, false, nil)
-		}
-	} else {
-		m.reportProgress(StepAnalyzingAudio, true, true, nil)
-	}
-
-	// Step 2: Normalize audio (skip if no audio)
-	m.reportProgress(StepNormalizing, false, false, nil)
-	if hasAudio {
-		normalizedAudio = strings.TrimSuffix(opts.AudioFile, ".wav") + "-normalized.wav"
-		if m.audioOpts.NormalizeEnabled && stats != nil {
-			if err := processor.Normalize(opts.AudioFile, normalizedAudio, stats); err != nil {
-				m.reportProgress(StepNormalizing, true, true, err)
-				_ = notify.Warning("Audio Normalization Warning", "Using original audio")
-				normalizedAudio = opts.AudioFile
-			} else {
-				result.NormalizeApplied = true
-				m.reportProgress(StepNormalizing, true, false, nil)
+		// Check if room noise file exists, clear it if not
+		if m.audioOpts.RoomNoiseFile != "" {
+			if _, err := os.Stat(m.audioOpts.RoomNoiseFile); os.IsNotExist(err) {
+				m.audioOpts.RoomNoiseFile = "" // Skip room noise calibration if file missing
 			}
-		} else {
-			normalizedAudio = opts.AudioFile
-			m.reportProgress(StepNormalizing, true, true, nil)
 		}
+
+		// Track whether we've transitioned to the normalizing step
+		normalizingStarted := false
+		receivedAnyProgress := false
+
+		// Create progress callback that reports to both steps
+		progressCallback := func(pass int, passName string, progress float64) {
+			receivedAnyProgress = true
+			if pass == 1 {
+				// Pass 1 is analysis
+				m.reportPercent(StepAnalyzingAudio, progress*100)
+			} else {
+				// Pass 2+ is processing/normalization
+				// Start the normalizing step on first pass 2+ callback
+				if !normalizingStarted {
+					m.reportProgress(StepAnalyzingAudio, true, false, nil)
+					m.reportProgress(StepNormalizing, false, false, nil)
+					normalizingStarted = true
+				}
+				m.reportPercent(StepNormalizing, progress*100)
+			}
+		}
+
+		processedPath, err := processor.Process(opts.AudioFile, progressCallback)
+		if err != nil {
+			// Mark both steps as failed/skipped
+			m.reportProgress(StepAnalyzingAudio, true, true, err)
+			m.reportProgress(StepNormalizing, true, true, err)
+			_ = notify.Warning("Audio Processing Warning", "Using original audio")
+			normalizedAudio = opts.AudioFile
+		} else {
+			// Processing succeeded - ensure proper step transitions
+			// If we never received progress (jivetalking output wasn't parsed), mark steps complete
+			if !receivedAnyProgress || !normalizingStarted {
+				m.reportProgress(StepAnalyzingAudio, true, false, nil)
+				m.reportProgress(StepNormalizing, false, false, nil)
+			}
+			m.reportProgress(StepNormalizing, true, false, nil)
+			normalizedAudio = processedPath
+			result.NormalizeApplied = true
+		}
+	} else if hasAudio {
+		// Audio exists but normalization disabled
+		m.reportProgress(StepAnalyzingAudio, true, true, nil)
+		m.reportProgress(StepNormalizing, true, true, nil)
+		normalizedAudio = opts.AudioFile
 	} else {
+		// No audio
+		m.reportProgress(StepAnalyzingAudio, true, true, nil)
 		m.reportProgress(StepNormalizing, true, true, nil)
 	}
 
@@ -355,7 +412,12 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 		return result, nil
 	}
 
-	outputFile := strings.TrimSuffix(baseFile, ".mp4") + "-merged.mp4"
+	// Generate output filename in format: NNN_title_with_underscores.mp4
+	outputFile := generateOutputFilename(opts.OutputDir, opts.VideoTitle, opts.VideoNumber, "")
+	if outputFile == "" {
+		// Fallback to old behavior if title/number not provided
+		outputFile = strings.TrimSuffix(baseFile, ".mp4") + "-merged.mp4"
+	}
 
 	// Handle different input combinations
 	var mergeErr error
@@ -387,16 +449,32 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 	result.MergedFile = outputFile
 	_ = notify.RecordingComplete(filepath.Base(outputFile))
 
-	// Step 4: Create vertical video with webcam if available
+	// Step 4: Create vertical video if requested
+	// Supports: screen+webcam, or screen-only (no webcam)
 	m.reportProgress(StepCreatingVertical, false, false, nil)
-	if opts.CreateVertical && hasVideo && hasWebcam {
-		verticalFile := strings.TrimSuffix(opts.VideoFile, ".mp4") + "-vertical.mp4"
+	if opts.CreateVertical && hasVideo {
+		// Generate vertical filename in format: NNN_title_with_underscores_vertical.mp4
+		verticalFile := generateOutputFilename(opts.OutputDir, opts.VideoTitle, opts.VideoNumber, "_vertical")
+		if verticalFile == "" {
+			// Fallback to old behavior if title/number not provided
+			verticalFile = strings.TrimSuffix(opts.VideoFile, ".mp4") + "-vertical.mp4"
+		}
 
 		var verticalErr error
-		if hasAudio {
-			verticalErr = m.createVerticalVideo(opts.VideoFile, opts.WebcamFile, normalizedAudio, verticalFile, &opts)
+		if hasWebcam {
+			// With webcam: use the standard stacked or left-split layout
+			if hasAudio {
+				verticalErr = m.createVerticalVideo(opts.VideoFile, opts.WebcamFile, normalizedAudio, verticalFile, &opts)
+			} else {
+				verticalErr = m.createVerticalVideoNoAudio(opts.VideoFile, opts.WebcamFile, verticalFile, &opts)
+			}
 		} else {
-			verticalErr = m.createVerticalVideoNoAudio(opts.VideoFile, opts.WebcamFile, verticalFile, &opts)
+			// No webcam: create vertical video from screen only
+			if hasAudio {
+				verticalErr = m.createVerticalVideoScreenOnly(opts.VideoFile, normalizedAudio, verticalFile, &opts)
+			} else {
+				verticalErr = m.createVerticalVideoScreenOnlyNoAudio(opts.VideoFile, verticalFile, &opts)
+			}
 		}
 
 		if verticalErr != nil {
@@ -583,12 +661,22 @@ const (
 )
 
 // createVerticalVideo creates a vertical video with webcam and branding
-// Layout: screen (top) | webcam (middle) | white branding area (bottom third)
+// Layout depends on LeftSplit option:
+// - LeftSplit=true: left half of screen fills frame, webcam circle bottom-right, logos overlaid
+// - LeftSplit=false: screen (top) | webcam (middle) | white branding area (bottom third)
 // Output is always 1080x1920 (9:16) for YouTube Shorts compatibility
 func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFile string, opts *MergeOptions) error {
-	_ = notify.ProcessingStep("Creating vertical video (1080x1920) with webcam...")
+	var filterComplex string
+	var inputs []string
+	var err error
 
-	filterComplex, inputs, err := m.buildVerticalFilterComplex(videoFile, webcamFile, opts, 3)
+	if opts != nil && opts.LeftSplit {
+		_ = notify.ProcessingStep("Creating left-split vertical video (1080x1920) with webcam...")
+		filterComplex, inputs, err = m.buildLeftSplitVerticalFilterComplex(videoFile, webcamFile, opts, 3)
+	} else {
+		_ = notify.ProcessingStep("Creating vertical video (1080x1920) with webcam...")
+		filterComplex, inputs, err = m.buildVerticalFilterComplex(videoFile, webcamFile, opts, 3)
+	}
 	if err != nil {
 		return err
 	}
@@ -620,12 +708,22 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 }
 
 // createVerticalVideoNoAudio creates a vertical video with webcam but without audio
-// Layout: screen (top) | webcam (middle) | white branding area (bottom third)
+// Layout depends on LeftSplit option:
+// - LeftSplit=true: left half of screen fills frame, webcam circle bottom-right, logos overlaid
+// - LeftSplit=false: screen (top) | webcam (middle) | white branding area (bottom third)
 // Output is always 1080x1920 (9:16) for YouTube Shorts compatibility
 func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile string, opts *MergeOptions) error {
-	_ = notify.ProcessingStep("Creating vertical video (1080x1920) with webcam (no audio)...")
+	var filterComplex string
+	var inputs []string
+	var err error
 
-	filterComplex, inputs, err := m.buildVerticalFilterComplex(videoFile, webcamFile, opts, 2)
+	if opts != nil && opts.LeftSplit {
+		_ = notify.ProcessingStep("Creating left-split vertical video (1080x1920) with webcam (no audio)...")
+		filterComplex, inputs, err = m.buildLeftSplitVerticalFilterComplex(videoFile, webcamFile, opts, 2)
+	} else {
+		_ = notify.ProcessingStep("Creating vertical video (1080x1920) with webcam (no audio)...")
+		filterComplex, inputs, err = m.buildVerticalFilterComplex(videoFile, webcamFile, opts, 2)
+	}
 	if err != nil {
 		return err
 	}
@@ -753,18 +851,18 @@ func (m *Merger) buildVerticalFilterComplex(videoFile, webcamFile string, opts *
 		inputIdx++
 	}
 
-	// Banner: full width (1080px), positioned above title text in the lower third
+	// Banner: full width (1080px), positioned in the lower third area
 	if setup.bannerPath != "" {
-		// Place banner in the lower portion of the bottom third, above the title
-		// Banner is at the middle of the lower third area, title text below it
-		bannerY := lowerThirdY + (YouTubeShortsHeight-lowerThirdY)/2 - 60 // Centered vertically with room for title below
+		// Place banner above where title will go (title is 10px from bottom)
+		// Banner positioned to leave room for title text below it
+		bannerY := YouTubeShortsHeight - 120 // ~110px from bottom, leaving room for title
 		fragment, out := buildLogoOverlay(inputIdx, "banner", fmt.Sprintf("%d:-1", YouTubeShortsWidth), "(W-w)/2", fmt.Sprintf("%d", bannerY), currentOutput, setup.bannerPath, "")
 		filterComplex += ";" + fragment
 		currentOutput = out
 
-		// Add title text below the banner
+		// Add title text below the banner, centered, 10px from bottom of frame
 		if opts != nil && opts.VideoTitle != "" {
-			titleY := bannerY + 80 // Position below the banner
+			titleY := YouTubeShortsHeight - 46 // 10px padding from bottom + ~36px font height
 			filterComplex += fmt.Sprintf(
 				";%sdrawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
 				currentOutput, escapeFFmpegText(opts.VideoTitle), titleColor, titleY,
@@ -772,8 +870,8 @@ func (m *Merger) buildVerticalFilterComplex(videoFile, webcamFile string, opts *
 			return filterComplex, logoInputs, nil
 		}
 	} else if opts != nil && opts.VideoTitle != "" {
-		// Title text without banner, centered in lower third
-		titleY := lowerThirdY + (YouTubeShortsHeight-lowerThirdY)/2
+		// Title text without banner, centered, 10px from bottom of frame
+		titleY := YouTubeShortsHeight - 46 // 10px padding from bottom + ~36px font height
 		filterComplex += fmt.Sprintf(
 			";%sdrawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
 			currentOutput, escapeFFmpegText(opts.VideoTitle), titleColor, titleY,
@@ -784,6 +882,413 @@ func (m *Merger) buildVerticalFilterComplex(videoFile, webcamFile string, opts *
 	// Final null filter to create [outv] label
 	filterComplex += fmt.Sprintf(";%snull[outv]", currentOutput)
 
+	return filterComplex, logoInputs, nil
+}
+
+// buildLeftSplitVerticalFilterComplex builds the FFmpeg filter_complex for left-split vertical video.
+// Layout: Left half of the screen video is scaled to fill the WIDTH (1080px) corner-to-corner.
+// If the scaled height is less than 1920px, the video is placed at the top with branding at the bottom.
+// - Webcam: circular overlay in the bottom-right corner (same style as merged video)
+// - Banner: full width at the bottom
+// - Left logo: top-left corner
+// - Right logo: top-right corner
+// logoStartIndex is the FFmpeg input index where logo inputs begin (3 with audio, 2 without).
+// Returns: (filterComplex string, additional FFmpeg inputs for logos, error)
+func (m *Merger) buildLeftSplitVerticalFilterComplex(videoFile, webcamFile string, opts *MergeOptions, logoStartIndex int) (string, []string, error) {
+	// Get screen video dimensions
+	screenWidth, screenHeight, err := webcam.GetVideoInfo(videoFile)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to get screen dimensions: %w", err)
+	}
+
+	// Crop the left half of the screen video
+	halfWidth := screenWidth / 2
+
+	// Scale the left half to fill the WIDTH (1080px) corner-to-corner
+	// The height will be proportionally scaled, may be less than 1920px
+	scaledWidth := YouTubeShortsWidth
+	scaledHeight := screenHeight * YouTubeShortsWidth / halfWidth
+
+	// If scaled height exceeds frame height, cap it and adjust
+	if scaledHeight > YouTubeShortsHeight {
+		scaledHeight = YouTubeShortsHeight
+	}
+
+	// Prepare logo inputs
+	var logoInputs []string
+	setup, logoInputs := m.prepareMergedLogos(opts, logoInputs, logoStartIndex)
+
+	// Determine background color
+	bgColor := config.DefaultBgColor
+	if opts != nil && opts.BgColor != "" {
+		bgColor = opts.BgColor
+	}
+
+	// Build filter complex for left-split 1080x1920 output
+	// 1. Crop left half of the screen
+	// 2. Scale to fill width (1080px), height proportional
+	// 3. Create canvas with background color
+	// 4. Overlay the scaled screen at the top
+	filterComplex := fmt.Sprintf(
+		"[0:v]crop=%d:%d:0:0,scale=%d:%d:flags=lanczos[screen];"+
+			"color=%s:size=%dx%d:duration=99999[bg];"+
+			"[bg][screen]overlay=0:0[canvas]",
+		halfWidth, screenHeight,
+		scaledWidth, scaledHeight,
+		bgColor, YouTubeShortsWidth, YouTubeShortsHeight,
+	)
+
+	currentOutput := "[canvas]"
+	inputIdx := logoStartIndex
+
+	// Determine title color (default to white if not specified)
+	titleColor := "white"
+	if opts != nil && opts.TitleColor != "" {
+		titleColor = opts.TitleColor
+	}
+
+	// Calculate Y position for logos (just below the screen recording with 10px padding)
+	logoY := scaledHeight + 10
+
+	// Add left logo overlay below screen recording, left side
+	if setup.logo1Path != "" {
+		fragment, out := buildLogoOverlay(inputIdx, "logo1", "216:-1", "10", fmt.Sprintf("%d", logoY), currentOutput, setup.logo1Path, "")
+		filterComplex += ";" + fragment
+		currentOutput = out
+		inputIdx++
+	}
+
+	// Add right logo overlay below screen recording, right side
+	if setup.logo2Path != "" {
+		fragment, out := buildLogoOverlay(inputIdx, "logo2", "216:-1", "W-w-10", fmt.Sprintf("%d", logoY), currentOutput, setup.logo2Path, "")
+		filterComplex += ";" + fragment
+		currentOutput = out
+		inputIdx++
+	}
+
+	// Add banner at bottom (full width), positioned above title
+	if setup.bannerPath != "" {
+		// Banner positioned to leave room for title text below it (title is 10px from bottom)
+		bannerY := YouTubeShortsHeight - 120 // ~110px from bottom, leaving room for title
+		fragment, out := buildLogoOverlay(inputIdx, "banner", fmt.Sprintf("%d:-1", YouTubeShortsWidth), "(W-w)/2", fmt.Sprintf("%d", bannerY), currentOutput, setup.bannerPath, "")
+		filterComplex += ";" + fragment
+		currentOutput = out
+		inputIdx++
+	}
+
+	// Add circular webcam overlay (bottom-right, same style as merged video)
+	// Build webcam circle filter
+	webcamCircleFragment, webcamOut := buildWebcamCircleOverlay(1, webcamOverlaySize, webcamOverlayMargin, currentOutput)
+	filterComplex += ";" + webcamCircleFragment
+	currentOutput = webcamOut
+
+	// Add title text below banner, centered, 10px from bottom of frame
+	if opts != nil && opts.VideoTitle != "" {
+		titleY := YouTubeShortsHeight - 46 // 10px padding from bottom + ~36px font height
+		filterComplex += fmt.Sprintf(
+			";%sdrawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
+			currentOutput, escapeFFmpegText(opts.VideoTitle), titleColor, titleY,
+		)
+		return filterComplex, logoInputs, nil
+	}
+
+	// Final null filter to create [outv] label
+	filterComplex += fmt.Sprintf(";%snull[outv]", currentOutput)
+
+	return filterComplex, logoInputs, nil
+}
+
+// createVerticalVideoScreenOnly creates a vertical video from screen recording only (no webcam)
+// Layout depends on LeftSplit option:
+// - LeftSplit=true: left half of screen fills frame, logos overlaid
+// - LeftSplit=false: screen fills top portion, branding area at bottom
+// Output is always 1080x1920 (9:16) for YouTube Shorts compatibility
+func (m *Merger) createVerticalVideoScreenOnly(videoFile, audioFile, outputFile string, opts *MergeOptions) error {
+	var filterComplex string
+	var inputs []string
+	var err error
+
+	if opts != nil && opts.LeftSplit {
+		_ = notify.ProcessingStep("Creating left-split vertical video (1080x1920) from screen...")
+		filterComplex, inputs, err = m.buildLeftSplitScreenOnlyFilterComplex(videoFile, opts, 2)
+	} else {
+		_ = notify.ProcessingStep("Creating vertical video (1080x1920) from screen...")
+		filterComplex, inputs, err = m.buildScreenOnlyVerticalFilterComplex(videoFile, opts, 2)
+	}
+	if err != nil {
+		return err
+	}
+
+	// Build inputs list
+	allInputs := []string{"-y", "-i", videoFile, "-i", audioFile}
+	allInputs = append(allInputs, inputs...)
+
+	// Get video duration for progress calculation
+	durationUs := getVideoDurationUs(videoFile)
+	durationSecs := float64(durationUs) / 1000000.0
+
+	args := append(allInputs,
+		"-filter_complex", filterComplex,
+		"-map", "[outv]",
+		"-map", "1:a",
+		"-c:v", "libx264",
+		"-preset", "medium",
+		"-crf", "18",
+		"-r", "30",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac",
+		"-b:a", "320k",
+		"-t", fmt.Sprintf("%.3f", durationSecs),
+		outputFile,
+	)
+
+	return m.runFFmpegWithProgress(StepCreatingVertical, durationUs, args...)
+}
+
+// createVerticalVideoScreenOnlyNoAudio creates a vertical video from screen recording only, without audio
+func (m *Merger) createVerticalVideoScreenOnlyNoAudio(videoFile, outputFile string, opts *MergeOptions) error {
+	var filterComplex string
+	var inputs []string
+	var err error
+
+	if opts != nil && opts.LeftSplit {
+		_ = notify.ProcessingStep("Creating left-split vertical video (1080x1920) from screen (no audio)...")
+		filterComplex, inputs, err = m.buildLeftSplitScreenOnlyFilterComplex(videoFile, opts, 1)
+	} else {
+		_ = notify.ProcessingStep("Creating vertical video (1080x1920) from screen (no audio)...")
+		filterComplex, inputs, err = m.buildScreenOnlyVerticalFilterComplex(videoFile, opts, 1)
+	}
+	if err != nil {
+		return err
+	}
+
+	// Build inputs list (no audio)
+	allInputs := []string{"-y", "-i", videoFile}
+	allInputs = append(allInputs, inputs...)
+
+	durationUs := getVideoDurationUs(videoFile)
+	durationSecs := float64(durationUs) / 1000000.0
+
+	args := append(allInputs,
+		"-filter_complex", filterComplex,
+		"-map", "[outv]",
+		"-c:v", "libx264",
+		"-preset", "medium",
+		"-crf", "18",
+		"-r", "30",
+		"-pix_fmt", "yuv420p",
+		"-an",
+		"-t", fmt.Sprintf("%.3f", durationSecs),
+		outputFile,
+	)
+
+	return m.runFFmpegWithProgress(StepCreatingVertical, durationUs, args...)
+}
+
+// buildScreenOnlyVerticalFilterComplex builds the FFmpeg filter_complex for screen-only vertical video.
+// Layout: screen (top portion scaled to fill width) | branding area (bottom third)
+// logoStartIndex is the FFmpeg input index where logo inputs begin (2 with audio, 1 without).
+// Returns: (filterComplex string, additional FFmpeg inputs for logos, error)
+func (m *Merger) buildScreenOnlyVerticalFilterComplex(videoFile string, opts *MergeOptions, logoStartIndex int) (string, []string, error) {
+	// Get screen video dimensions
+	screenWidth, screenHeight, err := webcam.GetVideoInfo(videoFile)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to get screen dimensions: %w", err)
+	}
+
+	// Calculate layout for 1080x1920 output
+	// Screen fills the top portion (above the lower third branding area)
+	screenAreaHeight := lowerThirdY // Top 2/3 of the frame
+	scaledScreenWidth := YouTubeShortsWidth
+	scaledScreenHeight := screenHeight * YouTubeShortsWidth / screenWidth
+
+	// If scaled screen is taller than available area, scale down to fit
+	if scaledScreenHeight > screenAreaHeight {
+		scaledScreenHeight = screenAreaHeight
+		scaledScreenWidth = screenWidth * screenAreaHeight / screenHeight
+	}
+
+	// Center the screen in the available area
+	screenPadX := (YouTubeShortsWidth - scaledScreenWidth) / 2
+	screenPadY := (screenAreaHeight - scaledScreenHeight) / 2
+
+	// Prepare logo inputs
+	var logoInputs []string
+	setup, logoInputs := m.prepareMergedLogos(opts, logoInputs, logoStartIndex)
+
+	// Determine background color for the lower third
+	bgColor := config.DefaultBgColor
+	if opts != nil && opts.BgColor != "" {
+		bgColor = opts.BgColor
+	}
+
+	// Build filter complex for 1080x1920 output
+	filterComplex := fmt.Sprintf(
+		"[0:v]scale=%d:%d:flags=lanczos[screen];"+
+			"color=black:size=%dx%d:duration=99999[bg];"+
+			// Draw background for the bottom third
+			"[bg]drawbox=y=%d:w=%d:h=%d:c=%s:t=fill[canvas];"+
+			// Overlay screen centered in top area
+			"[canvas][screen]overlay=%d:%d[stacked]",
+		scaledScreenWidth, scaledScreenHeight,
+		YouTubeShortsWidth, YouTubeShortsHeight,
+		lowerThirdY, YouTubeShortsWidth, YouTubeShortsHeight-lowerThirdY, bgColor,
+		screenPadX, screenPadY,
+	)
+
+	currentOutput := "[stacked]"
+	inputIdx := logoStartIndex
+
+	// Determine title color
+	titleColor := "white"
+	if opts != nil && opts.TitleColor != "" {
+		titleColor = opts.TitleColor
+	}
+
+	// Add logo overlays in the bottom third
+	if setup.logo1Path != "" {
+		fragment, out := buildLogoOverlay(inputIdx, "logo1", "360:-1", "0", fmt.Sprintf("%d", lowerThirdY), currentOutput, setup.logo1Path, "")
+		filterComplex += ";" + fragment
+		currentOutput = out
+		inputIdx++
+	}
+
+	if setup.logo2Path != "" {
+		fragment, out := buildLogoOverlay(inputIdx, "logo2", "360:-1", "W-w", fmt.Sprintf("%d", lowerThirdY), currentOutput, setup.logo2Path, "")
+		filterComplex += ";" + fragment
+		currentOutput = out
+		inputIdx++
+	}
+
+	if setup.bannerPath != "" {
+		// Banner positioned to leave room for title text below it (title is 10px from bottom)
+		bannerY := YouTubeShortsHeight - 120 // ~110px from bottom, leaving room for title
+		fragment, out := buildLogoOverlay(inputIdx, "banner", fmt.Sprintf("%d:-1", YouTubeShortsWidth), "(W-w)/2", fmt.Sprintf("%d", bannerY), currentOutput, setup.bannerPath, "")
+		filterComplex += ";" + fragment
+		currentOutput = out
+
+		// Add title text below the banner, centered, 10px from bottom of frame
+		if opts != nil && opts.VideoTitle != "" {
+			titleY := YouTubeShortsHeight - 46 // 10px padding from bottom + ~36px font height
+			filterComplex += fmt.Sprintf(
+				";%sdrawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
+				currentOutput, escapeFFmpegText(opts.VideoTitle), titleColor, titleY,
+			)
+			return filterComplex, logoInputs, nil
+		}
+	} else if opts != nil && opts.VideoTitle != "" {
+		// Title text without banner, centered, 10px from bottom of frame
+		titleY := YouTubeShortsHeight - 46 // 10px padding from bottom + ~36px font height
+		filterComplex += fmt.Sprintf(
+			";%sdrawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
+			currentOutput, escapeFFmpegText(opts.VideoTitle), titleColor, titleY,
+		)
+		return filterComplex, logoInputs, nil
+	}
+
+	filterComplex += fmt.Sprintf(";%snull[outv]", currentOutput)
+	return filterComplex, logoInputs, nil
+}
+
+// buildLeftSplitScreenOnlyFilterComplex builds the FFmpeg filter_complex for left-split screen-only vertical video.
+// Layout: Left half of the screen video is scaled to fill the WIDTH (1080px) corner-to-corner.
+// If the scaled height is less than 1920px, the video is placed at the top with branding at the bottom.
+// - Banner: full width at the bottom
+// - Left logo: top-left corner
+// - Right logo: top-right corner
+// logoStartIndex is the FFmpeg input index where logo inputs begin (2 with audio, 1 without).
+// Returns: (filterComplex string, additional FFmpeg inputs for logos, error)
+func (m *Merger) buildLeftSplitScreenOnlyFilterComplex(videoFile string, opts *MergeOptions, logoStartIndex int) (string, []string, error) {
+	// Get screen video dimensions
+	screenWidth, screenHeight, err := webcam.GetVideoInfo(videoFile)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to get screen dimensions: %w", err)
+	}
+
+	// Crop the left half of the screen video
+	halfWidth := screenWidth / 2
+
+	// Scale the left half to fill the WIDTH (1080px) corner-to-corner
+	// The height will be proportionally scaled, may be less than 1920px
+	scaledWidth := YouTubeShortsWidth
+	scaledHeight := screenHeight * YouTubeShortsWidth / halfWidth
+
+	// If scaled height exceeds frame height, cap it
+	if scaledHeight > YouTubeShortsHeight {
+		scaledHeight = YouTubeShortsHeight
+	}
+
+	// Prepare logo inputs
+	var logoInputs []string
+	setup, logoInputs := m.prepareMergedLogos(opts, logoInputs, logoStartIndex)
+
+	// Determine background color
+	bgColor := config.DefaultBgColor
+	if opts != nil && opts.BgColor != "" {
+		bgColor = opts.BgColor
+	}
+
+	// Build filter complex
+	// 1. Crop left half of the screen
+	// 2. Scale to fill width (1080px), height proportional
+	// 3. Create canvas with background color
+	// 4. Overlay the scaled screen at the top
+	filterComplex := fmt.Sprintf(
+		"[0:v]crop=%d:%d:0:0,scale=%d:%d:flags=lanczos[screen];"+
+			"color=%s:size=%dx%d:duration=99999[bg];"+
+			"[bg][screen]overlay=0:0[canvas]",
+		halfWidth, screenHeight,
+		scaledWidth, scaledHeight,
+		bgColor, YouTubeShortsWidth, YouTubeShortsHeight,
+	)
+
+	currentOutput := "[canvas]"
+	inputIdx := logoStartIndex
+
+	titleColor := "white"
+	if opts != nil && opts.TitleColor != "" {
+		titleColor = opts.TitleColor
+	}
+
+	// Calculate Y position for logos (just below the screen recording with 10px padding)
+	logoY := scaledHeight + 10
+
+	// Add left logo overlay below screen recording, left side
+	if setup.logo1Path != "" {
+		fragment, out := buildLogoOverlay(inputIdx, "logo1", "216:-1", "10", fmt.Sprintf("%d", logoY), currentOutput, setup.logo1Path, "")
+		filterComplex += ";" + fragment
+		currentOutput = out
+		inputIdx++
+	}
+
+	// Add right logo overlay below screen recording, right side
+	if setup.logo2Path != "" {
+		fragment, out := buildLogoOverlay(inputIdx, "logo2", "216:-1", "W-w-10", fmt.Sprintf("%d", logoY), currentOutput, setup.logo2Path, "")
+		filterComplex += ";" + fragment
+		currentOutput = out
+		inputIdx++
+	}
+
+	// Add banner at bottom, positioned above title
+	if setup.bannerPath != "" {
+		// Banner positioned to leave room for title text below it (title is 10px from bottom)
+		bannerY := YouTubeShortsHeight - 120 // ~110px from bottom, leaving room for title
+		fragment, out := buildLogoOverlay(inputIdx, "banner", fmt.Sprintf("%d:-1", YouTubeShortsWidth), "(W-w)/2", fmt.Sprintf("%d", bannerY), currentOutput, setup.bannerPath, "")
+		filterComplex += ";" + fragment
+		currentOutput = out
+	}
+
+	// Add title text below banner, centered, 10px from bottom of frame
+	if opts != nil && opts.VideoTitle != "" {
+		titleY := YouTubeShortsHeight - 46 // 10px padding from bottom + ~36px font height
+		filterComplex += fmt.Sprintf(
+			";%sdrawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
+			currentOutput, escapeFFmpegText(opts.VideoTitle), titleColor, titleY,
+		)
+		return filterComplex, logoInputs, nil
+	}
+
+	filterComplex += fmt.Sprintf(";%snull[outv]", currentOutput)
 	return filterComplex, logoInputs, nil
 }
 
@@ -883,17 +1388,13 @@ func buildLogoOverlay(inputIdx int, label, scaleExpr, xExpr, yExpr, currentOutpu
 	}
 
 	if isGif(logoPath) {
-		// For GIFs: create white background, then overlay the GIF on it
+		// For animated GIFs: scale first, then overlay directly on the main video
+		// The GIF should have its own background or transparency handled
+		// Use shortest=1 to stop when main video ends, eof_action=repeat to loop GIF
 		fragment := fmt.Sprintf(
-			"[%d:v]scale=%s[%s_raw];"+
-				"[%s_raw]split[%s_a][%s_b];"+
-				"[%s_a]drawbox=c=white:t=fill[%s_bg];"+
-				"[%s_bg][%s_b]overlay=0:0:format=auto[%s_final];"+
-				"%s[%s_final]overlay=%s:%s:format=auto:eof_action=repeat%s%s",
+			"[%d:v]scale=%s,format=rgba[%s_scaled];"+
+				"%s[%s_scaled]overlay=%s:%s:format=auto:eof_action=repeat:shortest=1%s%s",
 			inputIdx, scaleExpr, label,
-			label, label, label,
-			label, label,
-			label, label, label,
 			currentOutput, label, xExpr, yExpr, enableClause, outLabel,
 		)
 		return fragment, outLabel
@@ -1028,18 +1529,22 @@ type webcamOverlayOpts struct {
 }
 
 // buildWebcamCircleOverlay builds an FFmpeg filter fragment for a circular webcam overlay.
-// It scales the webcam to the given size, applies a circular alpha mask using the geq filter,
-// and overlays it at the bottom-right of the video with the specified margin.
+// It scales the webcam while preserving aspect ratio, crops to a square centered on the frame,
+// applies a circular alpha mask using the geq filter, and overlays at the bottom-right.
 // Returns: (filterFragment, newOutputLabel)
 func buildWebcamCircleOverlay(inputIdx, size, margin int, currentOutput string) (string, string) {
 	radius := size / 2
 	outLabel := "[out_webcam]"
+	// Scale so the smaller dimension equals size (preserving aspect ratio),
+	// then crop a centered square of size x size, then apply circular mask.
+	// scale='if(gt(iw,ih),(-1):size,(size):-1)' scales preserving aspect ratio
+	// crop=size:size centers the crop
 	fragment := fmt.Sprintf(
-		"[%d:v]scale=%d:%d,format=yuva420p,"+
+		"[%d:v]scale='if(gt(iw,ih),-1,%d)':'if(gt(iw,ih),%d,-1)',crop=%d:%d,format=yuva420p,"+
 			"geq=lum='p(X,Y)':cb='p(X,Y)':cr='p(X,Y)':"+
 			"a='if(gt((X-%d)*(X-%d)+(Y-%d)*(Y-%d),%d*%d),0,255)'[webcam_circle];"+
 			"%s[webcam_circle]overlay=W-w-%d:H-h-%d%s",
-		inputIdx, size, size,
+		inputIdx, size, size, size, size,
 		radius, radius, radius, radius, radius, radius,
 		currentOutput, margin, margin, outLabel,
 	)

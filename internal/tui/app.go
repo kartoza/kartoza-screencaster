@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kartoza/kartoza-screencaster/internal/audio"
 	"github.com/kartoza/kartoza-screencaster/internal/beep"
 	"github.com/kartoza/kartoza-screencaster/internal/config"
 	"github.com/kartoza/kartoza-screencaster/internal/models"
@@ -90,6 +91,11 @@ type AppModel struct {
 
 	// Edit recording mode - opens directly to history with latest needs_metadata recording
 	editRecordingMode bool
+
+	// Room noise capture state
+	roomNoiseCountdown  int           // Countdown seconds remaining
+	roomNoiseRecorder   *audio.Recorder
+	roomNoiseFile       string        // Path to room noise file
 }
 
 // countRecordings counts the number of valid recordings in the screencasts folder
@@ -438,6 +444,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case countdownTickMsg:
 		return m.handleCountdownTick()
+
+	case roomNoiseTickMsg:
+		return m.handleRoomNoiseTick()
+
+	case roomNoiseCompleteMsg:
+		// Room noise recording finished, transition to processing
+		if msg.err != nil {
+			// Log error but continue with processing
+			m.roomNoiseFile = "" // Clear the file path since it failed
+		}
+		return m.transitionToProcessing()
 
 	case statusUpdateMsg:
 		// Don't update status during processing - it can cause race conditions
@@ -836,6 +853,7 @@ func (m AppModel) handleRecordingSetupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	// Handle escape to go back
 	if key.Matches(msg, key.NewBinding(key.WithKeys("esc"))) {
 		m.screen = ScreenMenu
+		updateGlobalAppState(false, m.blinkOn, "Ready")
 		return m, nil
 	}
 
@@ -904,6 +922,7 @@ func (m AppModel) handleRecordingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Go back to menu (only if not recording and not paused)
 		if !m.status.IsRecording && !m.isPaused {
 			m.screen = ScreenMenu
+			updateGlobalAppState(false, m.blinkOn, "Ready")
 		}
 		return m, nil
 
@@ -953,9 +972,39 @@ func (m AppModel) handleResume() (tea.Model, tea.Cmd) {
 
 // handleStop handles stopping the recording
 func (m AppModel) handleStop() (tea.Model, tea.Cmd) {
-	// Stop recording - transition to processing state
-	m.state = stateProcessing
 	m.isPaused = false
+
+	// First stop the main recording
+	if m.recorder != nil {
+		_ = m.recorder.Stop()
+	}
+
+	// Check if audio was enabled - if so, capture room noise for calibration
+	audioEnabled := m.recordingInfo != nil && m.recordingInfo.Settings.AudioEnabled
+	if audioEnabled && m.outputDir != "" {
+		// Transition to room noise capture state
+		m.state = stateRoomNoise
+		m.roomNoiseCountdown = 30 // 30 seconds of room noise
+		m.roomNoiseFile = filepath.Join(m.outputDir, "room_noise.wav")
+
+		// Start room noise recording
+		m.roomNoiseRecorder = audio.NewRecorder("", m.roomNoiseFile)
+		if err := m.roomNoiseRecorder.Start(); err != nil {
+			// If room noise recording fails, skip it and go to processing
+			return m.transitionToProcessing()
+		}
+
+		updateGlobalAppState(false, m.blinkOn, "Capturing Room Noise")
+		return m, roomNoiseTickCmd()
+	}
+
+	// No audio, go directly to processing
+	return m.transitionToProcessing()
+}
+
+// transitionToProcessing moves from room noise capture (or directly from stop) to processing
+func (m AppModel) transitionToProcessing() (tea.Model, tea.Cmd) {
+	m.state = stateProcessing
 	m.processing.Reset()
 
 	// Configure which steps are applicable based on recording settings
@@ -971,10 +1020,20 @@ func (m AppModel) handleStop() (tea.Model, tea.Cmd) {
 	m.processing.Start()
 	m.processingFrame = 0
 
+	// Skip the "Stopping recorders" step since we already stopped in handleStop
+	m.processing.SetStepByIndex(ProcessStepStopping, StepSkipped)
+
 	return m, tea.Batch(
 		processingTickCmd(),
-		m.stopAndProcess(),
+		m.runProcessingPipeline(),
 	)
+}
+
+// roomNoiseTickCmd returns a command that ticks every second for room noise countdown
+func roomNoiseTickCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return roomNoiseTickMsg{}
+	})
 }
 
 // handleHistoryKeys handles keys on the history screen
@@ -1017,15 +1076,14 @@ func (m AppModel) handleOptionsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m AppModel) handleMenuAction(action MenuItem) (tea.Model, tea.Cmd) {
 	switch action {
 	case MenuNewRecording:
-		// Go to recording setup screen — reuse existing model to preserve form state
+		// Go to recording setup screen - always create fresh form for new recording
 		m.screen = ScreenRecordingSetup
-		if m.recordingSetup == nil {
-			m.recordingSetup = NewRecordingSetupModel()
-			m.recordingSetup.width = m.width
-			m.recordingSetup.height = m.height
-			return m, m.recordingSetup.Init()
-		}
-		return m, nil
+		m.recordingSetup = NewRecordingSetupModel()
+		m.recordingSetup.width = m.width
+		m.recordingSetup.height = m.height
+		// Reset global state when starting new recording setup
+		updateGlobalAppState(false, m.blinkOn, "Ready")
+		return m, m.recordingSetup.Init()
 
 	case MenuRecordingHistory:
 		m.screen = ScreenHistory
@@ -1098,6 +1156,7 @@ func (m AppModel) handleCountdownTick() (tea.Model, tea.Cmd) {
 			m.recordingInfo.Settings.AudioEnabled = m.recordingSetup.form.State.RecordAudio
 			m.recordingInfo.Settings.WebcamEnabled = m.recordingSetup.form.State.RecordWebcam
 			m.recordingInfo.Settings.VerticalEnabled = m.recordingSetup.form.State.VerticalVideo && m.recordingSetup.form.State.RecordWebcam && m.recordingSetup.form.State.RecordScreen
+			m.recordingInfo.Settings.LeftSplitEnabled = m.recordingSetup.form.State.LeftSplit
 			m.recordingInfo.Settings.LogosEnabled = m.recordingSetup.form.State.AddLogos
 
 			// Logo details
@@ -1159,6 +1218,30 @@ func (m AppModel) handleCountdownTick() (tea.Model, tea.Cmd) {
 	})
 }
 
+// handleRoomNoiseTick handles the room noise capture countdown
+func (m AppModel) handleRoomNoiseTick() (tea.Model, tea.Cmd) {
+	if m.state != stateRoomNoise {
+		return m, nil
+	}
+
+	m.roomNoiseCountdown--
+
+	if m.roomNoiseCountdown <= 0 {
+		// Room noise capture finished, stop the recorder
+		if m.roomNoiseRecorder != nil {
+			err := m.roomNoiseRecorder.Stop()
+			m.roomNoiseRecorder = nil
+			return m, func() tea.Msg {
+				return roomNoiseCompleteMsg{err: err}
+			}
+		}
+		return m.transitionToProcessing()
+	}
+
+	// Continue countdown
+	return m, roomNoiseTickCmd()
+}
+
 // stopAndProcess stops recording and runs post-processing with progress updates
 func (m AppModel) stopAndProcess() tea.Cmd {
 	return func() tea.Msg {
@@ -1167,6 +1250,40 @@ func (m AppModel) stopAndProcess() tea.Cmd {
 		}
 		// Step 0 (stopping recorders) is complete
 		return processingStepMsg{Step: 0, Completed: true}
+	}
+}
+
+// runProcessingPipeline starts the processing pipeline directly (used after room noise capture)
+func (m *AppModel) runProcessingPipeline() tea.Cmd {
+	return func() tea.Msg {
+		// Set the room noise file on the recorder for audio processing
+		if m.roomNoiseFile != "" && m.recorder != nil {
+			m.recorder.SetRoomNoiseFile(m.roomNoiseFile)
+		}
+
+		// Create progress channel and start processing
+		m.progressChan = make(chan recorder.ProgressUpdate, 100)
+		go m.recorder.ProcessWithProgress(m.progressChan)
+
+		// Wait for first update
+		update, ok := <-m.progressChan
+		if !ok {
+			return processingCompleteMsg{}
+		}
+
+		if update.Percent >= 0 && !update.Completed && !update.Skipped && update.Error == nil {
+			return processingPercentMsg{
+				Step:    update.Step,
+				Percent: update.Percent,
+			}
+		}
+
+		return processingStepMsg{
+			Step:      update.Step,
+			Completed: update.Completed,
+			Skipped:   update.Skipped,
+			Error:     update.Error,
+		}
 	}
 }
 
@@ -1209,6 +1326,11 @@ func (m AppModel) View() string {
 	// Show countdown screen if in countdown state
 	if m.state == stateCountdown {
 		return m.renderCountdownView()
+	}
+
+	// Show room noise capture screen
+	if m.state == stateRoomNoise {
+		return m.renderRoomNoiseView()
 	}
 
 	// Show processing screen if in processing state
@@ -1527,6 +1649,95 @@ func (m AppModel) renderCountdownView() string {
 		subtitle,
 		"",
 		hint,
+	)
+
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		content,
+	)
+}
+
+// renderRoomNoiseView renders the room noise capture screen
+func (m AppModel) renderRoomNoiseView() string {
+	// Title
+	titleStyle := lipgloss.NewStyle().
+		Foreground(ColorBlue).
+		Bold(true).
+		MarginBottom(1)
+
+	title := titleStyle.Render("Capturing Room Noise")
+
+	// Large countdown number
+	bigText := getBigDigit(m.roomNoiseCountdown)
+	digitStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	var countdownDisplay string
+	for i, line := range bigText {
+		countdownDisplay += digitStyle.Render(line)
+		if i < len(bigText)-1 {
+			countdownDisplay += "\n"
+		}
+	}
+
+	// Progress bar
+	progressWidth := 40
+	filled := (30 - m.roomNoiseCountdown) * progressWidth / 30
+	if filled < 0 {
+		filled = 0
+	}
+	if filled > progressWidth {
+		filled = progressWidth
+	}
+	empty := progressWidth - filled
+
+	progressStyle := lipgloss.NewStyle().Foreground(ColorGreen)
+	emptyStyle := lipgloss.NewStyle().Foreground(ColorGray)
+	progressBar := progressStyle.Render(strings.Repeat("█", filled)) + emptyStyle.Render(strings.Repeat("░", empty))
+
+	// Instructions box
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorOrange).
+		Padding(1, 2).
+		Width(50)
+
+	instructions := lipgloss.JoinVertical(
+		lipgloss.Left,
+		lipgloss.NewStyle().Bold(true).Foreground(ColorWhite).Render("Please remain quiet"),
+		"",
+		lipgloss.NewStyle().Foreground(ColorGray).Render("We're recording the ambient room noise to"),
+		lipgloss.NewStyle().Foreground(ColorGray).Render("calibrate the audio processing. This helps"),
+		lipgloss.NewStyle().Foreground(ColorGray).Render("remove background noise from your recording."),
+		"",
+		lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("Do not speak or make any sounds."),
+	)
+
+	instructionBox := boxStyle.Render(instructions)
+
+	// Status
+	statusStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+	status := statusStyle.Render(fmt.Sprintf("%d seconds remaining...", m.roomNoiseCountdown))
+
+	// Combine all elements
+	content := lipgloss.JoinVertical(
+		lipgloss.Center,
+		"",
+		title,
+		"",
+		countdownDisplay,
+		"",
+		progressBar,
+		"",
+		instructionBox,
+		"",
+		status,
 	)
 
 	return lipgloss.Place(

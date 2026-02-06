@@ -3,11 +3,13 @@ module github.com/kartoza/kartoza-screencaster
 go 1.24.2
 
 require (
+	fyne.io/systray v1.12.0
 	github.com/blacktop/go-termimg v0.1.24
 	github.com/charmbracelet/bubbles v0.21.1-0.20250623103423-23b8fd6302d7
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
+	github.com/sajari/fuzzy v1.0.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/oauth2 v0.34.0
 	google.golang.org/api v0.260.0
@@ -17,7 +19,6 @@ require (
 	cloud.google.com/go/auth v0.18.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	fyne.io/systray v1.12.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.3.3 // indirect
@@ -49,7 +50,6 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/sajari/fuzzy v1.0.0 // indirect
 	github.com/soniakeys/quant v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect

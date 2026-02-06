@@ -1,6 +1,6 @@
 # Libraries
 
-This document describes the third-party libraries used in Kartoza Screencaster and the rationale for their selection.
+This document describes the third-party libraries and external tools used in Kartoza Screencaster and the rationale for their selection.
 
 ## Core Libraries
 
@@ -89,6 +89,94 @@ Common UI components for Bubble Tea.
 | `progress` | Upload/processing bars |
 | `key` | Keyboard handling |
 | `table` | Recording history |
+| `viewport` | Scrollable content areas |
+
+---
+
+## System Tray
+
+### Fyne Systray
+
+<div class="feature-card" markdown>
+**[fyne.io/systray](https://github.com/fyne-io/systray)**
+
+Cross-platform system tray library.
+</div>
+
+**Version:** v1.12.0
+
+**Purpose:** System tray icon and menu for quick recording access
+
+**Why chosen:**
+
+- Cross-platform (Linux, macOS, Windows)
+- Simple API
+- No CGO required on most platforms
+- Active maintenance
+
+---
+
+## Image Processing
+
+### Go Terminal Image
+
+<div class="feature-card" markdown>
+**[github.com/blacktop/go-termimg](https://github.com/blacktop/go-termimg)**
+
+Display images in terminal emulators.
+</div>
+
+**Version:** v0.1.24
+
+**Purpose:** Display webcam preview and thumbnails in the TUI
+
+**Why chosen:**
+
+- Supports multiple terminal image protocols (Sixel, iTerm2, Kitty)
+- Automatic protocol detection
+- Fallback to ASCII art
+
+---
+
+### Resize
+
+<div class="feature-card" markdown>
+**[github.com/nfnt/resize](https://github.com/nfnt/resize)**
+
+Pure Go image resizing.
+</div>
+
+**Version:** v0.0.0-20180221191011-83c6a9932646
+
+**Purpose:** Resize images for thumbnails and overlays
+
+**Why chosen:**
+
+- Pure Go (no CGO)
+- Multiple resize algorithms (Lanczos, Bicubic, etc.)
+- Simple API
+
+---
+
+## Text Processing
+
+### Fuzzy
+
+<div class="feature-card" markdown>
+**[github.com/sajari/fuzzy](https://github.com/sajari/fuzzy)**
+
+Fuzzy string matching and spell checking.
+</div>
+
+**Version:** v1.0.0
+
+**Purpose:** Spell checking for video titles and descriptions
+
+**Why chosen:**
+
+- Fast fuzzy matching
+- Customizable word lists
+- Pure Go implementation
 
 ---
 
@@ -101,6 +189,8 @@ Common UI components for Bubble Tea.
 
 Official Google API client libraries.
 </div>
+
+**Version:** v0.260.0
 
 **Packages used:**
 
@@ -128,6 +218,8 @@ response, err := call.Media(file).Do()
 
 OAuth 2.0 client implementation.
 </div>
+
+**Version:** v0.34.0
 
 **Purpose:** Google authentication
 
@@ -172,23 +264,107 @@ var rootCmd = &cobra.Command{
 
 ---
 
-## Testing
+## External Tools
 
-### Testify (Development)
+These external command-line tools are used by Kartoza Screencaster for media processing:
+
+### FFmpeg
 
 <div class="feature-card" markdown>
-**[github.com/stretchr/testify](https://github.com/stretchr/testify)**
+**[ffmpeg.org](https://ffmpeg.org/)**
 
-Testing toolkit with assertions.
+Complete, cross-platform solution for recording, converting, and streaming audio and video.
 </div>
 
-**Purpose:** Enhanced test assertions
+**Purpose:** Video/audio encoding, merging, and filter processing
 
-**Components:**
+**Features used:**
 
-- `assert` - Test assertions
-- `require` - Fatal assertions
-- `mock` - Mocking support
+- Screen recording (`x11grab`, `avfoundation`, `gdigrab`)
+- Video encoding (H.264/libx264)
+- Audio encoding (AAC, PCM)
+- Video filters (scale, crop, overlay, drawtext)
+- Audio filters (loudnorm, pan)
+- Concatenation of video parts
+
+**License:** LGPL/GPL
+
+---
+
+### PipeWire (Linux)
+
+<div class="feature-card" markdown>
+**[pipewire.org](https://pipewire.org/)**
+
+Low-latency audio/video server for Linux.
+</div>
+
+**Purpose:** Audio recording on Linux
+
+**Tools used:**
+
+- `pw-record` - Audio capture
+- `pw-cli` - Device enumeration
+
+**Why chosen:**
+
+- Modern replacement for PulseAudio
+- Lower latency
+- Better integration with Wayland
+
+**License:** MIT
+
+---
+
+### wf-recorder (Linux/Wayland)
+
+<div class="feature-card" markdown>
+**[github.com/ammen99/wf-recorder](https://github.com/ammen99/wf-recorder)**
+
+Screen recorder for wlroots-based Wayland compositors.
+</div>
+
+**Purpose:** Screen recording on Wayland
+
+**Why chosen:**
+
+- Native Wayland support
+- Hardware encoding support
+- Compositor-agnostic
+
+**License:** MIT
+
+---
+
+### Jivetalking
+
+<div class="feature-card" markdown>
+**[github.com/linuxmatters/jivetalking](https://github.com/linuxmatters/jivetalking)**
+
+Professional audio processing tool for podcast and screencast production.
+</div>
+
+**Purpose:** Advanced audio processing (when installed)
+
+**Features used:**
+
+- Multi-pass audio analysis
+- Adaptive noise removal (anlmdn + compand)
+- LA-2A style optical compression
+- DS201-inspired gating
+- De-essing
+- EBU R128 loudness normalization
+
+**Processing pipeline:**
+
+1. **Pass 1:** Analysis (loudness, noise floor, speech characteristics)
+2. **Pass 2:** Processing (high-pass, noise removal, gate, compression, de-esser)
+3. **Pass 3:** Loudnorm measurement
+4. **Pass 4:** Loudnorm application + click repair
+
+**Fallback:** When jivetalking is not installed, Kartoza Screencaster falls back to basic FFmpeg loudnorm processing.
+
+**License:** GPL-3.0
 
 ---
 
@@ -213,32 +389,65 @@ graph TD
         OAuth[oauth2]
     end
 
+    subgraph "System"
+        Systray[fyne/systray]
+    end
+
+    subgraph "Image"
+        TermImg[go-termimg]
+        Resize[nfnt/resize]
+    end
+
+    subgraph "Text"
+        Fuzzy[sajari/fuzzy]
+    end
+
+    subgraph "External Tools"
+        FFmpeg[FFmpeg]
+        PipeWire[PipeWire]
+        WfRecorder[wf-recorder]
+        Jivetalking[Jivetalking]
+    end
+
     App --> BT
     App --> Cobra
+    App --> Systray
+    App --> TermImg
+    App --> Fuzzy
     BT --> LG
     BT --> BB
     App --> GAPI
     GAPI --> OAuth
+    TermImg --> Resize
+
+    App -.->|shells out| FFmpeg
+    App -.->|shells out| PipeWire
+    App -.->|shells out| WfRecorder
+    App -.->|shells out| Jivetalking
 ```
 
 ## Version Management
 
 ### go.mod
 
-All dependencies are managed through Go modules:
+All Go dependencies are managed through Go modules:
 
 ```go
 module github.com/kartoza/kartoza-screencaster
 
-go 1.21
+go 1.24
 
 require (
-    github.com/charmbracelet/bubbletea v1.3.10
+    fyne.io/systray v1.12.0
+    github.com/blacktop/go-termimg v0.1.24
     github.com/charmbracelet/bubbles v0.21.1
+    github.com/charmbracelet/bubbletea v1.3.10
     github.com/charmbracelet/lipgloss v1.1.1
+    github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
+    github.com/sajari/fuzzy v1.0.0
     github.com/spf13/cobra v1.10.2
-    google.golang.org/api v0.xxx.0
-    golang.org/x/oauth2 v0.xxx.0
+    golang.org/x/oauth2 v0.34.0
+    google.golang.org/api v0.260.0
 )
 ```
 
@@ -253,6 +462,9 @@ go get -u github.com/charmbracelet/bubbletea
 
 # Check for updates
 go list -m -u all
+
+# Tidy dependencies
+go mod tidy
 ```
 
 ## Selection Criteria
@@ -285,15 +497,38 @@ When choosing libraries, we consider:
 | urfave/cli | Good but less ecosystem | Not selected |
 | kong | Nice API but newer | Not selected |
 
+### Audio Processing
+
+| Tool | Consideration | Decision |
+|------|---------------|----------|
+| **Jivetalking** | Professional multi-pass processing, adaptive | **Primary (if installed)** |
+| FFmpeg loudnorm | Basic two-pass normalization | **Fallback** |
+| SoX | Good but less flexible filters | Not selected |
+
 ## License Summary
+
+### Go Libraries
 
 | Library | License |
 |---------|---------|
 | bubbletea | MIT |
 | lipgloss | MIT |
 | bubbles | MIT |
+| fyne/systray | BSD-3-Clause |
+| go-termimg | MIT |
+| nfnt/resize | ISC |
+| sajari/fuzzy | MIT |
 | cobra | Apache 2.0 |
 | google-api-go | BSD-3-Clause |
 | oauth2 | BSD-3-Clause |
 
-All dependencies use permissive open-source licenses compatible with the project's MIT license.
+### External Tools
+
+| Tool | License |
+|------|---------|
+| FFmpeg | LGPL/GPL |
+| PipeWire | MIT |
+| wf-recorder | MIT |
+| Jivetalking | GPL-3.0 |
+
+All Go dependencies use permissive open-source licenses compatible with the project's MIT license. External tools are called via subprocess and their licenses apply independently.

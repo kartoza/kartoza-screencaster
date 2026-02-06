@@ -118,6 +118,29 @@ func (h *HistoryModel) getVisibleCount() int {
 	return count
 }
 
+// detailContainerWidth returns the responsive width for detail view containers
+func (h *HistoryModel) detailContainerWidth() int {
+	// Container width is terminal width minus padding, capped at reasonable size
+	containerWidth := h.width - 10
+	if containerWidth > 80 {
+		containerWidth = 80
+	}
+	if containerWidth < 50 {
+		containerWidth = 50
+	}
+	return containerWidth
+}
+
+// detailInternalWidth returns the width for content inside detail containers
+func (h *HistoryModel) detailInternalWidth() int {
+	// Internal width is container width minus border/padding (8px for borders + padding)
+	iw := h.detailContainerWidth() - 8
+	if iw < 40 {
+		iw = 40
+	}
+	return iw
+}
+
 // Update handles messages
 func (h *HistoryModel) Update(msg tea.Msg) (*HistoryModel, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -241,6 +264,14 @@ func (h *HistoryModel) Update(msg tea.Msg) (*HistoryModel, tea.Cmd) {
 	case startYouTubeUploadMsg:
 		// This is handled by the parent app model
 		return h, func() tea.Msg { return msg }
+
+	default:
+		// Forward other messages (like cursor blink) to edit form when in edit mode
+		if h.mode == HistoryEditMode && h.editForm != nil {
+			var cmd tea.Cmd
+			h.editForm, cmd = h.editForm.Update(msg)
+			return h, cmd
+		}
 	}
 
 	return h, nil
@@ -848,6 +879,7 @@ func (h *HistoryModel) initEditForm() {
 	h.editForm.State.RecordWebcam = rec.Settings.WebcamEnabled
 	h.editForm.State.RecordScreen = rec.Settings.ScreenEnabled
 	h.editForm.State.VerticalVideo = rec.Settings.VerticalEnabled
+	h.editForm.State.LeftSplit = rec.Settings.LeftSplitEnabled
 	h.editForm.State.AddLogos = rec.Settings.LogosEnabled
 
 	// Set logo indices from existing settings
@@ -935,6 +967,7 @@ func (h *HistoryModel) saveRecording() tea.Cmd {
 	h.selectedRecording.Settings.WebcamEnabled = h.editForm.State.RecordWebcam
 	h.selectedRecording.Settings.ScreenEnabled = h.editForm.State.RecordScreen
 	h.selectedRecording.Settings.VerticalEnabled = h.editForm.State.VerticalVideo
+	h.selectedRecording.Settings.LeftSplitEnabled = h.editForm.State.LeftSplit
 	h.selectedRecording.Settings.LogosEnabled = h.editForm.State.AddLogos
 	h.selectedRecording.Settings.LeftLogo = h.resolveLogoPath(h.editForm.State.SelectedLeftIdx)
 	h.selectedRecording.Settings.RightLogo = h.resolveLogoPath(h.editForm.State.SelectedRightIdx)
@@ -1141,6 +1174,10 @@ func (h *HistoryModel) renderDetailView() string {
 	rec := h.selectedRecording
 	header := RenderHeader("Recording Details")
 
+	// Responsive widths
+	containerWidth := h.detailContainerWidth()
+	internalWidth := h.detailInternalWidth()
+
 	// Styles
 	labelStyle := lipgloss.NewStyle().
 		Foreground(ColorGray).
@@ -1159,7 +1196,7 @@ func (h *HistoryModel) renderDetailView() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ColorOrange).
 		Padding(1, 3).
-		Width(70)
+		Width(containerWidth)
 
 	dividerStyle := lipgloss.NewStyle().
 		Foreground(ColorGray)
@@ -1175,7 +1212,7 @@ func (h *HistoryModel) renderDetailView() string {
 		Bold(true).
 		Render(rec.Metadata.FolderName)
 
-	folderRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(62).Render(folderBadge)
+	folderRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(internalWidth).Render(folderBadge)
 	rows = append(rows, folderRow)
 	rows = append(rows, "")
 
@@ -1204,7 +1241,7 @@ func (h *HistoryModel) renderDetailView() string {
 
 	// Divider
 	rows = append(rows, "")
-	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
+	rows = append(rows, dividerStyle.Render(strings.Repeat("─", internalWidth)))
 	rows = append(rows, "")
 
 	// Date
@@ -1232,7 +1269,7 @@ func (h *HistoryModel) renderDetailView() string {
 
 	// Divider
 	rows = append(rows, "")
-	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
+	rows = append(rows, dividerStyle.Render(strings.Repeat("─", internalWidth)))
 	rows = append(rows, "")
 
 	// Files section
@@ -1254,7 +1291,7 @@ func (h *HistoryModel) renderDetailView() string {
 
 	// Divider
 	rows = append(rows, "")
-	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
+	rows = append(rows, dividerStyle.Render(strings.Repeat("─", internalWidth)))
 	rows = append(rows, "")
 
 	// Description
@@ -1265,14 +1302,14 @@ func (h *HistoryModel) renderDetailView() string {
 	}
 	descTextStyle := lipgloss.NewStyle().
 		Foreground(ColorWhite).
-		Width(60).
+		Width(internalWidth - 4).
 		MarginLeft(2)
 	rows = append(rows, descTextStyle.Render(desc))
 
 	// Error section (shown only if status is failed)
 	if rec.Status == models.StatusFailed {
 		rows = append(rows, "")
-		rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
+		rows = append(rows, dividerStyle.Render(strings.Repeat("─", internalWidth)))
 		rows = append(rows, "")
 
 		// Error badge
@@ -1282,7 +1319,7 @@ func (h *HistoryModel) renderDetailView() string {
 			Padding(0, 1).
 			Bold(true).
 			Render("✗ Processing Failed")
-		errorBadgeRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(62).Render(errorBadge)
+		errorBadgeRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(internalWidth).Render(errorBadge)
 		rows = append(rows, errorBadgeRow)
 		rows = append(rows, "")
 
@@ -1301,7 +1338,7 @@ func (h *HistoryModel) renderDetailView() string {
 			rows = append(rows, labelStyle.Render("Details:"))
 			errorDetailStyle := lipgloss.NewStyle().
 				Foreground(ColorGray).
-				Width(60).
+				Width(internalWidth - 4).
 				MarginLeft(2)
 			// Truncate for display, show first 300 chars
 			detail := rec.Processing.ErrorDetail
@@ -1316,14 +1353,14 @@ func (h *HistoryModel) renderDetailView() string {
 			Foreground(ColorOrange).
 			Italic(true).
 			Align(lipgloss.Center).
-			Width(62)
+			Width(internalWidth)
 		rows = append(rows, "")
 		rows = append(rows, hintStyle.Render("Press 'v' to view full error details and traceback"))
 	}
 
 	// YouTube section
 	rows = append(rows, "")
-	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
+	rows = append(rows, dividerStyle.Render(strings.Repeat("─", internalWidth)))
 	rows = append(rows, "")
 
 	ytLabelStyle := lipgloss.NewStyle().
@@ -1339,7 +1376,7 @@ func (h *HistoryModel) renderDetailView() string {
 			Padding(0, 1).
 			Bold(true).
 			Render("▶ YouTube")
-		ytStatusRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(62).Render(ytStatusBadge)
+		ytStatusRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(internalWidth).Render(ytStatusBadge)
 		rows = append(rows, ytStatusRow)
 		rows = append(rows, "")
 
@@ -1387,7 +1424,7 @@ func (h *HistoryModel) renderDetailView() string {
 			Foreground(ColorGray).
 			Italic(true).
 			Align(lipgloss.Center).
-			Width(62)
+			Width(internalWidth)
 		rows = append(rows, ytStatusStyle.Render("Not published to YouTube"))
 	}
 
@@ -1401,7 +1438,7 @@ func (h *HistoryModel) renderDetailView() string {
 			Foreground(ColorGreen).
 			Bold(true).
 			Align(lipgloss.Center).
-			Width(62)
+			Width(internalWidth)
 		rows = append(rows, "")
 		msg := editSuccess
 		if h.youtubeActionSuccess != "" {
@@ -1415,7 +1452,7 @@ func (h *HistoryModel) renderDetailView() string {
 			Foreground(ColorRed).
 			Bold(true).
 			Align(lipgloss.Center).
-			Width(62)
+			Width(internalWidth)
 		rows = append(rows, "")
 		rows = append(rows, errorStyle.Render(h.youtubeActionError))
 	}
@@ -1487,6 +1524,10 @@ func (h *HistoryModel) renderDeleteConfirmView() string {
 	rec := h.deleteConfirmRecording
 	header := RenderHeader("Delete Recording")
 
+	// Responsive widths
+	containerWidth := h.detailContainerWidth()
+	internalWidth := h.detailInternalWidth()
+
 	// Styles
 	warningStyle := lipgloss.NewStyle().
 		Foreground(ColorRed).
@@ -1506,15 +1547,15 @@ func (h *HistoryModel) renderDeleteConfirmView() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ColorRed).
 		Padding(1, 3).
-		Width(70)
+		Width(containerWidth)
 
 	// Build confirmation dialog
 	var rows []string
 
 	// Warning message
-	rows = append(rows, warningStyle.Width(62).Render("⚠ DELETE RECORDING ⚠"))
+	rows = append(rows, warningStyle.Width(internalWidth).Render("⚠ DELETE RECORDING ⚠"))
 	rows = append(rows, "")
-	rows = append(rows, warningStyle.Width(62).Render("This action cannot be undone!"))
+	rows = append(rows, warningStyle.Width(internalWidth).Render("This action cannot be undone!"))
 	rows = append(rows, "")
 
 	// Recording details
@@ -1550,7 +1591,7 @@ func (h *HistoryModel) renderDeleteConfirmView() string {
 			Foreground(ColorRed).
 			Bold(true).
 			Align(lipgloss.Center).
-			Width(62)
+			Width(internalWidth)
 		rows = append(rows, errorStyle.Render(h.deleteError))
 		rows = append(rows, "")
 	}
@@ -1560,7 +1601,7 @@ func (h *HistoryModel) renderDeleteConfirmView() string {
 		Foreground(ColorOrange).
 		Bold(true).
 		Align(lipgloss.Center).
-		Width(62)
+		Width(internalWidth)
 	rows = append(rows, promptStyle.Render("Are you sure you want to delete this recording?"))
 	rows = append(rows, "")
 
@@ -1584,7 +1625,7 @@ func (h *HistoryModel) renderDeleteConfirmView() string {
 		"    ",
 		noStyle.Render("N - No, Cancel"),
 	)
-	buttonRow := lipgloss.NewStyle().Width(62).Align(lipgloss.Center).Render(buttons)
+	buttonRow := lipgloss.NewStyle().Width(internalWidth).Align(lipgloss.Center).Render(buttons)
 	rows = append(rows, buttonRow)
 
 	content := containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))

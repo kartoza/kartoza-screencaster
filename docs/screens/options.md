@@ -228,12 +228,16 @@ Configures the default recording settings used by systray quick-record. These to
 | **Webcam** | Record webcam for picture-in-picture |
 | **Screen** | Record monitor screen capture |
 | **Vertical** | Create vertical (9:16) version (requires webcam or screen) |
+| **Left Split** | Use left half of screen for vertical video (requires vertical) |
 | **Logos** | Add logo overlays to the recording |
 
 Each toggle shows **Yes** (green/orange when focused) or **No** (gray/orange when focused). Press ++enter++ or ++space++ to toggle.
 
 !!! note "Vertical Video Constraint"
     The "Vertical" toggle is disabled (greyed out) when both Webcam and Screen are turned off, since vertical video requires at least one video source.
+
+!!! note "Left Split Constraint"
+    The "Left Split" toggle is disabled (greyed out) when Vertical Video is turned off.
 
 !!! info "Systray First-Run"
     The first time you attempt to start a recording from the system tray, the application opens directly to this section so you can configure your preferred defaults before recording. After saving, the TUI automatically closes and subsequent systray recordings use your saved presets.
@@ -279,8 +283,9 @@ Saves all configuration changes to disk, including recording presets.
 11. Preset: Record Webcam
 12. Preset: Record Screen
 13. Preset: Vertical Video
-14. Preset: Add Logos
-15. Save button
+14. Preset: Left Split
+15. Preset: Add Logos
+16. Save button
 
 ## Configuration File
 
@@ -303,6 +308,7 @@ Settings are stored in JSON format:
     "record_webcam": true,
     "record_screen": true,
     "vertical_video": true,
+    "left_split": true,
     "add_logos": true
   },
   "presets_configured": true,

@@ -88,6 +88,7 @@ type RecordingPresets struct {
 	RecordWebcam  bool   `json:"record_webcam"`
 	RecordScreen  bool   `json:"record_screen"`
 	VerticalVideo bool   `json:"vertical_video"`
+	LeftSplit     bool   `json:"left_split"`  // Use left half of screen for vertical video
 	AddLogos      bool   `json:"add_logos"`
 	Topic         string `json:"topic,omitempty"` // Last selected topic name
 }
@@ -99,6 +100,7 @@ func DefaultRecordingPresets() RecordingPresets {
 		RecordWebcam:  true,
 		RecordScreen:  true,
 		VerticalVideo: true,
+		LeftSplit:     true, // Default to left split mode for vertical video
 		AddLogos:      true,
 	}
 }

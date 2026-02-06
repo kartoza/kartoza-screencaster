@@ -447,10 +447,12 @@ func renderStepLine(step ProcessingStep, isCurrent bool, frame int) string {
 		// Show progress bar for running steps with known progress
 		suffix = renderProgressBar(step.Progress, progressBarWidth)
 	} else if step.Status == StepComplete || step.Status == StepFailed {
-		// Duration for completed steps
-		d := step.EndTime.Sub(step.StartTime).Round(100 * time.Millisecond)
-		durationStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
-		suffix = durationStyle.Render(fmt.Sprintf(" (%s)", d))
+		// Duration for completed steps (only show if StartTime was set)
+		if !step.StartTime.IsZero() {
+			d := step.EndTime.Sub(step.StartTime).Round(100 * time.Millisecond)
+			durationStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
+			suffix = durationStyle.Render(fmt.Sprintf(" (%s)", d))
+		}
 	} else if step.Status == StepSkipped {
 		// Show "skipped" for skipped steps
 		skippedStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)

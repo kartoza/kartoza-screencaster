@@ -237,12 +237,15 @@ func (m *RecordingSetupModel) GetMetadata() models.RecordingMetadata {
 		recordingNumber = num
 	}
 
+	// Use presenter from form input (which defaults to last used presenter)
+	presenter := m.form.GetPresenter()
+
 	metadata := models.RecordingMetadata{
 		Number:      recordingNumber,
 		Title:       m.form.GetTitle(),
 		Description: m.form.GetDescription(),
 		Topic:       topic,
-		Presenter:   m.config.DefaultPresenter,
+		Presenter:   presenter,
 	}
 	metadata.GenerateFolderName()
 
@@ -295,12 +298,13 @@ func (m *RecordingSetupModel) GetRecordingPresets() config.RecordingPresets {
 		RecordWebcam:  m.form.State.RecordWebcam,
 		RecordScreen:  m.form.State.RecordScreen,
 		VerticalVideo: m.form.State.VerticalVideo,
+		LeftSplit:     m.form.State.LeftSplit,
 		AddLogos:      m.form.State.AddLogos,
 		Topic:         m.form.GetSelectedTopic().Name,
 	}
 }
 
-// SaveAllPresets saves all recording presets (toggles, topic, logos) to config
+// SaveAllPresets saves all recording presets (toggles, topic, logos, presenter) to config
 // This should be called when starting a recording to remember settings for next time
 func (m *RecordingSetupModel) SaveAllPresets() error {
 	cfg, err := config.Load()
@@ -314,6 +318,12 @@ func (m *RecordingSetupModel) SaveAllPresets() error {
 
 	// Save logo selection
 	cfg.LastUsedLogos = m.GetLogoSelection()
+
+	// Save presenter name for next recording
+	presenter := m.form.GetPresenter()
+	if presenter != "" {
+		cfg.DefaultPresenter = presenter
+	}
 
 	return config.Save(cfg)
 }

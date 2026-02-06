@@ -23,6 +23,7 @@ const (
 	stateReady appState = iota
 	stateCountdown
 	stateRecording
+	stateRoomNoise  // Capturing room noise after recording stops
 	stateProcessing
 )
 
@@ -61,6 +62,8 @@ type blinkMsg struct{}
 type countdownTickMsg struct{}
 type pauseCompleteMsg struct{ err error }
 type resumeCompleteMsg struct{ err error }
+type roomNoiseTickMsg struct{}
+type roomNoiseCompleteMsg struct{ err error }
 
 // Model is the main TUI model
 type Model struct {

@@ -13,9 +13,9 @@ func TestDefaultConfig(t *testing.T) {
 		t.Error("expected OutputDir to be set")
 	}
 
-	// Check audio processing defaults
-	if cfg.AudioProcessing.TargetLoudness != -14.0 {
-		t.Errorf("expected TargetLoudness to be -14.0, got %f", cfg.AudioProcessing.TargetLoudness)
+	// Check audio processing defaults (EBU R128 podcast standard)
+	if cfg.AudioProcessing.TargetLoudness != -18.0 {
+		t.Errorf("expected TargetLoudness to be -18.0, got %f", cfg.AudioProcessing.TargetLoudness)
 	}
 
 	if cfg.AudioProcessing.TruePeak != -1.5 {

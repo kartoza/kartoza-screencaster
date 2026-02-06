@@ -2,46 +2,71 @@
 
 <div class="hero" markdown>
 # Kartoza Screencaster
-**A beautiful terminal-based screen recording application with professional video processing and YouTube integration.**
+**Create professional screen recordings with ease. Capture, process, and share your content in minutes.**
 </div>
 
-Welcome to the official documentation for **Kartoza Screencaster** - a powerful, elegant TUI (Terminal User Interface) application designed for creating professional screen recordings, processing videos with logos and effects, and seamlessly uploading to YouTube.
+## Why Kartoza Screencaster?
 
-## Features at a Glance
+Kartoza Screencaster is a powerful, elegant TUI (Terminal User Interface) application designed for professionals who want to create high-quality screen recordings without the complexity of traditional video editing software. Whether you're creating tutorials, demos, or YouTube content, we've got you covered.
+
+<div class="stats-grid" markdown>
+<div class="stat-card">
+<div class="stat-number">4K</div>
+<div class="stat-label">Resolution Support</div>
+</div>
+<div class="stat-card">
+<div class="stat-number">H.264</div>
+<div class="stat-label">High Quality Codec</div>
+</div>
+<div class="stat-card">
+<div class="stat-number">1-Click</div>
+<div class="stat-label">YouTube Upload</div>
+</div>
+<div class="stat-card">
+<div class="stat-number">9:16</div>
+<div class="stat-label">Vertical Video</div>
+</div>
+</div>
+
+---
+
+## Core Features
 
 <div class="feature-grid" markdown>
 
 <div class="feature-card" markdown>
 ### Screen Recording
-Capture any monitor with high-quality video encoding using FFmpeg. Support for multiple monitors and custom resolutions.
+Capture any monitor with high-quality video encoding using FFmpeg. Support for multiple monitors, custom resolutions, and hardware acceleration.
 </div>
 
 <div class="feature-card" markdown>
-### Audio Recording
-Simultaneous audio capture from your microphone with automatic normalization and noise reduction.
+### Professional Audio
+Simultaneous audio capture from your microphone with automatic EBU R128 loudness normalization, noise reduction, compression, and de-essing via Jivetalking.
 </div>
 
 <div class="feature-card" markdown>
 ### Webcam Overlay
-Include your webcam feed as a picture-in-picture overlay in your recordings.
+Include your webcam feed as a picture-in-picture overlay. Choose from corner positions or circular overlay styles for a professional look.
 </div>
 
 <div class="feature-card" markdown>
-### Logo Overlays
-Add professional branding with customizable logo positions - left, right, and bottom corners with animated GIF support.
+### Logo Branding
+Add professional branding with customizable logo positions - corners, edges, and more. Full support for animated GIFs and transparent PNGs.
 </div>
 
 <div class="feature-card" markdown>
 ### Vertical Video
-Automatic conversion to vertical format (9:16) perfect for YouTube Shorts, TikTok, and Instagram Reels.
+Automatic conversion to vertical format (9:16) perfect for YouTube Shorts, TikTok, and Instagram Reels. Split-screen and full-screen modes available.
 </div>
 
 <div class="feature-card" markdown>
 ### YouTube Integration
-Direct upload to YouTube with playlist management, privacy controls, and automatic metadata.
+Direct upload to YouTube with playlist management, privacy controls, metadata editing, and automatic thumbnail generation.
 </div>
 
 </div>
+
+---
 
 ## Quick Preview
 
@@ -69,58 +94,144 @@ Here's what the main menu looks like:
 </div>
 </div>
 
-## Getting Started
+---
 
-1. **[Installation](getting-started/installation.md)** - Install Kartoza Screencaster on your system
-2. **[Quick Start](getting-started/quickstart.md)** - Create your first recording in minutes
+## Get Started in 3 Steps
 
-## User Guide
+<div class="workflow-step">
+<div class="workflow-step-number">1</div>
+<div>
+<strong>Install</strong><br>
+Get Kartoza Screencaster up and running on your system in minutes. Available for Linux, macOS, and Windows.
+</div>
+</div>
 
-Learn about each screen in the application:
+<div class="workflow-step">
+<div class="workflow-step-number">2</div>
+<div>
+<strong>Configure</strong><br>
+Set up your recording preferences - choose your monitor, audio device, webcam position, and branding logos.
+</div>
+</div>
 
-- **[Main Menu](screens/main-menu.md)** - Navigate the application
-- **[Recording Setup](screens/recording-setup.md)** - Configure your recording
-- **[Countdown](screens/countdown.md)** - Prepare for recording
-- **[Recording](screens/recording.md)** - Manage active recordings
-- **[Processing](screens/processing.md)** - Post-processing steps
-- **[History](screens/history.md)** - Browse past recordings
-- **[Options](screens/options.md)** - Application settings
-- **[YouTube Setup](screens/youtube-setup.md)** - Connect to YouTube
-- **[YouTube Upload](screens/youtube-upload.md)** - Upload your videos
+<div class="workflow-step">
+<div class="workflow-step-number">3</div>
+<div>
+<strong>Record & Share</strong><br>
+Hit record, capture your content, and upload directly to YouTube - all from one elegant interface.
+</div>
+</div>
 
-## Workflows
-
-Step-by-step guides for common tasks:
-
-- **[Recording a Video](workflows/recording-workflow.md)** - Complete recording workflow
-- **[Uploading to YouTube](workflows/youtube-workflow.md)** - YouTube upload process
-
-## Developer Guide
-
-For contributors and developers:
-
-- **[Architecture](developer/architecture.md)** - System design and architecture
-- **[Development Setup](developer/setup.md)** - Set up your development environment
-- **[Libraries](developer/libraries.md)** - Third-party libraries used
-- **[Modules](developer/modules/index.md)** - Detailed module documentation
-- **[Design Decisions](developer/design-decisions.md)** - Why things are built the way they are
-
-## Requirements
-
-| Component | Requirement |
-|-----------|-------------|
-| **OS** | Linux (primary), macOS, Windows (experimental) |
-| **Go** | 1.21 or later |
-| **FFmpeg** | Required for all video operations |
-| **Audio** | PipeWire, PulseAudio, or ALSA |
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/kartoza/kartoza-screencaster/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/kartoza/kartoza-screencaster/discussions)
+[Get Started :material-arrow-right:](getting-started/installation.md){ .md-button .md-button--primary }
+[Quick Start Guide](getting-started/quickstart.md){ .md-button }
 
 ---
 
-<div style="text-align: center; margin-top: 2rem;">
-<p>Made with :orange_heart: by <a href="https://kartoza.com">Kartoza</a></p>
+## Documentation Guide
+
+### For Users
+
+<div class="quick-links" markdown>
+
+<a href="screens/main-menu.md" class="quick-link">
+<div class="quick-link-icon">:material-menu:</div>
+<div class="quick-link-title">Main Menu</div>
+<div class="quick-link-desc">Navigate the application</div>
+</a>
+
+<a href="screens/recording-setup.md" class="quick-link">
+<div class="quick-link-icon">:material-cog:</div>
+<div class="quick-link-title">Recording Setup</div>
+<div class="quick-link-desc">Configure your recording</div>
+</a>
+
+<a href="screens/recording.md" class="quick-link">
+<div class="quick-link-icon">:material-record-circle:</div>
+<div class="quick-link-title">Recording</div>
+<div class="quick-link-desc">Manage active recordings</div>
+</a>
+
+<a href="screens/history.md" class="quick-link">
+<div class="quick-link-icon">:material-history:</div>
+<div class="quick-link-title">History</div>
+<div class="quick-link-desc">Browse past recordings</div>
+</a>
+
+<a href="screens/options.md" class="quick-link">
+<div class="quick-link-icon">:material-tune:</div>
+<div class="quick-link-title">Options</div>
+<div class="quick-link-desc">Application settings</div>
+</a>
+
+<a href="screens/youtube-upload.md" class="quick-link">
+<div class="quick-link-icon">:material-youtube:</div>
+<div class="quick-link-title">YouTube Upload</div>
+<div class="quick-link-desc">Upload your videos</div>
+</a>
+
+</div>
+
+### Workflows
+
+Step-by-step guides for common tasks:
+
+- **[Recording a Video](workflows/recording-workflow.md)** - Complete recording workflow from setup to final output
+- **[Uploading to YouTube](workflows/youtube-workflow.md)** - YouTube upload process with playlist management
+
+### For Developers
+
+<div class="quick-links" markdown>
+
+<a href="developer/architecture.md" class="quick-link">
+<div class="quick-link-icon">:material-chart-tree:</div>
+<div class="quick-link-title">Architecture</div>
+<div class="quick-link-desc">System design overview</div>
+</a>
+
+<a href="developer/setup.md" class="quick-link">
+<div class="quick-link-icon">:material-code-braces:</div>
+<div class="quick-link-title">Dev Setup</div>
+<div class="quick-link-desc">Development environment</div>
+</a>
+
+<a href="developer/libraries.md" class="quick-link">
+<div class="quick-link-icon">:material-package-variant:</div>
+<div class="quick-link-title">Libraries</div>
+<div class="quick-link-desc">Third-party dependencies</div>
+</a>
+
+<a href="developer/modules/index.md" class="quick-link">
+<div class="quick-link-icon">:material-puzzle:</div>
+<div class="quick-link-title">Modules</div>
+<div class="quick-link-desc">Package documentation</div>
+</a>
+
+</div>
+
+---
+
+## System Requirements
+
+| Component | Requirement |
+|-----------|-------------|
+| **Operating System** | Linux (primary), macOS, Windows (experimental) |
+| **Go** | 1.21 or later |
+| **FFmpeg** | Required for all video operations |
+| **Audio** | PipeWire, PulseAudio, or ALSA |
+| **Optional** | Jivetalking for professional audio processing |
+
+---
+
+## Support & Community
+
+Have questions or need help? We're here for you!
+
+- **Issues**: Report bugs on [GitHub Issues](https://github.com/kartoza/kartoza-screencaster/issues)
+- **Discussions**: Join the conversation on [GitHub Discussions](https://github.com/kartoza/kartoza-screencaster/discussions)
+- **Source Code**: Contribute on [GitHub](https://github.com/kartoza/kartoza-screencaster)
+
+---
+
+<div style="text-align: center; margin-top: 3rem; padding: 2rem 0;">
+<p style="font-size: 1.1rem; color: var(--ksc-gray-600);">Made with :orange_heart: by <a href="https://kartoza.com" style="color: var(--ksc-orange-500); font-weight: 600;">Kartoza</a></p>
 </div>

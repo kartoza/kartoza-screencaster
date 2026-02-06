@@ -11,16 +11,16 @@ theme:
     # Light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep orange
-      accent: orange
+      primary: custom
+      accent: cyan
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     # Dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep orange
-      accent: orange
+      primary: custom
+      accent: cyan
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -107,7 +107,7 @@ markdown_extensions:
 plugins:
   - search
   - minify:
-      minify_html: true
+      minify_html: false
 
 nav:
   - Home: index.md

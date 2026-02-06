@@ -34,6 +34,7 @@ const (
 	FormFieldRecordScreen
 	FormFieldMonitor
 	FormFieldVerticalVideo
+	FormFieldLeftSplit
 	FormFieldAddLogos
 	FormFieldLeftLogo
 	FormFieldRightLogo
@@ -81,6 +82,7 @@ type RecordingFormState struct {
 	RecordWebcam  bool
 	RecordScreen  bool
 	VerticalVideo bool
+	LeftSplit     bool // Use left half of screen for vertical video
 	AddLogos      bool
 
 	// Logo selection
@@ -168,6 +170,7 @@ func NewRecordingFormState(mode RecordingFormMode) *RecordingFormState {
 		state.RecordWebcam = presets.RecordWebcam
 		state.RecordScreen = presets.RecordScreen
 		state.VerticalVideo = presets.VerticalVideo
+		state.LeftSplit = presets.LeftSplit
 		state.AddLogos = presets.AddLogos
 	}
 
@@ -206,15 +209,49 @@ func (f *RecordingForm) SetSize(width, height int) {
 	f.height = height
 
 	// Calculate viewport height (leave room for scroll indicators)
-	// The form is rendered inside a container, so we use a fixed content width
 	viewportHeight := height
 	if viewportHeight < 10 {
 		viewportHeight = 10
 	}
 
-	f.viewport.Width = 72  // Form container width + some padding
+	f.viewport.Width = f.containerWidth()
 	f.viewport.Height = viewportHeight
 	f.ready = true
+
+	// Update text input widths to be responsive
+	inputWidth := f.internalWidth() - 20 // Leave room for labels
+	if inputWidth < 30 {
+		inputWidth = 30
+	}
+	if inputWidth > 80 {
+		inputWidth = 80
+	}
+	f.State.TitleInput.Width = inputWidth
+	f.State.NumberInput.Width = inputWidth / 2
+	f.State.PresenterInput.Width = inputWidth
+	f.State.DescInput.SetWidth(inputWidth)
+}
+
+// containerWidth returns the calculated container width based on terminal width
+func (f *RecordingForm) containerWidth() int {
+	containerWidth := f.width - 4
+	// Allow wider forms on larger terminals (max 120 for readability)
+	if containerWidth > 120 {
+		containerWidth = 120
+	}
+	if containerWidth < 60 {
+		containerWidth = 60
+	}
+	return containerWidth
+}
+
+// internalWidth returns the internal content width (container minus padding/borders)
+func (f *RecordingForm) internalWidth() int {
+	iw := f.containerWidth() - 8
+	if iw < 50 {
+		iw = 50
+	}
+	return iw
 }
 
 // Focus focuses the title input
@@ -238,6 +275,15 @@ func (f *RecordingForm) Update(msg tea.Msg) (*RecordingForm, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		// Handle window resize - update form dimensions
+		contentHeight := msg.Height - 8
+		if contentHeight < 10 {
+			contentHeight = 10
+		}
+		f.SetSize(msg.Width, contentHeight)
+		return f, nil
+
 	case tea.KeyMsg:
 		// Handle input mode (when typing in a text field)
 		if f.State.InputMode {
@@ -399,6 +445,12 @@ func (f *RecordingForm) nextFieldEditMode() {
 		case FormFieldMonitor:
 			f.State.FocusedField = FormFieldVerticalVideo
 		case FormFieldVerticalVideo:
+			if f.State.VerticalVideo {
+				f.State.FocusedField = FormFieldLeftSplit
+			} else {
+				f.State.FocusedField = FormFieldAddLogos
+			}
+		case FormFieldLeftSplit:
 			f.State.FocusedField = FormFieldAddLogos
 		case FormFieldAddLogos:
 			if f.State.AddLogos {
@@ -441,6 +493,8 @@ func (f *RecordingForm) nextFieldNewMode() {
 		case FormFieldNumber:
 			f.State.FocusedField = FormFieldTopic
 		case FormFieldTopic:
+			f.State.FocusedField = FormFieldPresenter
+		case FormFieldPresenter:
 			f.State.FocusedField = FormFieldRecordAudio
 		case FormFieldRecordAudio:
 			f.State.FocusedField = FormFieldRecordWebcam
@@ -455,6 +509,12 @@ func (f *RecordingForm) nextFieldNewMode() {
 		case FormFieldMonitor:
 			f.State.FocusedField = FormFieldVerticalVideo
 		case FormFieldVerticalVideo:
+			if f.State.VerticalVideo {
+				f.State.FocusedField = FormFieldLeftSplit
+			} else {
+				f.State.FocusedField = FormFieldAddLogos
+			}
+		case FormFieldLeftSplit:
 			f.State.FocusedField = FormFieldAddLogos
 		case FormFieldAddLogos:
 			if f.State.AddLogos {
@@ -524,8 +584,14 @@ func (f *RecordingForm) prevFieldEditMode() {
 			} else {
 				f.State.FocusedField = FormFieldRecordScreen
 			}
-		case FormFieldAddLogos:
+		case FormFieldLeftSplit:
 			f.State.FocusedField = FormFieldVerticalVideo
+		case FormFieldAddLogos:
+			if f.State.VerticalVideo {
+				f.State.FocusedField = FormFieldLeftSplit
+			} else {
+				f.State.FocusedField = FormFieldVerticalVideo
+			}
 		case FormFieldLeftLogo:
 			f.State.FocusedField = FormFieldAddLogos
 		case FormFieldRightLogo:
@@ -565,8 +631,10 @@ func (f *RecordingForm) prevFieldNewMode() {
 			f.State.FocusedField = FormFieldTitle
 		case FormFieldTopic:
 			f.State.FocusedField = FormFieldNumber
-		case FormFieldRecordAudio:
+		case FormFieldPresenter:
 			f.State.FocusedField = FormFieldTopic
+		case FormFieldRecordAudio:
+			f.State.FocusedField = FormFieldPresenter
 		case FormFieldRecordWebcam:
 			f.State.FocusedField = FormFieldRecordAudio
 		case FormFieldRecordScreen:
@@ -579,8 +647,14 @@ func (f *RecordingForm) prevFieldNewMode() {
 			} else {
 				f.State.FocusedField = FormFieldRecordScreen
 			}
-		case FormFieldAddLogos:
+		case FormFieldLeftSplit:
 			f.State.FocusedField = FormFieldVerticalVideo
+		case FormFieldAddLogos:
+			if f.State.VerticalVideo {
+				f.State.FocusedField = FormFieldLeftSplit
+			} else {
+				f.State.FocusedField = FormFieldVerticalVideo
+			}
 		case FormFieldLeftLogo:
 			f.State.FocusedField = FormFieldAddLogos
 		case FormFieldRightLogo:
@@ -621,6 +695,9 @@ func (f *RecordingForm) shouldSkipField(field RecordingFormField) bool {
 	case FormFieldMonitor:
 		// Only show monitor if recording screen and monitors available
 		return !f.State.RecordScreen || len(f.Config.Monitors) == 0
+	case FormFieldLeftSplit:
+		// Only show left split if vertical video is enabled
+		return !f.State.VerticalVideo
 	case FormFieldLeftLogo, FormFieldRightLogo, FormFieldBottomLogo, FormFieldTitleColor:
 		// Only show logo fields if logos enabled
 		return !f.State.AddLogos
@@ -662,6 +739,8 @@ func (f *RecordingForm) handleLeftRight(dir int) {
 		if f.canEnableVerticalVideo() {
 			f.State.VerticalVideo = !f.State.VerticalVideo
 		}
+	case FormFieldLeftSplit:
+		f.State.LeftSplit = !f.State.LeftSplit
 	case FormFieldAddLogos:
 		f.State.AddLogos = !f.State.AddLogos
 	case FormFieldLeftLogo:
@@ -761,12 +840,25 @@ func (f *RecordingForm) isBottomLogoGif() bool {
 
 // View renders the form
 func (f *RecordingForm) View() string {
-	// Container style
+	// Calculate available content height (subtract borders and padding)
+	// Border adds 2 lines (top + bottom), padding adds 2 lines (top + bottom)
+	borderPadding := 4
+	contentHeight := f.height - borderPadding
+	if contentHeight < 20 {
+		contentHeight = 20 // Minimum height
+	}
+
+	// Get responsive widths
+	containerWidth := f.containerWidth()
+	internalWidth := f.internalWidth()
+
+	// Container style - responsive to terminal size
 	containerStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ColorOrange).
 		Padding(1, 3).
-		Width(70)
+		Width(containerWidth).
+		Height(contentHeight)
 
 	// Styles
 	labelStyle := lipgloss.NewStyle().
@@ -782,6 +874,9 @@ func (f *RecordingForm) View() string {
 
 	dividerStyle := lipgloss.NewStyle().
 		Foreground(ColorGray)
+
+	// Centered row style for headers and dividers
+	centeredRowStyle := lipgloss.NewStyle().Align(lipgloss.Center).Width(internalWidth)
 
 	sectionStyle := lipgloss.NewStyle().
 		Foreground(ColorBlue).
@@ -801,23 +896,23 @@ func (f *RecordingForm) View() string {
 	if f.Config.Mode == FormModeEditExisting && (f.Config.FolderName != "" || f.Config.Date != "" || f.Config.Duration != "") {
 		// Recording Info section header
 		infoHeader := sectionStyle.Render("📋 Recording Info")
-		infoRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(62).Render(infoHeader)
+		infoRow := centeredRowStyle.Render(infoHeader)
 		rows = append(rows, infoRow)
 		rows = append(rows, "")
 
 		// Show folder, date, and duration on a single line
 		infoLine := fmt.Sprintf("%s  •  %s  •  %s", f.Config.FolderName, f.Config.Date, f.Config.Duration)
-		infoLineRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(62).Render(infoStyle.Render(infoLine))
+		infoLineRow := centeredRowStyle.Render(infoStyle.Render(infoLine))
 		rows = append(rows, infoLineRow)
 
 		rows = append(rows, "")
-		rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
+		rows = append(rows, dividerStyle.Render(strings.Repeat("─", internalWidth)))
 		rows = append(rows, "")
 	}
 
 	// Metadata section header
 	metadataHeader := sectionStyle.Render("📝 Metadata")
-	metadataRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(62).Render(metadataHeader)
+	metadataRow := centeredRowStyle.Render(metadataHeader)
 	rows = append(rows, metadataRow)
 	rows = append(rows, "")
 
@@ -913,11 +1008,11 @@ func (f *RecordingForm) View() string {
 
 	// Recording Sources section
 	rows = append(rows, "")
-	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
+	rows = append(rows, dividerStyle.Render(strings.Repeat("─", internalWidth)))
 	rows = append(rows, "")
 
 	sourcesHeader := sectionStyle.Render("🎬 Recording Sources")
-	sourcesRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(62).Render(sourcesHeader)
+	sourcesRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(internalWidth).Render(sourcesHeader)
 	rows = append(rows, sourcesRow)
 	rows = append(rows, "")
 
@@ -973,11 +1068,11 @@ func (f *RecordingForm) View() string {
 
 	// Output Options section
 	rows = append(rows, "")
-	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
+	rows = append(rows, dividerStyle.Render(strings.Repeat("─", internalWidth)))
 	rows = append(rows, "")
 
 	outputHeader := sectionStyle.Render("📤 Output Options")
-	outputRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(62).Render(outputHeader)
+	outputRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(internalWidth).Render(outputHeader)
 	rows = append(rows, outputRow)
 	rows = append(rows, "")
 
@@ -993,6 +1088,20 @@ func (f *RecordingForm) View() string {
 		"  ",
 		f.renderToggleWithDisabled(f.State.VerticalVideo, f.State.FocusedField == FormFieldVerticalVideo, verticalDisabled),
 	))
+
+	// Left Split toggle (only shown when vertical video is enabled)
+	if f.State.VerticalVideo {
+		f.fieldLinePositions[FormFieldLeftSplit] = len(rows)
+		leftSplitLabel := labelStyle.Render("Left Split:")
+		if f.State.FocusedField == FormFieldLeftSplit {
+			leftSplitLabel = focusedLabelStyle.Render("Left Split:")
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+			leftSplitLabel,
+			"  ",
+			f.renderToggle(f.State.LeftSplit, f.State.FocusedField == FormFieldLeftSplit),
+		))
+	}
 
 	// Add Logos toggle
 	f.fieldLinePositions[FormFieldAddLogos] = len(rows)
@@ -1071,7 +1180,7 @@ func (f *RecordingForm) View() string {
 
 	// Description section
 	rows = append(rows, "")
-	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
+	rows = append(rows, dividerStyle.Render(strings.Repeat("─", internalWidth)))
 	rows = append(rows, "")
 
 	f.fieldLinePositions[FormFieldDescription] = len(rows)
@@ -1084,11 +1193,11 @@ func (f *RecordingForm) View() string {
 		}
 	}
 	descHeader := descHeaderStyle.Render(descHeaderText)
-	descHeaderRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(62).Render(descHeader)
+	descHeaderRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(internalWidth).Render(descHeader)
 	rows = append(rows, descHeaderRow)
 	rows = append(rows, "")
 
-	descRow := lipgloss.NewStyle().Width(62).Align(lipgloss.Center).Render(f.State.DescInput.View())
+	descRow := lipgloss.NewStyle().Width(internalWidth).Align(lipgloss.Center).Render(f.State.DescInput.View())
 	rows = append(rows, descRow)
 
 	// Description spell check warnings
@@ -1107,7 +1216,7 @@ func (f *RecordingForm) View() string {
 			}
 			descWarningStyle := lipgloss.NewStyle().
 				Foreground(ColorOrange).
-				Width(62).
+				Width(internalWidth).
 				Align(lipgloss.Center)
 			rows = append(rows, descWarningStyle.Render("⚠ "+descWarning))
 		}
@@ -1119,7 +1228,7 @@ func (f *RecordingForm) View() string {
 			Foreground(ColorRed).
 			Bold(true).
 			Align(lipgloss.Center).
-			Width(62)
+			Width(internalWidth)
 		rows = append(rows, "")
 		rows = append(rows, errorStyle.Render("Error: "+f.State.ErrorMsg))
 	}
@@ -1129,7 +1238,7 @@ func (f *RecordingForm) View() string {
 			Foreground(ColorGreen).
 			Bold(true).
 			Align(lipgloss.Center).
-			Width(62)
+			Width(internalWidth)
 		rows = append(rows, "")
 		rows = append(rows, successStyle.Render(f.State.SuccessMsg))
 	}
@@ -1139,7 +1248,7 @@ func (f *RecordingForm) View() string {
 			Foreground(ColorOrange).
 			Bold(true).
 			Align(lipgloss.Center).
-			Width(62)
+			Width(internalWidth)
 		rows = append(rows, "")
 		rows = append(rows, savingStyle.Render("Saving..."))
 	}
@@ -1154,51 +1263,56 @@ func (f *RecordingForm) View() string {
 	// Join all rows into form content
 	formContent := lipgloss.JoinVertical(lipgloss.Left, rows...)
 
-	// Wrap in container
-	content := containerStyle.Render(formContent)
+	// Check if scrolling is needed (based on form content, not bordered content)
+	formContentLines := strings.Split(formContent, "\n")
+	totalFormLines := len(formContentLines)
 
-	// If viewport is ready and content is tall, use scrolling
-	if f.ready && f.height > 0 {
-		contentLines := strings.Split(content, "\n")
-		totalLines := len(contentLines)
-
-		// Check if scrolling is needed
-		if totalLines > f.viewport.Height {
-			f.viewport.SetContent(content)
-
-			// Build output with scroll indicators
-			var output strings.Builder
-
-			// Scroll up indicator
-			if f.viewport.YOffset > 0 {
-				scrollUpStyle := lipgloss.NewStyle().
-					Foreground(ColorOrange).
-					Bold(true).
-					Width(72).
-					Align(lipgloss.Center)
-				output.WriteString(scrollUpStyle.Render("▲ more above (pgup/ctrl+u)"))
-				output.WriteString("\n")
-			}
-
-			// Viewport content
-			output.WriteString(f.viewport.View())
-
-			// Scroll down indicator
-			if f.viewport.YOffset < totalLines-f.viewport.Height {
-				scrollDownStyle := lipgloss.NewStyle().
-					Foreground(ColorOrange).
-					Bold(true).
-					Width(72).
-					Align(lipgloss.Center)
-				output.WriteString("\n")
-				output.WriteString(scrollDownStyle.Render("▼ more below (pgdn/ctrl+d)"))
-			}
-
-			return output.String()
-		}
+	// Calculate available lines inside the container (subtract border and padding)
+	availableLines := contentHeight - 4 // 2 for border, 2 for padding
+	if availableLines < 10 {
+		availableLines = 10
 	}
 
-	return content
+	// If content is taller than available space, use viewport for scrolling
+	if f.ready && f.height > 0 && totalFormLines > availableLines {
+		f.viewport.Width = internalWidth
+		f.viewport.Height = availableLines
+		f.viewport.SetContent(formContent)
+
+		// Build scrollable content
+		var scrollContent strings.Builder
+
+		// Scroll up indicator
+		if f.viewport.YOffset > 0 {
+			scrollUpStyle := lipgloss.NewStyle().
+				Foreground(ColorOrange).
+				Bold(true).
+				Width(internalWidth).
+				Align(lipgloss.Center)
+			scrollContent.WriteString(scrollUpStyle.Render("▲ more above (pgup/ctrl+u)"))
+			scrollContent.WriteString("\n")
+		}
+
+		// Viewport content
+		scrollContent.WriteString(f.viewport.View())
+
+		// Scroll down indicator
+		if f.viewport.YOffset < totalFormLines-availableLines {
+			scrollDownStyle := lipgloss.NewStyle().
+				Foreground(ColorOrange).
+				Bold(true).
+				Width(internalWidth).
+				Align(lipgloss.Center)
+			scrollContent.WriteString("\n")
+			scrollContent.WriteString(scrollDownStyle.Render("▼ more below (pgdn/ctrl+d)"))
+		}
+
+		// Wrap scrollable content in container with border
+		return containerStyle.Render(scrollContent.String())
+	}
+
+	// No scrolling needed - just wrap in container
+	return containerStyle.Render(formContent)
 }
 
 func (f *RecordingForm) renderToggle(value bool, focused bool) string {
@@ -1394,7 +1508,7 @@ func (f *RecordingForm) renderConfirmButtons() string {
 	}
 
 	buttons := fmt.Sprintf("%s    %s", goLive, cancel)
-	buttonRow := lipgloss.NewStyle().Width(62).Align(lipgloss.Center).Render(buttons)
+	buttonRow := lipgloss.NewStyle().Width(f.internalWidth()).Align(lipgloss.Center).Render(buttons)
 
 	// Show validation warnings
 	var warnings []string
@@ -1410,7 +1524,7 @@ func (f *RecordingForm) renderConfirmButtons() string {
 			Foreground(ColorRed).
 			Italic(true).
 			Align(lipgloss.Center).
-			Width(62)
+			Width(f.internalWidth())
 		warningText := warningStyle.Render(strings.Join(warnings, " • "))
 		return lipgloss.JoinVertical(lipgloss.Center, buttonRow, warningText)
 	}

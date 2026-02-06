@@ -38,6 +38,7 @@ const (
 	OptionsFieldPresetRecordWebcam
 	OptionsFieldPresetRecordScreen
 	OptionsFieldPresetVerticalVideo
+	OptionsFieldPresetLeftSplit
 	OptionsFieldPresetAddLogos
 	OptionsFieldSave
 )
@@ -102,6 +103,7 @@ type OptionsModel struct {
 	presetRecordWebcam  bool
 	presetRecordScreen  bool
 	presetVerticalVideo bool
+	presetLeftSplit     bool
 	presetAddLogos      bool
 
 	// State
@@ -190,6 +192,7 @@ func NewOptionsModel() *OptionsModel {
 		presetRecordWebcam:  presets.RecordWebcam,
 		presetRecordScreen:  presets.RecordScreen,
 		presetVerticalVideo: presets.VerticalVideo,
+		presetLeftSplit:     presets.LeftSplit,
 		presetAddLogos:      presets.AddLogos,
 	}
 }
@@ -402,6 +405,12 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 					m.presetVerticalVideo = !m.presetVerticalVideo
 				}
 				return m, nil
+			case OptionsFieldPresetLeftSplit:
+				// Only allow if vertical video is enabled
+				if m.presetVerticalVideo {
+					m.presetLeftSplit = !m.presetLeftSplit
+				}
+				return m, nil
 			case OptionsFieldPresetAddLogos:
 				m.presetAddLogos = !m.presetAddLogos
 				return m, nil
@@ -555,6 +564,7 @@ func (m *OptionsModel) save() {
 		RecordWebcam:  m.presetRecordWebcam,
 		RecordScreen:  m.presetRecordScreen,
 		VerticalVideo: m.presetVerticalVideo,
+		LeftSplit:     m.presetLeftSplit,
 		AddLogos:      m.presetAddLogos,
 	}
 	m.config.PresetsConfigured = true
@@ -817,6 +827,14 @@ func (m *OptionsModel) View() string {
 	verticalPresetRow := lipgloss.JoinHorizontal(lipgloss.Center,
 		verticalPresetLabel, m.renderPresetToggleWithDisabled(m.presetVerticalVideo, m.focusedField == OptionsFieldPresetVerticalVideo, verticalDisabled))
 
+	leftSplitDisabled := !m.presetVerticalVideo
+	leftSplitPresetLabel := labelStyle.Render("Left Split: ")
+	if m.focusedField == OptionsFieldPresetLeftSplit {
+		leftSplitPresetLabel = labelActiveStyle.Render("Left Split: ")
+	}
+	leftSplitPresetRow := lipgloss.JoinHorizontal(lipgloss.Center,
+		leftSplitPresetLabel, m.renderPresetToggleWithDisabled(m.presetLeftSplit, m.focusedField == OptionsFieldPresetLeftSplit, leftSplitDisabled))
+
 	logosPresetLabel := labelStyle.Render("Logos: ")
 	if m.focusedField == OptionsFieldPresetAddLogos {
 		logosPresetLabel = labelActiveStyle.Render("Logos: ")
@@ -872,6 +890,7 @@ func (m *OptionsModel) View() string {
 		webcamPresetRow,
 		screenPresetRow,
 		verticalPresetRow,
+		leftSplitPresetRow,
 		logosPresetRow,
 		"",
 		saveRow,

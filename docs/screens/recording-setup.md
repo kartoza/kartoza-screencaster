@@ -159,15 +159,103 @@ Captures the selected monitor.
 
 <span class="t-gray">[○]</span> **Vertical Video**
 
-Generates an additional vertical (9:16) version of your recording.
+Generates an additional vertical (9:16) version of your recording, optimized for YouTube Shorts.
 
 | Setting | Result |
 |---------|--------|
-| Enabled | Creates `final_vertical.mp4` in output |
+| Enabled | Creates `-vertical.mp4` in output |
 | Disabled | Only horizontal video created |
 
+**Webcam Support:**
+
+- **With webcam**: Creates a stacked layout (screen + webcam + branding) or left-split layout with circular webcam overlay
+- **Without webcam**: Creates a screen-only vertical video with the screen filling the top portion and branding at the bottom (or left-split mode fills the entire frame)
+
 !!! tip "Social Media"
-    Enable this for YouTube Shorts, TikTok, Instagram Reels, or other vertical video platforms.
+    Enable this for YouTube Shorts, TikTok, Instagram Reels, or other vertical video platforms. Works with screen-only recordings too!
+
+---
+
+#### Left Split
+
+<span class="t-green">[✓]</span> **Left Split**
+
+*Only visible when "Vertical Video" is enabled*
+
+When enabled, the vertical video is rendered by cropping and scaling the left half of your screen recording to fill the entire 9:16 frame. This is ideal for presentations where your content is on the left side of the screen.
+
+| Setting | Result |
+|---------|--------|
+| Enabled (default) | Left half of screen fills the vertical frame |
+| Disabled | Traditional layout with screen on top, webcam in middle, branding at bottom |
+
+**Left Split Layout (with webcam):**
+
+```
+┌─────────────────┐
+│ [Left]  [Right] │  ← Logos in top corners
+│                 │
+│  Left half of   │
+│  screen video   │
+│  (fills 1080px  │
+│   width edge    │
+│   to edge)      │
+│           [cam] │  ← Circular webcam bottom-right
+├─────────────────┤
+│    [Banner]     │  ← Branding area (if video
+│                 │     doesn't fill full height)
+└─────────────────┘
+```
+
+**Left Split Layout (screen only, no webcam):**
+
+```
+┌─────────────────┐
+│ [Left]  [Right] │  ← Logos in top corners
+│                 │
+│  Left half of   │
+│  screen video   │
+│  (fills 1080px  │
+│   width edge    │
+│   to edge)      │
+├─────────────────┤
+│    [Banner]     │  ← Branding area (if video
+│                 │     doesn't fill full height)
+└─────────────────┘
+```
+
+The left half of your screen is scaled to fill the full 1080px width corner-to-corner. If the aspect ratio means the scaled video doesn't fill the full 1920px height, the remaining space is filled with the configured background color.
+
+**Traditional Layout (when disabled, with webcam):**
+
+```
+┌─────────────────┐
+│   Screen video  │
+│   (top third)   │
+├─────────────────┤
+│  Webcam video   │
+│ (middle third)  │
+├─────────────────┤
+│ [Left] [Right]  │
+│    [Banner]     │  ← Branding area
+│     Title       │
+└─────────────────┘
+```
+
+**Traditional Layout (when disabled, screen only):**
+
+```
+┌─────────────────┐
+│                 │
+│   Screen video  │
+│  (top 2/3rds)   │
+│                 │
+├─────────────────┤
+│ [Left] [Right]  │
+│    [Banner]     │  ← Branding area
+│     Title       │
+└─────────────────┘
+```
 
 ---
 

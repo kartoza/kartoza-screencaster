@@ -64,6 +64,9 @@ type Recorder struct {
 	createVertical bool
 	logoSelection  config.LogoSelection
 
+	// Room noise file for audio processing calibration
+	roomNoiseFile string
+
 	// Synchronization
 	startBarrier chan struct{}
 	stopSignal   chan struct{}
@@ -104,6 +107,13 @@ func (r *Recorder) SetRecordingInfo(info *models.RecordingInfo) {
 			}
 		}
 	}
+}
+
+// SetRoomNoiseFile sets the room noise file path for audio processing calibration
+func (r *Recorder) SetRoomNoiseFile(path string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.roomNoiseFile = path
 }
 
 // GetStatus returns the current recording status
@@ -947,7 +957,9 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		VideoFile:      videoFile,
 		AudioFile:      audioFile,
 		WebcamFile:     webcamFile,
+		RoomNoiseFile:  r.roomNoiseFile,
 		CreateVertical: r.createVertical && webcamFile != "",
+		LeftSplit:      r.recordingInfo != nil && r.recordingInfo.Settings.LeftSplitEnabled,
 	}
 	// Add part files if available (for pause/resume support)
 	if r.recordingInfo != nil && len(r.recordingInfo.Files.VideoParts) > 0 {
@@ -981,9 +993,10 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 	} else if r.config != nil && r.config.BgColor != "" {
 		mergeOpts.BgColor = r.config.BgColor
 	}
-	// Get video title and output directory from recording info
+	// Get video title, number, and output directory from recording info
 	if r.recordingInfo != nil {
 		mergeOpts.VideoTitle = r.recordingInfo.Metadata.Title
+		mergeOpts.VideoNumber = r.recordingInfo.Metadata.Number
 		mergeOpts.OutputDir = r.recordingInfo.Files.FolderPath
 	}
 
