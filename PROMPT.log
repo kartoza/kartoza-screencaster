@@ -1217,3 +1217,28 @@ the elapsed time in Processing Recording... never stops - it should end after th
 
 Add circular webcam overlay to merged video: Generate a circle whose height matches the webcam video height, fill it with the title text colour as alpha mask, apply to webcam video keeping pixels inside circle and making outside transparent, scale to 250x250px, overlay on merged recording bottom-right with 20px margin. Skip if webcam recording unchecked. Full duration visibility. Fold into merge step (no new processing step).
 - Implementation: Added buildWebcamCircleOverlay() helper using FFmpeg geq filter with format=yuva420p for circular alpha masking. Added webcamOverlayOpts struct and constants (250px size, 20px margin). Modified buildMergedOverlayFilter() to accept webcam overlay params and render after logo overlays. Modified mergeVideoAudio() and processVideoOnly() to detect webcam overlay availability, add webcam as FFmpeg input after logos, and pass overlay opts to the filter builder. The overlay only applies when both screen and webcam are recorded (not when webcam is the primary video). Updated recording-workflow.md docs.
+2026-01-29 11:41:03 - when we build packages the .desktop launcher should add the systray subcommand when the app launches so that it appears in the systray
+2026-02-05 09:57:30 - User request: I want you to add a new toggle in the rendering options 'Left split' when enabled it will render the vertical video by taking the desktop video and chopping it in half, rendering only the left side of the screen. This would fill the rendered vertical video and the webcam output, of present would be added to the bottom right as is done in the merged horizontal video. The horizontal logo would go at the bottom, full width and the left and right logos rendered into the top corners. This left split mode should be toggled on by default.
+2026-02-05 17:01:51 - Session: Build, test, and beautify docs theme
+- Built project successfully (go build ./...)
+- Fixed failing config test (TargetLoudness -14 -> -18 for EBU R128 standard)
+- Created comprehensive Chakra UI-inspired CSS theme with:
+  - Design tokens (colors, spacing, shadows, transitions)
+  - Beautiful hero section with gradient background and glow effects
+  - Feature cards with hover animations
+  - Terminal mockups with realistic buttons
+  - Workflow steps with numbered badges
+  - Stats grid for impressive numbers display
+  - Quick links navigation cards
+  - Dark mode support
+  - Responsive design
+  - Print improvements
+- Updated docs/index.md with:
+  - Stats grid showing key features (4K, H.264, 1-Click, 9:16)
+  - Clear 3-step getting started workflow
+  - Quick links for users and developers
+  - Better organized documentation guide
+  - Updated requirements table with Jivetalking mention
+[2026-02-12 12:30:58] I want to publish videos to youtube using the api but it is publishing to my personal brand account rather than my company brand account
+[2026-02-13 10:00:57] for qfield we need to prominently have a referral link https://app.qfield.cloud/accounts/signup/?fpr=tim39
+[2026-02-15 23:04:06] User: I think this module is not bringing through all the dependencies like wl-recorder etc into the system flake that uses it

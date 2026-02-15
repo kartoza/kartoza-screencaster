@@ -1,3 +1,24 @@
+kartoza-screencaster (0.7.6-1) unstable; urgency=medium
+
+  * Add room noise capture (30s) after recording for audio calibration
+  * Remember last used presenter name for new recordings
+  * Simplify audio processor to use ffmpeg directly (more reliable)
+  * Fix audio analysis step hanging with -nostdin flag
+  * Fix form responsiveness when terminal size changes
+  * Fix GIF animation rendering in vertical video
+  * Update documentation and theme to Kartoza blue
+
+ -- Tim Sutton <tim@kartoza.com>  Thu, 06 Feb 2026 01:00:00 +0200
+
+kartoza-screencaster (0.7.5-1) unstable; urgency=medium
+
+  * Add circular webcam overlay on merged video
+  * Fix logo overlay rendering
+  * Add background color as configurable option
+  * Fix processing elapsed timer
+
+ -- Tim Sutton <tim@kartoza.com>  Wed, 05 Feb 2026 12:00:00 +0200
+
 kartoza-screencaster (0.1.0-1) unstable; urgency=medium
 
   * Initial release.

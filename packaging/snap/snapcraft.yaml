@@ -1,5 +1,5 @@
 name: kartoza-screencaster
-version: '0.1.0'
+version: '0.7.6'
 summary: Screen recording tool for Wayland
 description: |
   A screen recording tool for Wayland compositors (Hyprland, Sway, etc.)

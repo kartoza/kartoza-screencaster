@@ -1,5 +1,5 @@
 Name:           kartoza-screencaster
-Version:        0.1.0
+Version:        0.7.6
 Release:        1%{?dist}
 Summary:        Screen recording tool for Wayland
 
@@ -46,5 +46,12 @@ install -D -m 0644 resources/icon_ready.svg %{buildroot}%{_datadir}/icons/hicolo
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Thu Feb 06 2026 Tim Sutton <tim@kartoza.com> - 0.7.6-1
+- Add room noise capture for audio calibration
+- Remember last used presenter name
+- Fix audio analysis hanging
+- Fix form responsiveness
+- Fix GIF animation in vertical video
+
 * Sat Jan 18 2026 Tim Sutton <tim@kartoza.com> - 0.1.0-1
 - Initial release

@@ -76,6 +76,18 @@
             };
           };
 
+        # Runtime dependencies for the application
+        runtimeDeps = with pkgs; [
+          # Core recording tools
+          wl-screenrec         # Wayland screen recording
+          ffmpeg               # Video/audio processing (includes ffprobe)
+          pipewire             # Audio recording (pw-record)
+
+          # Optional but recommended
+          libnotify            # Desktop notifications (notify-send)
+          pulseaudio           # Audio playback for countdown beeps (paplay)
+        ];
+
         # Native package with CGO enabled for systray support (Linux only)
         mkNativePackage = { pkgs }:
           pkgs.buildGoModule {
@@ -90,6 +102,7 @@
             # Required for systray (fyne.io/systray uses libayatana-appindicator)
             nativeBuildInputs = with pkgs; [
               pkg-config
+              makeWrapper
             ];
 
             buildInputs = with pkgs; [
@@ -130,6 +143,10 @@
               # Install icon to hicolor theme
               mkdir -p $out/share/icons/hicolor/scalable/apps
               cp ${./resources/icon_ready.svg} $out/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
+
+              # Wrap the binary with runtime dependencies in PATH
+              wrapProgram $out/bin/kartoza-screencaster \
+                --prefix PATH : ${pkgs.lib.makeBinPath runtimeDeps}
             '';
 
             meta = with pkgs.lib; {

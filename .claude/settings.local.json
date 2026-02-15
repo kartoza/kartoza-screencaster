@@ -14,7 +14,17 @@
       "Bash(mkdir:*)",
       "Bash(/home/timlinux/dev/go/kartoza-screencaster/PROMPT.log)",
       "Bash(git -C /home/timlinux/dev/go/kartoza-screencaster log --oneline --all --format=\"%h %ai %s\")",
-      "Bash(CGO_ENABLED=0 go build:*)"
+      "Bash(CGO_ENABLED=0 go build:*)",
+      "Bash(git -C /home/timlinux/dev/go/kartoza-screencaster tag v0.7.5)",
+      "Bash(git -C /home/timlinux/dev/go/kartoza-screencaster push origin v0.7.5)",
+      "Bash(git -C /home/timlinux/dev/go/kartoza-screencaster tag -a v0.7.5 -m \"$(cat <<''EOF''\nRelease v0.7.5\n\n- Add circular webcam overlay on merged video (250px, bottom-right, full duration)\n- Fix logo overlay rendering (leading semicolon in FFmpeg filter chain)\n- Fix logo persistence in history edit flow\n- Add background color as configurable option\n- Fix processing elapsed timer never stopping\n- Refactor recording forms to shared RecordingForm component\n- Improve options screen and systray recording defaults\nEOF\n)\")",
+      "Bash(go doc:*)",
+      "Bash(mkdocs build:*)",
+      "Bash(git submodule update:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(make release:*)",
+      "Bash(cat:*)",
+      "Bash(gh run list:*)"
     ],
     "deny": [],
     "ask": []
