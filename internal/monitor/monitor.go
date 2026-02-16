@@ -29,8 +29,99 @@ func ListMonitors() ([]models.Monitor, error) {
 	}
 }
 
-// listMonitorsWayland returns monitors using hyprctl (Wayland/Hyprland)
+// listMonitorsWayland returns monitors using compositor-specific tools
 func listMonitorsWayland() ([]models.Monitor, error) {
+	// Try niri first (if XDG_CURRENT_DESKTOP is niri)
+	if monitors, err := listMonitorsNiri(); err == nil {
+		return monitors, nil
+	}
+
+	// Try hyprctl (Hyprland)
+	if monitors, err := listMonitorsHyprland(); err == nil {
+		return monitors, nil
+	}
+
+	// Try swaymsg (Sway)
+	if monitors, err := listMonitorsSway(); err == nil {
+		return monitors, nil
+	}
+
+	// Fallback: return a single default monitor
+	// wl-screenrec will use the only display if there's one
+	return []models.Monitor{{
+		Name:    "",
+		Width:   1920,
+		Height:  1080,
+		X:       0,
+		Y:       0,
+		Focused: true,
+	}}, nil
+}
+
+// listMonitorsNiri returns monitors using niri msg
+func listMonitorsNiri() ([]models.Monitor, error) {
+	cmd := exec.Command("niri", "msg", "-j", "outputs")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run niri msg outputs: %w", err)
+	}
+
+	// niri outputs JSON format: {"eDP-1": {"name": "eDP-1", "logical": {"x": 0, "y": 0, "width": 1706, "height": 1066, ...}, ...}}
+	var niriOutputs map[string]struct {
+		Name    string `json:"name"`
+		Logical *struct {
+			X      int     `json:"x"`
+			Y      int     `json:"y"`
+			Width  int     `json:"width"`
+			Height int     `json:"height"`
+			Scale  float64 `json:"scale"`
+		} `json:"logical"`
+		Modes []struct {
+			Width     int  `json:"width"`
+			Height    int  `json:"height"`
+			Preferred bool `json:"is_preferred"`
+		} `json:"modes"`
+		CurrentMode int `json:"current_mode"`
+	}
+
+	if err := json.Unmarshal(output, &niriOutputs); err != nil {
+		return nil, fmt.Errorf("failed to parse niri outputs JSON: %w", err)
+	}
+
+	var monitors []models.Monitor
+	first := true
+	for name, out := range niriOutputs {
+		mon := models.Monitor{
+			Name:    name,
+			Focused: first, // Mark first monitor as focused (niri doesn't expose focus in outputs)
+		}
+
+		// Use logical dimensions if available (scaled)
+		if out.Logical != nil {
+			mon.X = out.Logical.X
+			mon.Y = out.Logical.Y
+			mon.Width = out.Logical.Width
+			mon.Height = out.Logical.Height
+		} else if len(out.Modes) > 0 && out.CurrentMode >= 0 && out.CurrentMode < len(out.Modes) {
+			// Fall back to current mode dimensions
+			mode := out.Modes[out.CurrentMode]
+			mon.Width = mode.Width
+			mon.Height = mode.Height
+		}
+
+		monitors = append(monitors, mon)
+		first = false
+	}
+
+	if len(monitors) == 0 {
+		return nil, fmt.Errorf("no monitors found via niri")
+	}
+
+	return monitors, nil
+}
+
+// listMonitorsHyprland returns monitors using hyprctl
+func listMonitorsHyprland() ([]models.Monitor, error) {
 	cmd := exec.Command("hyprctl", "monitors", "-j")
 	output, err := cmd.Output()
 	if err != nil {
@@ -40,6 +131,49 @@ func listMonitorsWayland() ([]models.Monitor, error) {
 	var monitors []models.Monitor
 	if err := json.Unmarshal(output, &monitors); err != nil {
 		return nil, fmt.Errorf("failed to parse monitors JSON: %w", err)
+	}
+
+	return monitors, nil
+}
+
+// listMonitorsSway returns monitors using swaymsg
+func listMonitorsSway() ([]models.Monitor, error) {
+	cmd := exec.Command("swaymsg", "-t", "get_outputs", "-r")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run swaymsg: %w", err)
+	}
+
+	// swaymsg output format is similar to hyprctl
+	var swayOutputs []struct {
+		Name    string `json:"name"`
+		Rect    struct {
+			X      int `json:"x"`
+			Y      int `json:"y"`
+			Width  int `json:"width"`
+			Height int `json:"height"`
+		} `json:"rect"`
+		Focused bool `json:"focused"`
+	}
+
+	if err := json.Unmarshal(output, &swayOutputs); err != nil {
+		return nil, fmt.Errorf("failed to parse sway outputs JSON: %w", err)
+	}
+
+	var monitors []models.Monitor
+	for _, out := range swayOutputs {
+		monitors = append(monitors, models.Monitor{
+			Name:    out.Name,
+			X:       out.Rect.X,
+			Y:       out.Rect.Y,
+			Width:   out.Rect.Width,
+			Height:  out.Rect.Height,
+			Focused: out.Focused,
+		})
+	}
+
+	if len(monitors) == 0 {
+		return nil, fmt.Errorf("no monitors found via sway")
 	}
 
 	return monitors, nil
@@ -107,8 +241,20 @@ func GetCursorPosition() (models.CursorPosition, error) {
 	}
 }
 
-// getCursorPositionWayland gets cursor position using hyprctl
+// getCursorPositionWayland gets cursor position using compositor-specific tools
 func getCursorPositionWayland() (models.CursorPosition, error) {
+	// Try hyprctl first (Hyprland)
+	if pos, err := getCursorPositionHyprland(); err == nil {
+		return pos, nil
+	}
+
+	// For niri and sway, cursor position isn't directly exposed
+	// Fall back to returning an error to use focused monitor instead
+	return models.CursorPosition{}, fmt.Errorf("cursor position not available")
+}
+
+// getCursorPositionHyprland gets cursor position using hyprctl
+func getCursorPositionHyprland() (models.CursorPosition, error) {
 	cmd := exec.Command("hyprctl", "cursorpos")
 	output, err := cmd.Output()
 	if err != nil {
@@ -180,6 +326,11 @@ func GetMouseMonitor() (string, error) {
 
 // GetFocusedMonitor returns the name of the currently focused monitor
 func GetFocusedMonitor() (string, error) {
+	// Try niri's focused-output first
+	if name, err := getFocusedMonitorNiri(); err == nil {
+		return name, nil
+	}
+
 	monitors, err := ListMonitors()
 	if err != nil {
 		return "", err
@@ -197,6 +348,29 @@ func GetFocusedMonitor() (string, error) {
 	}
 
 	return "", fmt.Errorf("no monitors found")
+}
+
+// getFocusedMonitorNiri gets focused monitor using niri msg
+func getFocusedMonitorNiri() (string, error) {
+	cmd := exec.Command("niri", "msg", "-j", "focused-output")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to run niri msg focused-output: %w", err)
+	}
+
+	var focusedOutput struct {
+		Name string `json:"name"`
+	}
+
+	if err := json.Unmarshal(output, &focusedOutput); err != nil {
+		return "", fmt.Errorf("failed to parse niri focused-output JSON: %w", err)
+	}
+
+	if focusedOutput.Name == "" {
+		return "", fmt.Errorf("no focused output name in niri response")
+	}
+
+	return focusedOutput.Name, nil
 }
 
 // GetMonitorByName returns the monitor with the given name

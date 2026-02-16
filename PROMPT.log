@@ -1242,3 +1242,5 @@ Add circular webcam overlay to merged video: Generate a circle whose height matc
 [2026-02-12 12:30:58] I want to publish videos to youtube using the api but it is publishing to my personal brand account rather than my company brand account
 [2026-02-13 10:00:57] for qfield we need to prominently have a referral link https://app.qfield.cloud/accounts/signup/?fpr=tim39
 [2026-02-15 23:04:06] User: I think this module is not bringing through all the dependencies like wl-recorder etc into the system flake that uses it
+[2026-02-16T11:23:30+00:00] something changed on my system and now when i try to start a recording it counts down and then simply returns to the menu without recording
+[2026-02-16T12:25:50+00:00] RELEASE
