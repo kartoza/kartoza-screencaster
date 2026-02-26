@@ -199,6 +199,60 @@ func (r *RecordingInfo) Save() error {
 	return os.WriteFile(infoPath, data, 0644)
 }
 
+// RenameFolder renames the recording folder to the format NNN-title_name
+// where NNN is the zero-padded sequence number and title_name is a sanitized version
+// of the recording title. Returns the new folder path or an error.
+func (r *RecordingInfo) RenameFolder() (string, error) {
+	if r.Files.FolderPath == "" {
+		return "", fmt.Errorf("no folder path set")
+	}
+
+	// Get the new folder name from metadata
+	r.Metadata.GenerateFolderName()
+	if r.Metadata.FolderName == "" {
+		return r.Files.FolderPath, nil // No name to change to
+	}
+
+	// Get parent directory
+	parentDir := filepath.Dir(r.Files.FolderPath)
+	newFolderPath := filepath.Join(parentDir, r.Metadata.FolderName)
+
+	// If the folder is already named correctly, just return
+	if r.Files.FolderPath == newFolderPath {
+		return r.Files.FolderPath, nil
+	}
+
+	// Check if target folder already exists
+	if _, err := os.Stat(newFolderPath); err == nil {
+		// Target exists, try adding a suffix
+		for i := 2; i <= 100; i++ {
+			altPath := fmt.Sprintf("%s_%d", newFolderPath, i)
+			if _, err := os.Stat(altPath); os.IsNotExist(err) {
+				newFolderPath = altPath
+				break
+			}
+		}
+	}
+
+	// Rename the folder
+	if err := os.Rename(r.Files.FolderPath, newFolderPath); err != nil {
+		return r.Files.FolderPath, fmt.Errorf("failed to rename folder: %w", err)
+	}
+
+	// Update all file paths to reflect the new folder location
+	r.fixFilePaths(newFolderPath)
+
+	// Update metadata folder name to match actual folder
+	r.Metadata.FolderName = filepath.Base(newFolderPath)
+
+	// Save updated info to the new location
+	if err := r.Save(); err != nil {
+		return newFolderPath, fmt.Errorf("folder renamed but failed to save metadata: %w", err)
+	}
+
+	return newFolderPath, nil
+}
+
 // LoadRecordingInfo loads recording info from a folder
 func LoadRecordingInfo(folderPath string) (*RecordingInfo, error) {
 	infoPath := filepath.Join(folderPath, "recording.json")

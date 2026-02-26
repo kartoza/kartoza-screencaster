@@ -13,12 +13,15 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"fyne.io/systray"
+	"github.com/kartoza/kartoza-screencaster/internal/audio"
 	"github.com/kartoza/kartoza-screencaster/internal/beep"
 	"github.com/kartoza/kartoza-screencaster/internal/config"
 	"github.com/kartoza/kartoza-screencaster/internal/models"
+	"github.com/kartoza/kartoza-screencaster/internal/monitor"
 	"github.com/kartoza/kartoza-screencaster/internal/recorder"
 )
 
@@ -42,6 +45,7 @@ const (
 	StatePaused
 	StateProcessing
 	StateCountdown
+	StateRoomNoise // Recording room noise for audio calibration
 )
 
 // RecordingInfo contains details about the current recording for tooltip display
@@ -81,9 +85,10 @@ type Manager struct {
 	rotatedReadyIcons [][]byte
 
 	// Icon rotation for processing state
-	rotationTicker *time.Ticker
-	stopRotation   chan struct{}
-	isRotating     bool
+	rotationTicker  *time.Ticker
+	stopRotation    chan struct{}
+	isRotating      bool
+	reverseRotation bool // Rotate backwards (for room noise state)
 
 	// Status polling
 	statusTicker *time.Ticker
@@ -210,8 +215,8 @@ func rotateImage(src image.Image, angle float64) image.Image {
 func (m *Manager) setIcon(state TrayState) {
 	m.currentState = state
 
-	// Stop any existing rotation
-	if m.isRotating && state != StateProcessing {
+	// Stop any existing rotation if changing to a non-rotating state
+	if m.isRotating && state != StateProcessing && state != StateRoomNoise {
 		m.stopIconRotation()
 	}
 
@@ -229,8 +234,13 @@ func (m *Manager) setIcon(state TrayState) {
 			systray.SetIcon(m.iconPaused)
 		}
 	case StateProcessing:
-		// Start spinning the ready icon
+		// Start spinning the ready icon forward
+		m.reverseRotation = false
 		m.startIconRotation()
+	case StateRoomNoise:
+		// Start spinning the ready icon in reverse at 2x speed
+		m.reverseRotation = true
+		m.startIconRotationWithSpeed(50 * time.Millisecond) // 2x speed (50ms vs 100ms)
 	}
 }
 
@@ -267,8 +277,9 @@ func (m *Manager) OnReady() {
 	systray.SetTooltip("Kartoza Video Processor - Click to start recording")
 
 	// Set up left-click handler with double-click detection
-	// Single click: start/stop recording
-	// Double click: pause/resume recording
+	// Single click while recording: pause/resume
+	// Double click while recording: stop recording
+	// Single click while idle: start recording
 	systray.SetOnTapped(func() {
 		now := time.Now()
 		isDoubleClick := now.Sub(m.lastClickTime) < 400*time.Millisecond
@@ -280,24 +291,29 @@ func (m *Manager) OnReady() {
 			return
 		}
 
+		// If recording room noise, reject all clicks
+		if m.currentState == StateRoomNoise {
+			return
+		}
+
 		status := m.recorder.GetStatus()
 
 		if isDoubleClick && (status.IsRecording || status.IsPaused) {
-			// Double-click while recording or paused: toggle pause
+			// Double-click while recording or paused: stop recording
+			select {
+			case m.stopChan <- struct{}{}:
+			default:
+			}
+		} else if status.IsRecording {
+			// Single click while recording: pause
 			select {
 			case m.pauseChan <- struct{}{}:
 			default:
 			}
-		} else if status.IsRecording {
-			// Single click while recording: stop and open TUI for metadata
-			select {
-			case m.stopChan <- struct{}{}:
-			default:
-			}
 		} else if status.IsPaused {
-			// Single click while paused: stop recording
+			// Single click while paused: resume
 			select {
-			case m.stopChan <- struct{}{}:
+			case m.pauseChan <- struct{}{}:
 			default:
 			}
 		} else {
@@ -528,6 +544,30 @@ func (m *Manager) SetProcessing() {
 	m.setIcon(StateProcessing)
 }
 
+// SetRoomNoise updates the tray to show room noise recording is in progress
+func (m *Manager) SetRoomNoise() {
+	// Update menu
+	m.mStartStop.SetTitle("Recording Room Noise...")
+	m.mStartStop.SetTooltip("Please keep quiet - recording room noise for audio calibration")
+	m.mStartStop.Disable()
+	m.mPause.Hide()
+
+	// Update status
+	m.mStatus.SetTitle("Recording Room Noise")
+
+	// Update tooltip with user instruction
+	systray.SetTooltip("🎤 Recording room noise - Please keep quiet!\nThis helps calibrate audio quality.")
+
+	// Set room noise state (reverse spinning icon at 2x speed)
+	m.setIcon(StateRoomNoise)
+}
+
+// ClearRoomNoise transitions from room noise state back to idle
+func (m *Manager) ClearRoomNoise() {
+	m.mStartStop.Enable()
+	m.SetIdle()
+}
+
 // updateTooltip updates the systray tooltip with current recording info
 func (m *Manager) updateTooltip() {
 	if m.recordingInfo == nil {
@@ -551,23 +591,37 @@ func (m *Manager) updateTooltip() {
 
 // startIconRotation starts the icon rotation animation (for processing state)
 func (m *Manager) startIconRotation() {
+	m.startIconRotationWithSpeed(100 * time.Millisecond)
+}
+
+// startIconRotationWithSpeed starts the icon rotation animation with a custom speed
+func (m *Manager) startIconRotationWithSpeed(interval time.Duration) {
 	if m.isRotating || len(m.rotatedReadyIcons) == 0 {
 		return
 	}
 
 	m.isRotating = true
-	m.rotationTicker = time.NewTicker(100 * time.Millisecond)
+	m.rotationTicker = time.NewTicker(interval)
+	// Create a fresh stop channel for this rotation session
+	m.stopRotation = make(chan struct{})
 
 	go func() {
 		iconIndex := 0
+		numIcons := len(m.rotatedReadyIcons)
+		stopCh := m.stopRotation // Capture the channel for this goroutine
 		for {
 			select {
 			case <-m.rotationTicker.C:
-				if iconIndex < len(m.rotatedReadyIcons) && m.rotatedReadyIcons[iconIndex] != nil {
+				if iconIndex < numIcons && m.rotatedReadyIcons[iconIndex] != nil {
 					systray.SetIcon(m.rotatedReadyIcons[iconIndex])
 				}
-				iconIndex = (iconIndex + 1) % len(m.rotatedReadyIcons)
-			case <-m.stopRotation:
+				// Rotate forward or backward based on reverseRotation flag
+				if m.reverseRotation {
+					iconIndex = (iconIndex - 1 + numIcons) % numIcons
+				} else {
+					iconIndex = (iconIndex + 1) % numIcons
+				}
+			case <-stopCh:
 				return
 			}
 		}
@@ -586,9 +640,10 @@ func (m *Manager) stopIconRotation() {
 		m.rotationTicker = nil
 	}
 
-	select {
-	case m.stopRotation <- struct{}{}:
-	default:
+	// Close the channel to signal all goroutines to stop
+	if m.stopRotation != nil {
+		close(m.stopRotation)
+		m.stopRotation = nil
 	}
 }
 
@@ -892,7 +947,27 @@ func (m *Manager) StartRecording() error {
 	// Get recording presets
 	presets := cfg.RecordingPresets
 
-	recordingInfo := models.NewRecordingInfo(metadata, "", "")
+	// Get the monitor where the mouse is currently located
+	monitorName, err := monitor.GetMouseMonitor()
+	if err != nil {
+		// Fallback to primary monitor
+		if monitors, mErr := monitor.ListMonitors(); mErr == nil && len(monitors) > 0 {
+			monitorName = monitors[0].Name
+		}
+	}
+
+	// Get monitor resolution
+	monitorResolution := ""
+	if monitors, mErr := monitor.ListMonitors(); mErr == nil {
+		for _, mon := range monitors {
+			if mon.Name == monitorName {
+				monitorResolution = fmt.Sprintf("%dx%d", mon.Width, mon.Height)
+				break
+			}
+		}
+	}
+
+	recordingInfo := models.NewRecordingInfo(metadata, monitorName, monitorResolution)
 	recordingInfo.Files.FolderPath = outputDir
 	recordingInfo.Settings.ScreenEnabled = presets.RecordScreen
 	recordingInfo.Settings.AudioEnabled = presets.RecordAudio
@@ -908,6 +983,7 @@ func (m *Manager) StartRecording() error {
 	// Start recording
 	opts := recorder.Options{
 		OutputDir:      outputDir,
+		Monitor:        monitorName,
 		NoAudio:        !presets.RecordAudio,
 		NoWebcam:       !presets.RecordWebcam,
 		NoScreen:       !presets.RecordScreen,
@@ -918,7 +994,8 @@ func (m *Manager) StartRecording() error {
 	return m.recorder.StartWithOptions(opts)
 }
 
-// StopRecording stops the current recording and marks it as needing metadata
+// StopRecording stops the current recording, captures room noise if audio was enabled,
+// then marks it as needing metadata
 func (m *Manager) StopRecording() error {
 	if !m.recorder.IsRecording() && !m.recorder.IsPaused() {
 		return fmt.Errorf("no recording in progress")
@@ -927,9 +1004,22 @@ func (m *Manager) StopRecording() error {
 	// Get output directory before stopping
 	outputDir := config.ReadPath(config.OutputDirFile)
 
+	// Check if audio was enabled (we need to know before stopping)
+	audioEnabled := false
+	if outputDir != "" {
+		if info, err := models.LoadRecordingInfo(outputDir); err == nil {
+			audioEnabled = info.Settings.AudioEnabled
+		}
+	}
+
 	// Stop recording without processing - we'll process after user provides metadata
 	if err := m.recorder.Stop(); err != nil {
 		return err
+	}
+
+	// If audio was enabled, capture room noise for calibration
+	if audioEnabled && outputDir != "" {
+		m.captureRoomNoise(outputDir)
 	}
 
 	// Mark the recording as needing metadata
@@ -941,6 +1031,36 @@ func (m *Manager) StopRecording() error {
 	}
 
 	return nil
+}
+
+// captureRoomNoise captures 30 seconds of room noise for audio calibration
+// This runs synchronously and blocks until complete
+func (m *Manager) captureRoomNoise(outputDir string) {
+	// Set room noise state - reverse spinning icon at 2x speed
+	m.SetRoomNoise()
+
+	roomNoiseFile := filepath.Join(outputDir, "room_noise.wav")
+
+	// Start audio recorder for room noise
+	roomNoiseRecorder := audio.NewRecorder("", roomNoiseFile)
+	if err := roomNoiseRecorder.Start(); err != nil {
+		// If room noise recording fails, just continue
+		m.ClearRoomNoise()
+		return
+	}
+
+	// Capture for 30 seconds with countdown updates
+	for countdown := 30; countdown > 0; countdown-- {
+		m.mStatus.SetTitle(fmt.Sprintf("Room Noise: %ds", countdown))
+		systray.SetTooltip(fmt.Sprintf("🎤 Recording room noise - %d seconds remaining\nPlease keep quiet!", countdown))
+		time.Sleep(1 * time.Second)
+	}
+
+	// Stop the room noise recorder
+	_ = roomNoiseRecorder.Stop()
+
+	// Return to idle state (will be set to processing later by TUI)
+	m.ClearRoomNoise()
 }
 
 // PauseRecording pauses or resumes the current recording

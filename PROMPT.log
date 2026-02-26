@@ -1244,3 +1244,117 @@ Add circular webcam overlay to merged video: Generate a circle whose height matc
 [2026-02-15 23:04:06] User: I think this module is not bringing through all the dependencies like wl-recorder etc into the system flake that uses it
 [2026-02-16T11:23:30+00:00] something changed on my system and now when i try to start a recording it counts down and then simply returns to the menu without recording
 [2026-02-16T12:25:50+00:00] RELEASE
+bump the version and RELEASE
+
+## Session 2026-02-26: Fix Systray Regressions
+
+### User Prompt:
+there have been some regressions. Let's revisit the expectations of a user:
+
+1. I start a recording by clicking on the systray icon
+2. Single clicking again on the systray icon, or right clicking and choosing pause from the systray context menu will pause the recording
+3. Double clicking or right clicking and choosing stop on the systray context menu will stop the recording
+4. When the recording stops we change the systray central parts icon to a microphone icon while it records the room noise. During this time the user clicks and interactions with the systray icon are rejected and the spinning outer part of the systray icon reverses direction and spins at twice the speed. A tooltip should also popout from the systray telling the user to keep quiet while we record the room noise.
+5. Now the room noise is finished we open the main tui to show the processing progress.
+6. The user first can set the recording name, which will then rename its folder to [sequence number]-recording_name
+7. Now they can choose amongst the various settings to determine if a vertical video should be made, what overlay logos should be made etc.
+8. All of these options should be written into the json metadata file so that we can recall them later.
+9. Now the video processing can be started. If the user paused and resumed all the parts of the webcam video, screen recording and audio track are sewn together in the correct sequence.
+10. Now we render out the videos and their overlays into a file called [sequence_number]-recording_name_vertical.mp4 and [sequence_number]-recording_name.mp4
+
+### Changes Made:
+1. Fixed systray click behavior - single click now pauses (was stopping), double click now stops (was toggling pause)
+2. Added StateRoomNoise state with reverse spinning animation at 2x speed
+3. Added SetRoomNoise() method with tooltip showing "Recording room noise - Please keep quiet!"
+4. Blocked systray clicks during room noise recording
+5. Added RenameFolder() method to RecordingInfo to rename folder when user sets title
+6. Updated folder/filename format to use hyphen: NNN-recording_name (folder) and NNN-recording_name.mp4 (video)
+7. Created SPECIFICATION.md documenting all user stories, business rules, and functional requirements
+
+
+### Additional Fixes (after testing):
+
+1. **Room noise capture was missing for systray-initiated recordings**
+   - Modified `recordingSavedNeedsProcessingMsg` handler in app.go to capture room noise before processing
+   - Added `transitionToProcessingForSystray()` method for systray-specific processing flow
+   - Updated `roomNoiseCompleteMsg` handler to use the correct processing flow based on `editRecordingMode`
+
+2. **Screen recording missing - monitor not set from systray**
+   - Fixed `StartRecording()` in systray.go to detect the monitor where mouse is located
+   - Added `opts.Monitor = monitorName` to recorder options
+   - Uses `monitor.GetMouseMonitor()` with fallback to primary monitor
+   - Also sets monitor resolution in recording metadata
+
+### Files Modified:
+- `internal/systray/systray.go` - Click behavior, room noise state, monitor detection
+- `internal/tui/app.go` - Room noise capture for systray flow
+- `internal/models/recording_info.go` - RenameFolder method
+- `internal/models/recording_metadata.go` - Consistent underscore sanitization
+- `internal/merger/merger.go` - Output filename format (NNN-name.mp4)
+- `SPECIFICATION.md` - Created comprehensive spec document
+
+
+### Session continued - Additional fixes:
+
+**User requests:**
+1. Monitor shows wrong dimensions
+2. Don't use system notifications during recording (they appear in the recording)
+3. Room noise recording should happen BEFORE TUI metadata screen, showing in both systray and TUI
+
+**Fixes applied:**
+
+1. **Monitor dimensions for GNOME** - Added `listMonitorsGnome()` function in `internal/monitor/monitor.go` that uses GNOME Mutter DBus interface to get correct monitor info (connector name, width, height)
+
+2. **Removed desktop notifications during recording** - Commented out notification calls in `internal/recorder/recorder.go`:
+   - Line 372: RecordingStarted
+   - Line 780: RecordingStopped  
+   - Line 1263: Recording Paused
+
+3. **Room noise capture moved to systray** - Modified `internal/systray/systray.go`:
+   - `StopRecording()` now calls `captureRoomNoise()` before opening TUI
+   - New `captureRoomNoise()` method:
+     - Sets systray to StateRoomNoise (reverse spinning at 2x speed)
+     - Shows countdown in tooltip: "Recording room noise - X seconds remaining"
+     - Blocks for 30 seconds while capturing
+     - Returns to idle state before opening TUI
+   - TUI no longer captures room noise for systray-initiated recordings (already done)
+
+4. **Systray click blocking during room noise** - The `StateRoomNoise` check in `SetOnTapped()` rejects all clicks during room noise capture
+
+**Flow now:**
+1. User double-clicks systray → Stop
+2. Systray icon changes to reverse spinning (2x speed)
+3. Tooltip shows "Recording room noise - Please keep quiet!"
+4. 30 second countdown with status updates
+5. Room noise capture completes
+6. TUI opens for metadata entry
+7. User saves metadata → Processing starts
+
+
+### Session continued - More fixes:
+
+**Issues reported:**
+1. Room noise spinning continued after recording finished (should stop)
+2. Screen recording not working on GNOME (wl-screenrec doesn't support GNOME)
+3. Error notifications appearing during processing
+
+**Fixes applied:**
+
+1. **Fixed room noise icon state** - `ClearRoomNoise()` now calls `SetIdle()` instead of `SetProcessing()` so icon stops spinning after room noise capture
+
+2. **Added GNOME screen recording support** - `internal/recorder/recorder.go`:
+   - Detects GNOME via `XDG_CURRENT_DESKTOP` environment variable
+   - Uses GStreamer with PipeWire screencast portal: `gst-launch-1.0 pipewiresrc ! videoconvert ! x264enc ! mp4mux ! filesink`
+   - This works via xdg-desktop-portal-gnome for GNOME Wayland
+   - wl-screenrec only works on wlroots compositors (Hyprland, Sway)
+
+3. **Removed all desktop notifications during recording/processing**:
+   - Lines 323, 347: Warning notifications during recorder start
+   - Line 987: Error notification for missing files
+   - Line 1067: Error notification for merge failure
+   - Removed unused `notify` import
+
+4. **Added GNOME monitor detection** - `internal/monitor/monitor.go`:
+   - Added `listMonitorsGnome()` using GNOME Mutter DBus interface
+   - Gets correct monitor info (eDP-1 at 2560x1600) for GNOME Wayland
+

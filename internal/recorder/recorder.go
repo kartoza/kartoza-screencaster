@@ -18,7 +18,6 @@ import (
 	"github.com/kartoza/kartoza-screencaster/internal/merger"
 	"github.com/kartoza/kartoza-screencaster/internal/models"
 	"github.com/kartoza/kartoza-screencaster/internal/monitor"
-	"github.com/kartoza/kartoza-screencaster/internal/notify"
 	"github.com/kartoza/kartoza-screencaster/internal/webcam"
 )
 
@@ -319,8 +318,8 @@ waitReady:
 			readyCount++
 			_ = name // Could log which recorder is ready
 		case err := <-errors:
-			// Non-fatal errors for audio/webcam
-			_ = notify.Warning("Recorder Warning", err.Error())
+			// Non-fatal errors for audio/webcam - log but don't notify (appears in recording)
+			_ = err // Could log: err.Error()
 			numRecorders-- // Reduce expected count
 		case <-timeout:
 			// Proceed with what we have
@@ -343,8 +342,8 @@ waitStarted:
 			startedCount++
 			_ = name
 		case err := <-errors:
-			// Error during start - reduce expected count
-			_ = notify.Warning("Recorder Error", err.Error())
+			// Error during start - reduce expected count (don't notify, appears in recording)
+			_ = err // Could log: err.Error()
 			expectedStarted--
 		case <-startTimeout:
 			break waitStarted
@@ -369,7 +368,7 @@ waitStarted:
 		_ = os.WriteFile(config.WebcamPathFile, []byte(r.webcam.file), 0644)
 	}
 
-	_ = notify.RecordingStarted(monitorName)
+	// Note: Don't send desktop notifications during recording as they appear in the recording
 	return nil
 }
 
@@ -389,8 +388,15 @@ func (r *Recorder) startVideoRecorder(hwAccel bool, ready, started chan<- string
 		case deps.DisplayServerX11:
 			r.startVideoRecorderX11(ready, started, errors)
 		default:
-			// Wayland or unknown - use wl-screenrec
-			r.startVideoRecorderWayland(hwAccel, ready, started, errors)
+			// Wayland - check compositor type
+			compositor := os.Getenv("XDG_CURRENT_DESKTOP")
+			if compositor == "GNOME" || compositor == "ubuntu:GNOME" || compositor == "gnome" {
+				// GNOME doesn't support wl-screenrec, use PipeWire screencast portal
+				r.startVideoRecorderGnome(ready, started, errors)
+			} else {
+				// wlroots-based (Hyprland, Sway, etc) - use wl-screenrec
+				r.startVideoRecorderWayland(hwAccel, ready, started, errors)
+			}
 		}
 	default:
 		// Unknown platform - try Wayland
@@ -510,6 +516,59 @@ func (r *Recorder) startVideoRecorderX11(ready, started chan<- string, errors ch
 	select {
 	case <-r.stopSignal:
 		// Stop requested
+	case err := <-done:
+		if err != nil {
+			r.video.err = err
+		}
+	}
+}
+
+// startVideoRecorderGnome starts video recording using GStreamer with PipeWire screencast portal (GNOME Wayland)
+func (r *Recorder) startVideoRecorderGnome(ready, started chan<- string, errors chan<- error) {
+	// Use GStreamer with pipewiresrc for GNOME's screencast portal
+	// This uses the xdg-desktop-portal-gnome screencast interface
+	// The pipeline: pipewiresrc ! videoconvert ! x264enc ! mp4mux ! filesink
+	pipeline := fmt.Sprintf(
+		"pipewiresrc ! videoconvert ! x264enc tune=zerolatency speed-preset=ultrafast ! mp4mux ! filesink location=%s",
+		r.video.file,
+	)
+
+	args := []string{
+		"-e", // Send EOS on interrupt for clean shutdown
+		pipeline,
+	}
+
+	r.video.cmd = exec.Command("gst-launch-1.0", args...)
+	r.video.cmd.Stdout = nil
+	r.video.cmd.Stderr = nil
+
+	// Signal we're ready
+	ready <- "video"
+
+	// Wait for synchronized start signal
+	<-r.startBarrier
+
+	if err := r.video.cmd.Start(); err != nil {
+		r.video.err = fmt.Errorf("failed to start gst-launch-1.0 for GNOME screencast: %w", err)
+		errors <- r.video.err
+		return
+	}
+
+	r.video.pid = r.video.cmd.Process.Pid
+	r.video.started = true
+
+	// Signal that we've started
+	started <- "video"
+
+	// Wait for stop signal or process exit
+	done := make(chan error, 1)
+	go func() {
+		done <- r.video.cmd.Wait()
+	}()
+
+	select {
+	case <-r.stopSignal:
+		// Stop requested - send SIGINT for clean EOS
 	case err := <-done:
 		if err != nil {
 			r.video.err = err
@@ -777,7 +836,7 @@ func (r *Recorder) stopInternal(waitForProcessing bool) error {
 			r.wg.Wait()
 		}
 
-		_ = notify.RecordingStopped()
+		// Note: Don't send desktop notifications during recording as they appear in the recording
 
 		// Wait for files to be fully written (only if we were actively recording)
 		time.Sleep(2 * time.Second)
@@ -924,7 +983,7 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 			r.recordingInfo.SetStatus(models.StatusFailed)
 			_ = r.recordingInfo.Save()
 		}
-		_ = notify.Error("Recording Error", "No video or audio files found to process")
+		// Don't show desktop notification - error is already shown in TUI
 		return
 	}
 
@@ -1004,7 +1063,7 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 
 	hasErrors := false
 	if err != nil {
-		_ = notify.Error("Recording Error", "Failed to merge recordings")
+		// Don't show desktop notification - error is already shown in TUI
 		hasErrors = true
 		if r.recordingInfo != nil {
 			r.recordingInfo.Processing.Errors = append(r.recordingInfo.Processing.Errors, err.Error())
@@ -1260,7 +1319,7 @@ func (r *Recorder) Pause() error {
 		}
 	}
 
-	_ = notify.Info("Recording Paused", "Recording paused. Use 'resume' to continue.")
+	// Note: Don't send desktop notifications during recording as they appear in the recording
 	return nil
 }
 

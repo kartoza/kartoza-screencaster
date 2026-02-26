@@ -24,7 +24,21 @@
       "Bash(go mod tidy:*)",
       "Bash(make release:*)",
       "Bash(cat:*)",
-      "Bash(gh run list:*)"
+      "Bash(gh run list:*)",
+      "Bash(git -C /home/timlinux/dev/go/kartoza-screencaster log --oneline -10)",
+      "Bash(git -C /home/timlinux/dev/go/kartoza-screencaster diff internal/monitor/monitor.go)",
+      "Bash(git -C /home/timlinux/dev/go/kartoza-screencaster diff HEAD~1 --stat)",
+      "Bash(git -C /home/timlinux/dev/go/kartoza-screencaster log --oneline HEAD~5..HEAD)",
+      "Bash(git -C /home/timlinux/dev/go/kartoza-screencaster status --short)",
+      "Bash(echo:*)",
+      "Bash(wlr-randr:*)",
+      "Bash(hyprctl monitors:*)",
+      "Bash(niri msg:*)",
+      "Bash(gnome-randr:*)",
+      "Bash(mutter --display-info:*)",
+      "Bash(gdbus call:*)",
+      "Bash(timeout 3 gst-launch-1.0:*)",
+      "Bash(timeout 2 wl-screenrec:*)"
     ],
     "deny": [],
     "ask": []

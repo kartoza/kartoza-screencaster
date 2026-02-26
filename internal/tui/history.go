@@ -981,6 +981,14 @@ func (h *HistoryModel) saveRecording() tea.Cmd {
 
 	rec := h.selectedRecording
 	return func() tea.Msg {
+		// If this recording needs metadata (from systray), rename the folder first
+		if needsProcessing && rec.Metadata.Title != "" {
+			if _, err := rec.RenameFolder(); err != nil {
+				// Log error but don't fail - folder rename is nice-to-have
+				// The recording will still work with the original folder name
+			}
+		}
+
 		err := rec.Save()
 		if err == nil && needsProcessing {
 			// Return a message to trigger processing

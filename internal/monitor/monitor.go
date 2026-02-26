@@ -46,6 +46,11 @@ func listMonitorsWayland() ([]models.Monitor, error) {
 		return monitors, nil
 	}
 
+	// Try GNOME Mutter DBus interface
+	if monitors, err := listMonitorsGnome(); err == nil {
+		return monitors, nil
+	}
+
 	// Fallback: return a single default monitor
 	// wl-screenrec will use the only display if there's one
 	return []models.Monitor{{
@@ -174,6 +179,57 @@ func listMonitorsSway() ([]models.Monitor, error) {
 
 	if len(monitors) == 0 {
 		return nil, fmt.Errorf("no monitors found via sway")
+	}
+
+	return monitors, nil
+}
+
+// listMonitorsGnome returns monitors using GNOME Mutter DBus interface
+func listMonitorsGnome() ([]models.Monitor, error) {
+	// Call: gdbus call --session --dest org.gnome.Mutter.DisplayConfig \
+	//   --object-path /org/gnome/Mutter/DisplayConfig \
+	//   --method org.gnome.Mutter.DisplayConfig.GetCurrentState
+	cmd := exec.Command("gdbus", "call", "--session",
+		"--dest", "org.gnome.Mutter.DisplayConfig",
+		"--object-path", "/org/gnome/Mutter/DisplayConfig",
+		"--method", "org.gnome.Mutter.DisplayConfig.GetCurrentState")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to call Mutter DBus: %w", err)
+	}
+
+	// Parse the output - it's a GVariant tuple
+	// Format: (serial, [(connector, vendor, product, serial_string), [modes], props], [logical_monitors], props)
+	// We need to extract connector name and current mode dimensions
+	outputStr := string(output)
+
+	var monitors []models.Monitor
+
+	// Extract monitor info using regex patterns
+	// Looking for patterns like: ('eDP-1', 'BOE', '0x0bc9', '0x00000000')
+	// and mode: ('2560x1600@165.000', 2560, 1600, 165.0, ...
+	connectorRe := regexp.MustCompile(`\('([^']+)', '[^']*', '[^']*', '[^']*'\), \[\('(\d+)x(\d+)@[^']+', (\d+), (\d+),`)
+
+	matches := connectorRe.FindAllStringSubmatch(outputStr, -1)
+	for i, match := range matches {
+		if len(match) >= 6 {
+			name := match[1]
+			width, _ := strconv.Atoi(match[4])
+			height, _ := strconv.Atoi(match[5])
+
+			monitors = append(monitors, models.Monitor{
+				Name:    name,
+				Width:   width,
+				Height:  height,
+				X:       0, // GNOME DBus doesn't easily expose position in this call
+				Y:       0,
+				Focused: i == 0, // Mark first as focused
+			})
+		}
+	}
+
+	if len(monitors) == 0 {
+		return nil, fmt.Errorf("no monitors found via GNOME DBus")
 	}
 
 	return monitors, nil

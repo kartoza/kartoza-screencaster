@@ -169,7 +169,7 @@ type MergeResult struct {
 	VerticalError    error // Non-nil if vertical video creation was attempted but failed
 }
 
-// generateOutputFilename creates output filename in format: NNN_title_with_underscores.mp4
+// generateOutputFilename creates output filename in format: NNN-recording_name.mp4
 // If title or number are not provided, falls back to the base video filename
 func generateOutputFilename(outputDir, title string, number int, suffix string) string {
 	if title == "" || number <= 0 || outputDir == "" {
@@ -189,7 +189,8 @@ func generateOutputFilename(outputDir, title string, number int, suffix string) 
 	// Trim leading/trailing underscores
 	sanitized = strings.Trim(sanitized, "_")
 
-	filename := fmt.Sprintf("%03d_%s%s.mp4", number, sanitized, suffix)
+	// Format: NNN-recording_name.mp4 or NNN-recording_name_vertical.mp4
+	filename := fmt.Sprintf("%03d-%s%s.mp4", number, sanitized, suffix)
 	return filepath.Join(outputDir, filename)
 }
 

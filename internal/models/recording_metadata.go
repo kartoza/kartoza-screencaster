@@ -115,20 +115,21 @@ func sanitizeForFilename(s string) string {
 	// Convert to lowercase
 	s = strings.ToLower(s)
 
-	// Replace spaces with hyphens
-	s = strings.ReplaceAll(s, " ", "-")
+	// Replace spaces and hyphens with underscores for consistency
+	s = strings.ReplaceAll(s, " ", "_")
+	s = strings.ReplaceAll(s, "-", "_")
 
 	// Remove or replace invalid characters
-	// Keep only alphanumeric, hyphens, and underscores
-	reg := regexp.MustCompile(`[^a-z0-9\-_]`)
+	// Keep only alphanumeric and underscores
+	reg := regexp.MustCompile(`[^a-z0-9_]`)
 	s = reg.ReplaceAllString(s, "")
 
-	// Remove multiple consecutive hyphens
-	reg = regexp.MustCompile(`-+`)
-	s = reg.ReplaceAllString(s, "-")
+	// Remove multiple consecutive underscores
+	reg = regexp.MustCompile(`_+`)
+	s = reg.ReplaceAllString(s, "_")
 
-	// Trim hyphens from ends
-	s = strings.Trim(s, "-")
+	// Trim underscores from ends
+	s = strings.Trim(s, "_")
 
 	// Limit length
 	if len(s) > 50 {

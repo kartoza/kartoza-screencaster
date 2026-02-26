@@ -454,6 +454,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Log error but continue with processing
 			m.roomNoiseFile = "" // Clear the file path since it failed
 		}
+		// If this was a systray-initiated recording (editRecordingMode), use the systray processing flow
+		if m.editRecordingMode && m.recordingInfo != nil {
+			return m.transitionToProcessingForSystray(m.recordingInfo)
+		}
 		return m.transitionToProcessing()
 
 	case statusUpdateMsg:
@@ -670,42 +674,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case recordingSavedNeedsProcessingMsg:
 		// Recording from systray was saved with metadata, now process it
+		// Note: Room noise was already captured by systray before opening TUI
 		if msg.recording == nil {
 			return m, nil
 		}
 
-		// Set status to processing
-		msg.recording.SetStatus(models.StatusProcessing)
-		_ = msg.recording.Save()
-
-		// Set up for processing
-		m.screen = ScreenRecording
-		m.state = stateProcessing
+		// Store recording info for later processing
 		m.outputDir = msg.recording.Files.FolderPath
 		m.recordingInfo = msg.recording
-		m.processing.Reset()
-		m.processing.ConfigureSteps(
-			msg.recording.Settings.AudioEnabled,
-			msg.recording.Settings.ScreenEnabled,
-			msg.recording.Settings.WebcamEnabled,
-			msg.recording.Settings.VerticalEnabled,
-		)
-		// Skip the "Stopping recorders" step since recording was already stopped via systray
-		m.processing.SetStepByIndex(ProcessStepStopping, StepSkipped)
-		m.processing.Start()
-		m.processingFrame = 0
 
-		// Configure recorder with the recording info
-		m.recorder.SetRecordingInfo(msg.recording)
+		// Check if room noise file exists (captured by systray)
+		roomNoiseFile := filepath.Join(m.outputDir, "room_noise.wav")
+		if _, err := os.Stat(roomNoiseFile); err == nil {
+			m.roomNoiseFile = roomNoiseFile
+		}
 
-		// Start processing pipeline directly
-		m.progressChan = make(chan recorder.ProgressUpdate, 100)
-		go m.recorder.ProcessWithProgress(m.progressChan)
-
-		return m, tea.Batch(
-			processingTickCmd(),
-			waitForProgressUpdate(m.progressChan),
-		)
+		// Go directly to processing (room noise already captured by systray)
+		return m.transitionToProcessingForSystray(msg.recording)
 
 	case youtubePrivacyChangedMsg, youtubeVideoDeletedMsg:
 		// Forward YouTube action messages to history model
@@ -1026,6 +1011,46 @@ func (m AppModel) transitionToProcessing() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(
 		processingTickCmd(),
 		m.runProcessingPipeline(),
+	)
+}
+
+// transitionToProcessingForSystray moves to processing for systray-initiated recordings
+// This is similar to transitionToProcessing but handles the case where recording was stopped via systray
+func (m AppModel) transitionToProcessingForSystray(recording *models.RecordingInfo) (tea.Model, tea.Cmd) {
+	// Set status to processing
+	recording.SetStatus(models.StatusProcessing)
+	_ = recording.Save()
+
+	// Set up for processing
+	m.screen = ScreenRecording
+	m.state = stateProcessing
+	m.processing.Reset()
+	m.processing.ConfigureSteps(
+		recording.Settings.AudioEnabled,
+		recording.Settings.ScreenEnabled,
+		recording.Settings.WebcamEnabled,
+		recording.Settings.VerticalEnabled,
+	)
+	// Skip the "Stopping recorders" step since recording was already stopped via systray
+	m.processing.SetStepByIndex(ProcessStepStopping, StepSkipped)
+	m.processing.Start()
+	m.processingFrame = 0
+
+	// Configure recorder with the recording info
+	m.recorder.SetRecordingInfo(recording)
+
+	// Set the room noise file on the recorder for audio processing (if we captured it)
+	if m.roomNoiseFile != "" {
+		m.recorder.SetRoomNoiseFile(m.roomNoiseFile)
+	}
+
+	// Start processing pipeline directly
+	m.progressChan = make(chan recorder.ProgressUpdate, 100)
+	go m.recorder.ProcessWithProgress(m.progressChan)
+
+	return m, tea.Batch(
+		processingTickCmd(),
+		waitForProgressUpdate(m.progressChan),
 	)
 }
 
