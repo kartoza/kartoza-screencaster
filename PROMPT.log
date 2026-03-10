@@ -1444,3 +1444,25 @@ there have been some regressions. Let's revisit the expectations of a user:
 4. Browser or extension intercepting/modifying the URL
 
 **Next steps:** User to test and report debug output to see if URL is properly formed
+
+---
+
+**Prompt:** Add permission guidance and graceful error handling for YouTube OAuth
+
+**Summary:** User requested guidance for required YouTube permissions and graceful error handling:
+
+1. **auth.go - Updated OAuth scopes documentation:**
+   - Added comments explaining both scopes are required for full functionality
+   - Updated GetSetupInstructions() to include "Required Permissions" section
+   - Explains that both "Manage your YouTube videos" AND "Manage your YouTube account" are needed
+
+2. **upload.go - Added permission error handling:**
+   - Added isPermissionError() helper to detect 403/forbidden errors
+   - Added wrapPermissionError() to add helpful context to permission errors
+   - ListPlaylists() now returns empty list (not error) if permissions missing
+   - CreatePlaylist() and AddToPlaylist() show helpful permission error messages
+
+3. **youtube_setup.go - Added UI hints:**
+   - Added "Required Permissions" section to setup instructions
+   - Added hint in empty playlists view about re-authenticating for permissions
+   - Graceful degradation when playlist features unavailable

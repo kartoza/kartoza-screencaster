@@ -21,10 +21,14 @@ import (
 	"google.golang.org/api/youtube/v3"
 )
 
-// OAuth2 scopes required for YouTube upload
+// OAuth2 scopes required for YouTube functionality
+// - youtube.upload: Required for uploading videos
+// - youtube: Required for full access (playlists, channel info, video metadata updates)
+// During OAuth consent, users must grant BOTH permissions for full functionality.
+// If only "Manage your YouTube videos" is granted, playlist and channel features will be limited.
 var oauthScopes = []string{
 	"https://www.googleapis.com/auth/youtube.upload",
-	"https://www.googleapis.com/auth/youtube", // For playlist management
+	"https://www.googleapis.com/auth/youtube",
 }
 
 // Auth handles YouTube OAuth2 authentication
@@ -520,9 +524,19 @@ func GetSetupInstructions() string {
 
 6. Configure OAuth consent screen:
    - Go to "APIs & Services" > "OAuth consent screen"
-   - Choose "External" user type
+   - Choose "External" user type (required for brand accounts)
    - Fill in the required fields
    - Add your email to test users (while in testing mode)
+
+IMPORTANT - Required Permissions:
+When you authenticate, Google will ask you to grant permissions.
+For full functionality, you must grant BOTH:
+  • "Manage your YouTube videos" - Required for uploading
+  • "Manage your YouTube account" - Required for playlists,
+    channel info, and video metadata (tags, descriptions)
+
+If you only grant video permissions, some features will be
+limited (playlist management, fetching channel details).
 
 Note: While your app is in "Testing" mode, only users you
 explicitly add as test users can authenticate.`

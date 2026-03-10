@@ -2,15 +2,54 @@ package youtube
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/api/youtube/v3"
 )
+
+// ErrInsufficientPermissions indicates the user hasn't granted required permissions
+var ErrInsufficientPermissions = errors.New("insufficient permissions: please re-authenticate and grant all requested permissions")
+
+// isPermissionError checks if an error is due to insufficient OAuth permissions
+func isPermissionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr *googleapi.Error
+	if errors.As(err, &apiErr) {
+		// 403 Forbidden often indicates permission issues
+		if apiErr.Code == 403 {
+			return true
+		}
+		// Check for specific permission-related error reasons
+		for _, e := range apiErr.Errors {
+			if e.Reason == "forbidden" || e.Reason == "insufficientPermissions" ||
+				e.Reason == "accessNotConfigured" {
+				return true
+			}
+		}
+	}
+	// Also check for common permission error messages in the error string
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "permission") ||
+		strings.Contains(errStr, "forbidden") ||
+		strings.Contains(errStr, "insufficient")
+}
+
+// wrapPermissionError wraps an error with a helpful message if it's a permission error
+func wrapPermissionError(err error, operation string) error {
+	if isPermissionError(err) {
+		return fmt.Errorf("%s: %w (you may need to re-authenticate and grant 'Manage your YouTube account' permission)", operation, err)
+	}
+	return err
+}
 
 // Uploader handles YouTube video uploads
 type Uploader struct {
@@ -166,6 +205,7 @@ func (u *Uploader) SetThumbnail(ctx context.Context, videoID, thumbnailPath stri
 }
 
 // AddToPlaylist adds a video to a playlist
+// Returns a permission error if the user hasn't granted full YouTube access
 func (u *Uploader) AddToPlaylist(ctx context.Context, videoID, playlistID string) (string, error) {
 	playlistItem := &youtube.PlaylistItem{
 		Snippet: &youtube.PlaylistItemSnippet{
@@ -182,13 +222,14 @@ func (u *Uploader) AddToPlaylist(ctx context.Context, videoID, playlistID string
 
 	response, err := call.Do()
 	if err != nil {
-		return "", fmt.Errorf("failed to add to playlist: %w", err)
+		return "", wrapPermissionError(err, "failed to add to playlist")
 	}
 
 	return response.Id, nil
 }
 
 // ListPlaylists returns all playlists for the authenticated user
+// Returns an empty list with no error if the user lacks playlist permissions
 func (u *Uploader) ListPlaylists(ctx context.Context) ([]Playlist, error) {
 	var playlists []Playlist
 	pageToken := ""
@@ -205,7 +246,12 @@ func (u *Uploader) ListPlaylists(ctx context.Context) ([]Playlist, error) {
 
 		response, err := call.Do()
 		if err != nil {
-			return nil, fmt.Errorf("failed to list playlists: %w", err)
+			if isPermissionError(err) {
+				// Return empty list if user lacks permissions
+				// This allows the app to continue without playlist features
+				return []Playlist{}, nil
+			}
+			return nil, wrapPermissionError(err, "failed to list playlists")
 		}
 
 		for _, item := range response.Items {
@@ -233,6 +279,7 @@ func (u *Uploader) ListPlaylists(ctx context.Context) ([]Playlist, error) {
 }
 
 // CreatePlaylist creates a new playlist
+// Returns a permission error if the user hasn't granted full YouTube access
 func (u *Uploader) CreatePlaylist(ctx context.Context, title, description string, privacy PrivacyStatus) (*Playlist, error) {
 	playlist := &youtube.Playlist{
 		Snippet: &youtube.PlaylistSnippet{
@@ -249,7 +296,7 @@ func (u *Uploader) CreatePlaylist(ctx context.Context, title, description string
 
 	response, err := call.Do()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create playlist: %w", err)
+		return nil, wrapPermissionError(err, "failed to create playlist")
 	}
 
 	return &Playlist{

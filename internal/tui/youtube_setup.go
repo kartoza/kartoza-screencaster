@@ -1308,7 +1308,16 @@ func (m *YouTubeSetupModel) renderInstructions() string {
 		textStyle.Render("  • You can manage brand accounts at: ")+linkStyle.Render("youtube.com/account"),
 	)
 
-	fullInstructions := lipgloss.JoinVertical(lipgloss.Left, instructions, brandNote)
+	permissionsNote := lipgloss.JoinVertical(lipgloss.Left,
+		"",
+		stepStyle.Render("Required Permissions:"),
+		textStyle.Render("  When authenticating, grant BOTH permissions for full features:"),
+		textStyle.Render("  • \"Manage your YouTube videos\" - for uploading"),
+		textStyle.Render("  • \"Manage your YouTube account\" - for playlists & tags"),
+		textStyle.Render("  If you only grant video permissions, some features will be limited."),
+	)
+
+	fullInstructions := lipgloss.JoinVertical(lipgloss.Left, instructions, brandNote, permissionsNote)
 	content := instructionStyle.Render(fullInstructions)
 
 	noteStyle := lipgloss.NewStyle().
@@ -1990,6 +1999,10 @@ func (m *YouTubeSetupModel) renderPlaylists() string {
 		rows = append(rows, labelStyle.Render("No playlists found"))
 		rows = append(rows, "")
 		rows = append(rows, labelStyle.Render("n: create your first playlist"))
+		rows = append(rows, "")
+		hintStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
+		rows = append(rows, hintStyle.Render("If you have playlists but don't see them, you may need to"))
+		rows = append(rows, hintStyle.Render("re-authenticate and grant 'Manage your YouTube account'."))
 	} else {
 		// Show playlists with pagination (10 per page)
 		startIdx := m.playlistPage * 10
