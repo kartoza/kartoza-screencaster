@@ -264,6 +264,7 @@
             ffmpeg
             pipewire
             libnotify
+            kooha              # GNOME-compatible screen recorder
 
             # Documentation
             mkdocsEnv
