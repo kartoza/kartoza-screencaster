@@ -189,7 +189,7 @@ func generateOutputFilename(outputDir, title string, number int, suffix string) 
 	// Trim leading/trailing underscores
 	sanitized = strings.Trim(sanitized, "_")
 
-	// Format: NNN-recording_name.mp4 or NNN-recording_name_vertical.mp4
+	// Format: NNN-recording_name.mp4 or NNN-recording_name-vertical.mp4
 	filename := fmt.Sprintf("%03d-%s%s.mp4", number, sanitized, suffix)
 	return filepath.Join(outputDir, filename)
 }
@@ -454,8 +454,8 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 	// Supports: screen+webcam, or screen-only (no webcam)
 	m.reportProgress(StepCreatingVertical, false, false, nil)
 	if opts.CreateVertical && hasVideo {
-		// Generate vertical filename in format: NNN_title_with_underscores_vertical.mp4
-		verticalFile := generateOutputFilename(opts.OutputDir, opts.VideoTitle, opts.VideoNumber, "_vertical")
+		// Generate vertical filename in format: NNN-title_with_underscores-vertical.mp4
+		verticalFile := generateOutputFilename(opts.OutputDir, opts.VideoTitle, opts.VideoNumber, "-vertical")
 		if verticalFile == "" {
 			// Fallback to old behavior if title/number not provided
 			verticalFile = strings.TrimSuffix(opts.VideoFile, ".mp4") + "-vertical.mp4"

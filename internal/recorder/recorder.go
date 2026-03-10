@@ -523,13 +523,15 @@ func (r *Recorder) startVideoRecorderX11(ready, started chan<- string, errors ch
 	}
 }
 
-// startVideoRecorderGnome starts video recording using GStreamer with PipeWire screencast portal (GNOME Wayland)
+// startVideoRecorderGnome starts video recording using GStreamer with PipeWire portal (GNOME Wayland)
+// This uses the XDG Desktop Portal ScreenCast API via GStreamer's pipewiresrc element.
+// On first use, it will show a dialog to select the screen to share.
 func (r *Recorder) startVideoRecorderGnome(ready, started chan<- string, errors chan<- error) {
-	// Use GStreamer with pipewiresrc for GNOME's screencast portal
-	// This uses the xdg-desktop-portal-gnome screencast interface
-	// The pipeline: pipewiresrc ! videoconvert ! x264enc ! mp4mux ! filesink
+	// Build GStreamer pipeline for portal-based screen capture
+	// pipewiresrc path=0 automatically triggers the portal dialog
+	// The portal provides the PipeWire node ID for screen capture
 	pipeline := fmt.Sprintf(
-		"pipewiresrc ! videoconvert ! x264enc tune=zerolatency speed-preset=ultrafast ! mp4mux ! filesink location=%s",
+		"pipewiresrc path=0 ! video/x-raw,framerate=60/1 ! videoconvert ! x264enc tune=zerolatency speed-preset=ultrafast ! mp4mux ! filesink location=%s",
 		r.video.file,
 	)
 
@@ -549,7 +551,7 @@ func (r *Recorder) startVideoRecorderGnome(ready, started chan<- string, errors 
 	<-r.startBarrier
 
 	if err := r.video.cmd.Start(); err != nil {
-		r.video.err = fmt.Errorf("failed to start gst-launch-1.0 for GNOME screencast: %w", err)
+		r.video.err = fmt.Errorf("failed to start gst-launch-1.0 for GNOME portal screencast: %w", err)
 		errors <- r.video.err
 		return
 	}
@@ -569,6 +571,9 @@ func (r *Recorder) startVideoRecorderGnome(ready, started chan<- string, errors 
 	select {
 	case <-r.stopSignal:
 		// Stop requested - send SIGINT for clean EOS
+		if r.video.cmd.Process != nil {
+			_ = r.video.cmd.Process.Signal(syscall.SIGINT)
+		}
 	case err := <-done:
 		if err != nil {
 			r.video.err = err

@@ -1358,3 +1358,40 @@ there have been some regressions. Let's revisit the expectations of a user:
    - Added `listMonitorsGnome()` using GNOME Mutter DBus interface
    - Gets correct monitor info (eDP-1 at 2560x1600) for GNOME Wayland
 
+[2026-02-26 19:50:18] Implemented GNOME Shell Screencast via DBus for screen recording on GNOME Wayland. wl-screenrec only works on wlroots compositors, so we use the GNOME Shell Screencast DBus interface instead. The implementation records to .webm format and converts to .mp4 after recording. Key changes: 1) Updated startVideoRecorderGnome() to use DBus, 2) Added stopGnomeScreencast() helper, 3) Updated checkPID() to recognize -1 as GNOME screencast marker, 4) Updated stop/pause logic to handle GNOME screencast.
+
+[2026-03-02] User requested: refamiliarise yourself with this code base
+[2026-03-10] Make this project compliant with our kartoza standards, having a .nvim.lua with make and nix and whichkey project
+[2026-03-10] that is nice - we need to run it in debug mode too
+
+**Summary:** Added debug support to .nvim.lua and .exrc:
+1. Terminal-based Delve commands under `<leader>pD*`:
+   - `<leader>pDd` - Debug application (dlv debug)
+   - `<leader>pDs` - Debug systray mode
+   - `<leader>pDt` - Debug all tests
+   - `<leader>pDf` - Debug test function under cursor
+   - `<leader>pDp` - Debug current package tests
+   - `<leader>pDa` - Attach to running process (with PID prompt)
+   - `<leader>pDc` - Connect to headless debugger
+   - `<leader>pDh` - Start headless debugger for DAP
+2. nvim-dap integration (if plugin installed):
+   - Delve adapter configuration
+   - Debug configurations for app, systray, tests
+   - Breakpoint keybindings: `<leader>pDb` toggle, `<leader>pDB` conditional
+   - Stepping: `<leader>pDn` over, `<leader>pDi` into, `<leader>pDo` out
+   - `<leader>pDr` continue, `<leader>pDq` stop, `<leader>pDl` run last
+   - DAP UI integration: `<leader>pDu` toggle, `<leader>pDe` evaluate
+
+[2026-03-10] ok now we need to investigate why we have a regression on the final product file names. When it generates the merged video and vertical video they should be saved on disk as [number]-[title].mp4 and [number]-[title]-vertical.mp4
+
+**Summary:** Fixed output filename format regression in merger.go:
+- Changed suffix from `"_vertical"` to `"-vertical"` at line 458
+- Updated comments to reflect correct format: `NNN-recording_name-vertical.mp4`
+- Merged video format: `001-my_title.mp4`
+- Vertical video format: `001-my_title-vertical.mp4`
+
+[2026-03-10] ok but it is not applying the rename - see the latest output in /home/timlinux/Videos/Screencasts/000-filename - it also seems to have reset the counter sequence to 000
+
+**Summary:** Fixed two issues with recording numbering:
+1. **systray.go**: Added `config.GetCurrentRecordingNumber()` call when creating metadata in `StartRecording()` - was defaulting to 0 instead of scanning for next available number
+2. **history.go**: Added Number update from form in `saveRecording()` - the Number field was never being saved when user edited recording metadata. Added `strconv` import and `strconv.Atoi(h.editForm.GetNumber())` to properly update the Number field

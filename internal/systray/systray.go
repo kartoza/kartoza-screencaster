@@ -937,8 +937,10 @@ func (m *Manager) StartRecording() error {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	// Create minimal recording info
+	// Create minimal recording info with the next available number
+	nextNumber := config.GetCurrentRecordingNumber()
 	metadata := models.RecordingMetadata{
+		Number:      nextNumber,
 		Title:       "Untitled Recording",
 		Description: "",
 		FolderName:  tempFolderName,

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -961,6 +962,9 @@ func (h *HistoryModel) saveRecording() tea.Cmd {
 	h.selectedRecording.Metadata.Description = h.editForm.GetDescription()
 	h.selectedRecording.Metadata.Presenter = h.editForm.GetPresenter()
 	h.selectedRecording.Metadata.Topic = h.editForm.GetSelectedTopic().Name
+	if num, err := strconv.Atoi(h.editForm.GetNumber()); err == nil && num > 0 {
+		h.selectedRecording.Metadata.Number = num
+	}
 
 	// Update recording settings from form
 	h.selectedRecording.Settings.AudioEnabled = h.editForm.State.RecordAudio
