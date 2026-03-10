@@ -21,6 +21,7 @@ const (
 	YouTubeStepInstructions
 	YouTubeStepCredentials
 	YouTubeStepAuthenticating
+	YouTubeStepSelectChannel // Select brand channel after auth
 	YouTubeStepConnected
 	YouTubeStepVerifying
 	YouTubeStepVerified
@@ -76,6 +77,12 @@ type YouTubeSetupModel struct {
 	editingAccountID     string
 	isAuthenticatingAccount bool
 	accountAuthURL       string
+
+	// Channel selection (brand accounts)
+	availableChannels       []youtube.Channel
+	selectedChannelIndex    int
+	isLoadingChannels       bool
+	channelSelectionForAccount string // Account ID for which we're selecting a channel
 
 	// Config
 	cfg *config.Config
@@ -192,12 +199,83 @@ func (m *YouTubeSetupModel) Update(msg tea.Msg) (*YouTubeSetupModel, tea.Cmd) {
 		if msg.err != nil {
 			m.step = YouTubeStepError
 			m.errorMessage = msg.err.Error()
+			return m, nil
+		}
+		// Auth succeeded - load available channels to check for brand accounts
+		m.isLoadingChannels = true
+		m.channelSelectionForAccount = ""
+		return m, m.loadAvailableChannels()
+
+	case youtubeChannelsLoadedMsg:
+		m.isLoadingChannels = false
+		if msg.err != nil {
+			// Failed to load channels, just proceed
+			if m.channelSelectionForAccount != "" {
+				m.step = YouTubeStepAccounts
+			} else {
+				m.step = YouTubeStepConnected
+			}
+			return m, nil
+		}
+		m.availableChannels = msg.channels
+		if len(msg.channels) > 1 {
+			// Multiple channels available - let user select
+			m.step = YouTubeStepSelectChannel
+			m.selectedChannelIndex = 0
+		} else if len(msg.channels) == 1 {
+			// Only one channel - use it automatically
+			if m.channelSelectionForAccount != "" {
+				// Account-specific flow
+				if m.selectedAccountIndex < len(m.accounts) {
+					acc := m.accounts[m.selectedAccountIndex]
+					acc.ChannelName = msg.channels[0].Title
+					acc.ChannelID = msg.channels[0].ID
+					m.cfg.YouTube.UpdateAccount(acc)
+					_ = config.Save(m.cfg)
+					m.accounts = m.cfg.YouTube.GetAccounts()
+				}
+				m.channelSelectionForAccount = ""
+				m.step = YouTubeStepAccounts
+			} else {
+				// Legacy flow
+				m.channelName = msg.channels[0].Title
+				m.cfg.YouTube.ChannelName = msg.channels[0].Title
+				m.cfg.YouTube.ChannelID = msg.channels[0].ID
+				_ = config.Save(m.cfg)
+				m.step = YouTubeStepConnected
+			}
 		} else {
-			m.step = YouTubeStepConnected
-			m.channelName = msg.channelName
-			// Save channel name to config
-			m.cfg.YouTube.ChannelName = msg.channelName
+			// No channels found
+			if m.channelSelectionForAccount != "" {
+				m.channelSelectionForAccount = ""
+				m.step = YouTubeStepAccounts
+			} else {
+				m.step = YouTubeStepConnected
+			}
+		}
+		return m, nil
+
+	case youtubeChannelSelectedMsg:
+		// User selected a channel from the list
+		if m.channelSelectionForAccount != "" {
+			// Account-specific flow
+			if m.selectedAccountIndex < len(m.accounts) {
+				acc := m.accounts[m.selectedAccountIndex]
+				acc.ChannelName = msg.channel.Title
+				acc.ChannelID = msg.channel.ID
+				m.cfg.YouTube.UpdateAccount(acc)
+				_ = config.Save(m.cfg)
+				m.accounts = m.cfg.YouTube.GetAccounts()
+			}
+			m.channelSelectionForAccount = ""
+			m.step = YouTubeStepAccounts
+		} else {
+			// Legacy flow
+			m.channelName = msg.channel.Title
+			m.cfg.YouTube.ChannelName = msg.channel.Title
+			m.cfg.YouTube.ChannelID = msg.channel.ID
 			_ = config.Save(m.cfg)
+			m.step = YouTubeStepConnected
 		}
 		return m, nil
 
@@ -265,17 +343,14 @@ func (m *YouTubeSetupModel) Update(msg tea.Msg) (*YouTubeSetupModel, tea.Cmd) {
 		m.accountAuthURL = ""
 		if msg.err != nil {
 			m.errorMessage = msg.err.Error()
-		} else {
-			// Update account with channel info
-			if m.selectedAccountIndex < len(m.accounts) {
-				acc := m.accounts[m.selectedAccountIndex]
-				acc.ChannelName = msg.channelName
-				acc.ChannelID = msg.channelID
-				m.cfg.YouTube.UpdateAccount(acc)
-				_ = config.Save(m.cfg)
-				m.accounts = m.cfg.YouTube.GetAccounts()
-			}
-			m.errorMessage = ""
+			m.step = YouTubeStepAccounts
+			return m, nil
+		}
+		// Auth succeeded for account - load available channels
+		if m.selectedAccountIndex < len(m.accounts) {
+			m.channelSelectionForAccount = m.accounts[m.selectedAccountIndex].ID
+			m.isLoadingChannels = true
+			return m, m.loadAvailableChannelsForAccount(m.accounts[m.selectedAccountIndex])
 		}
 		m.step = YouTubeStepAccounts
 		return m, nil
@@ -361,6 +436,29 @@ func (m *YouTubeSetupModel) handleKeyMsg(msg tea.KeyMsg) (*YouTubeSetupModel, te
 			m.clientID.Focus()
 			m.clientSecret.Blur()
 			return m, textinput.Blink
+		}
+
+	case YouTubeStepSelectChannel:
+		switch msg.String() {
+		case "up", "k":
+			if m.selectedChannelIndex > 0 {
+				m.selectedChannelIndex--
+			}
+			return m, nil
+		case "down", "j":
+			if m.selectedChannelIndex < len(m.availableChannels)-1 {
+				m.selectedChannelIndex++
+			}
+			return m, nil
+		case "enter", " ":
+			if m.selectedChannelIndex < len(m.availableChannels) {
+				return m, func() tea.Msg {
+					return youtubeChannelSelectedMsg{
+						channel: m.availableChannels[m.selectedChannelIndex],
+					}
+				}
+			}
+			return m, nil
 		}
 
 	case YouTubeStepConnected:
@@ -825,6 +923,48 @@ func (m *YouTubeSetupModel) disconnect() tea.Cmd {
 	}
 }
 
+// loadAvailableChannels loads all channels the user can manage (including brand accounts)
+func (m *YouTubeSetupModel) loadAvailableChannels() tea.Cmd {
+	clientID := m.cfg.YouTube.ClientID
+	clientSecret := m.cfg.YouTube.ClientSecret
+	configDir := config.GetConfigDir()
+
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		auth := youtube.NewAuth(clientID, clientSecret, configDir)
+
+		// Get all managed channels
+		channels, err := auth.GetManagedChannels(ctx)
+		if err != nil {
+			return youtubeChannelsLoadedMsg{err: err}
+		}
+
+		return youtubeChannelsLoadedMsg{channels: channels}
+	}
+}
+
+// loadAvailableChannelsForAccount loads channels for a specific account
+func (m *YouTubeSetupModel) loadAvailableChannelsForAccount(account youtube.Account) tea.Cmd {
+	configDir := config.GetConfigDir()
+
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		auth := youtube.NewAuthForAccount(account.ClientID, account.ClientSecret, configDir, account.ID)
+
+		// Get all managed channels
+		channels, err := auth.GetManagedChannels(ctx)
+		if err != nil {
+			return youtubeChannelsLoadedMsg{err: err}
+		}
+
+		return youtubeChannelsLoadedMsg{channels: channels}
+	}
+}
+
 // verifyCredentials tests the credentials and fetches channel/playlist info
 func (m *YouTubeSetupModel) verifyCredentials() tea.Cmd {
 	clientID := m.cfg.YouTube.ClientID
@@ -1019,6 +1159,8 @@ func (m *YouTubeSetupModel) View() string {
 		content = m.renderCredentials()
 	case YouTubeStepAuthenticating:
 		content = m.renderAuthenticating()
+	case YouTubeStepSelectChannel:
+		content = m.renderSelectChannel()
 	case YouTubeStepConnected:
 		content = m.renderConnected()
 	case YouTubeStepVerifying:
@@ -1262,6 +1404,87 @@ func (m *YouTubeSetupModel) renderCredentials() string {
 	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
 }
 
+// renderSelectChannel renders the channel selection screen for brand accounts
+func (m *YouTubeSetupModel) renderSelectChannel() string {
+	header := RenderHeader("YouTube - Select Channel")
+
+	// Loading state
+	if m.isLoadingChannels {
+		spinnerFrames := []string{"◐", "◓", "◑", "◒"}
+		frame := spinnerFrames[int(time.Now().UnixMilli()/200)%len(spinnerFrames)]
+
+		spinnerStyle := lipgloss.NewStyle().
+			Foreground(ColorOrange).
+			Bold(true)
+
+		messageStyle := lipgloss.NewStyle().
+			Foreground(ColorWhite).
+			Bold(true)
+
+		spinner := spinnerStyle.Render(frame)
+		message := messageStyle.Render("Loading available channels...")
+
+		content := lipgloss.JoinVertical(
+			lipgloss.Center,
+			spinner+" "+message,
+		)
+
+		helpText := "Please wait..."
+		footer := RenderHelpFooter(helpText, m.width)
+
+		return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+	}
+
+	titleStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	selectedStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	normalStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite)
+
+	brandStyle := lipgloss.NewStyle().
+		Foreground(ColorBlue).
+		Italic(true)
+
+	var rows []string
+
+	rows = append(rows, titleStyle.Render("Select which YouTube channel to use:"))
+	rows = append(rows, "")
+	rows = append(rows, descStyle.Render("You have access to multiple YouTube channels."))
+	rows = append(rows, descStyle.Render("Select the channel you want to upload videos to."))
+	rows = append(rows, "")
+
+	// List channels
+	for i, ch := range m.availableChannels {
+		var line string
+		channelName := ch.Title
+		if ch.IsBrand {
+			channelName += " " + brandStyle.Render("(Brand Account)")
+		}
+
+		if i == m.selectedChannelIndex {
+			line = selectedStyle.Render("▶ " + channelName)
+		} else {
+			line = normalStyle.Render("  " + channelName)
+		}
+		rows = append(rows, line)
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+
+	helpText := "↑/k: up • ↓/j: down • enter: select • esc: cancel"
+	footer := RenderHelpFooter(helpText, m.width)
+
+	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+}
+
 // renderAuthenticating renders the authenticating screen
 func (m *YouTubeSetupModel) renderAuthenticating() string {
 	header := RenderHeader("YouTube Setup - Authenticating")
@@ -1500,6 +1723,13 @@ type youtubeAccountAuthCompleteMsg struct {
 	err         error
 	channelName string
 	channelID   string
+}
+type youtubeChannelsLoadedMsg struct {
+	err      error
+	channels []youtube.Channel
+}
+type youtubeChannelSelectedMsg struct {
+	channel youtube.Channel
 }
 
 // renderVerifying renders the verification in progress screen

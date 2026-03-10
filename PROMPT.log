@@ -1395,3 +1395,52 @@ there have been some regressions. Let's revisit the expectations of a user:
 **Summary:** Fixed two issues with recording numbering:
 1. **systray.go**: Added `config.GetCurrentRecordingNumber()` call when creating metadata in `StartRecording()` - was defaulting to 0 instead of scanning for next available number
 2. **history.go**: Added Number update from form in `saveRecording()` - the Number field was never being saved when user edited recording metadata. Added `strconv` import and `strconv.Atoi(h.editForm.GetNumber())` to properly update the Number field
+
+[2026-03-10] now I would like to revisit the youtube upload functionality. In particular while the user is enrolling their youtube account token, they should be able to choose which brand channel they are creating the account for
+
+**Summary:** Added brand channel (brand account) selection during YouTube account enrollment:
+
+1. **auth.go**: Added `Channel` struct and `GetManagedChannels()` function that lists all YouTube channels the user can manage (including brand accounts). Uses the YouTube API `channels.list` with both `mine=true` and `managedByMe=true` to get all accessible channels.
+
+2. **youtube_setup.go**:
+   - Added `YouTubeStepSelectChannel` step to the setup wizard
+   - Added channel selection fields: `availableChannels`, `selectedChannelIndex`, `isLoadingChannels`, `channelSelectionForAccount`
+   - Added `youtubeChannelsLoadedMsg` and `youtubeChannelSelectedMsg` message types
+   - Updated `youtubeAuthCompleteMsg` handler to load available channels after successful OAuth
+   - If multiple channels are found, shows a selection screen with channel names (brand accounts marked)
+   - If only one channel, proceeds automatically
+   - Added `loadAvailableChannels()` and `loadAvailableChannelsForAccount()` functions
+   - Added `renderSelectChannel()` function to display channel selection UI
+   - Updated key handler for channel selection (up/down navigation, enter to select)
+   - Works for both legacy single-account flow and multi-account flow
+
+3. **User flow:**
+   - User enters OAuth credentials
+   - Opens browser for Google consent
+   - After auth, app loads all managed channels
+   - If user has brand accounts, shows selection screen
+   - User selects which channel to use for uploads
+   - Selected channel ID and name are saved to config
+
+---
+
+## 2026-03-10
+
+**Prompt:** (ss) - User showed screenshot of Google OAuth error "Access blocked: Authorization Error" with "Required parameter is missing: response_type"
+
+**Investigation:**
+- Tested URL generation independently - `response_type=code` IS correctly included in generated OAuth URLs
+- The golang.org/x/oauth2 library correctly adds this parameter by default
+- Added debug output to auth.go to trace:
+  1. `DEBUG: Generated auth URL: ...` - shows URL when built by AuthCodeURL
+  2. `DEBUG: Opening browser with URL: ...` - shows URL when passed to xdg-open
+- Added explicit `oauth2.SetAuthURLParam("response_type", "code")` as a safety measure (though library should handle this)
+- Rebuilt binary for user to test
+
+**Possible causes to investigate:**
+1. URL truncation by xdg-open or browser
+2. URL encoding issues
+3. Google Cloud Console configuration issue
+4. Browser or extension intercepting/modifying the URL
+
+**Next steps:** User to test and report debug output to see if URL is properly formed

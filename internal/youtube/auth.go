@@ -121,6 +121,91 @@ func (a *Auth) GetChannelID(ctx context.Context) (string, error) {
 	return response.Items[0].Id, nil
 }
 
+// Channel represents a YouTube channel that the user can manage
+type Channel struct {
+	ID          string
+	Title       string
+	Description string
+	Thumbnail   string
+	IsBrand     bool // True if this is a brand account channel
+}
+
+// GetManagedChannels returns all channels the user can manage (including brand accounts)
+// This should be called after authentication to let the user choose which channel to use
+func (a *Auth) GetManagedChannels(ctx context.Context) ([]Channel, error) {
+	client, err := a.GetClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	service, err := youtube.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		return nil, err
+	}
+
+	var channels []Channel
+
+	// First, get the user's own channel
+	ownCall := service.Channels.List([]string{"snippet", "brandingSettings"}).Mine(true)
+	ownResponse, err := ownCall.Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get own channel: %w", err)
+	}
+
+	for _, item := range ownResponse.Items {
+		ch := Channel{
+			ID:          item.Id,
+			Title:       item.Snippet.Title,
+			Description: item.Snippet.Description,
+			IsBrand:     false,
+		}
+		if item.Snippet.Thumbnails != nil && item.Snippet.Thumbnails.Default != nil {
+			ch.Thumbnail = item.Snippet.Thumbnails.Default.Url
+		}
+		channels = append(channels, ch)
+	}
+
+	// Then, get channels managed by the user (brand accounts)
+	// Note: This requires the user to have granted access to these channels
+	managedCall := service.Channels.List([]string{"snippet", "brandingSettings"}).ManagedByMe(true)
+	managedResponse, err := managedCall.Do()
+	if err != nil {
+		// Some accounts might not have access to managedByMe, that's OK
+		// Just return the own channel
+		if len(channels) > 0 {
+			return channels, nil
+		}
+		return nil, fmt.Errorf("failed to get managed channels: %w", err)
+	}
+
+	for _, item := range managedResponse.Items {
+		// Check if we already have this channel (avoid duplicates)
+		alreadyAdded := false
+		for _, existing := range channels {
+			if existing.ID == item.Id {
+				alreadyAdded = true
+				break
+			}
+		}
+		if alreadyAdded {
+			continue
+		}
+
+		ch := Channel{
+			ID:          item.Id,
+			Title:       item.Snippet.Title,
+			Description: item.Snippet.Description,
+			IsBrand:     true,
+		}
+		if item.Snippet.Thumbnails != nil && item.Snippet.Thumbnails.Default != nil {
+			ch.Thumbnail = item.Snippet.Thumbnails.Default.Url
+		}
+		channels = append(channels, ch)
+	}
+
+	return channels, nil
+}
+
 // AuthenticateWithCallback starts the OAuth2 flow and calls the callback with the auth URL
 // This allows the UI to display the URL while authentication proceeds
 func (a *Auth) AuthenticateWithCallback(ctx context.Context, onURL func(string)) error {
@@ -160,11 +245,17 @@ func (a *Auth) authenticateInternal(ctx context.Context, onURL func(string)) err
 	}
 
 	// Build authorization URL with PKCE
+	// Note: We explicitly set response_type=code even though AuthCodeURL should add it,
+	// because some versions may have issues with parameter ordering
 	authURL := a.config.AuthCodeURL(state,
 		oauth2.AccessTypeOffline,
+		oauth2.SetAuthURLParam("response_type", "code"),
 		oauth2.SetAuthURLParam("code_challenge", codeChallenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
 	)
+
+	// Debug: Log the auth URL for troubleshooting
+	fmt.Printf("DEBUG: Generated auth URL: %s\n", authURL)
 
 	// Call the URL callback if provided (for UI to display)
 	if onURL != nil {
@@ -371,8 +462,12 @@ func generateState() (string, error) {
 func openBrowser(urlStr string) error {
 	var cmd *exec.Cmd
 
+	// Debug: Print the URL being opened
+	fmt.Printf("DEBUG: Opening browser with URL:\n%s\n", urlStr)
+
 	switch runtime.GOOS {
 	case "linux":
+		// Try xdg-open first, fall back to common browsers
 		cmd = exec.Command("xdg-open", urlStr)
 	case "darwin":
 		cmd = exec.Command("open", urlStr)
