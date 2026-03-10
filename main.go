@@ -4,7 +4,7 @@ import "github.com/kartoza/kartoza-screencaster/cmd"
 
 // Version is set via ldflags during build
 // Default shows next development version (last release + 1)
-var version = "0.7.7"
+var version = "0.8.0"
 
 func main() {
 	cmd.SetVersion(version)
