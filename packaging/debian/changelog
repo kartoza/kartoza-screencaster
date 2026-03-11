@@ -1,3 +1,14 @@
+kartoza-screencaster (0.8.0-1) unstable; urgency=medium
+
+  * Add YouTube brand channel selection during account enrollment
+  * Add YouTube permission guidance and graceful error handling
+  * Fix systray behavior on GNOME and other desktop environments
+  * Fix recording number sequencing
+  * Fix vertical video filename format
+  * Add kooha for GNOME-compatible screen recording in development
+
+ -- Tim Sutton <tim@kartoza.com>  Tue, 11 Mar 2026 12:00:00 +0200
+
 kartoza-screencaster (0.7.6-1) unstable; urgency=medium
 
   * Add room noise capture (30s) after recording for audio calibration

@@ -1,5 +1,5 @@
 Name:           kartoza-screencaster
-Version:        0.7.6
+Version:        0.8.0
 Release:        1%{?dist}
 Summary:        Screen recording tool for Wayland
 
@@ -46,6 +46,13 @@ install -D -m 0644 resources/icon_ready.svg %{buildroot}%{_datadir}/icons/hicolo
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Tue Mar 11 2026 Tim Sutton <tim@kartoza.com> - 0.8.0-1
+- Add YouTube brand channel selection during account enrollment
+- Add YouTube permission guidance and graceful error handling
+- Fix systray behavior on GNOME and other desktop environments
+- Fix recording number sequencing
+- Fix vertical video filename format
+
 * Thu Feb 06 2026 Tim Sutton <tim@kartoza.com> - 0.7.6-1
 - Add room noise capture for audio calibration
 - Remember last used presenter name
