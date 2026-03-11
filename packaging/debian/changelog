@@ -1,3 +1,10 @@
+kartoza-screencaster (0.8.1-1) unstable; urgency=medium
+
+  * Make systray mode the default when running without arguments
+  * Add 'tui' subcommand to explicitly run the TUI interface
+
+ -- Tim Sutton <tim@kartoza.com>  Tue, 11 Mar 2026 21:00:00 +0200
+
 kartoza-screencaster (0.8.0-1) unstable; urgency=medium
 
   * Add YouTube brand channel selection during account enrollment

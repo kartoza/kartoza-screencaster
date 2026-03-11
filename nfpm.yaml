@@ -1,7 +1,7 @@
 name: kartoza-screencaster
 arch: amd64
 platform: linux
-version: v0.8.0
+version: v0.8.1
 version_schema: semver
 section: video
 priority: optional

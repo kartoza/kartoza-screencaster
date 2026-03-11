@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/kartoza/kartoza-screencaster/internal/systray"
 	"github.com/spf13/cobra"
 )
 
 var (
-	version           = "0.8.0"
+	version           = "0.8.1"
 	debugMode         bool
 	dataDir           string
 	noSplash          bool
@@ -35,11 +36,8 @@ It supports:
 
 The tool integrates with Hyprland and other wlroots-based compositors.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Default action: start TUI or toggle recording
-		if err := runTUI(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
+		// Default action: run systray mode
+		systray.RunWithHandler()
 	},
 }
 
@@ -68,7 +66,27 @@ func init() {
 	rootCmd.AddCommand(monitorsCmd)
 }
 
-func runTUI() error {
-	// Import and run the TUI application
-	return runTUIApp(noSplash, presetsMode)
+var tuiCmd = &cobra.Command{
+	Use:   "tui",
+	Short: "Run the terminal user interface",
+	Long: `Run the Kartoza Screencaster in TUI (terminal user interface) mode.
+
+The TUI provides a full-featured interface for:
+  - Starting and stopping recordings with all options
+  - Managing recording presets
+  - Viewing recording history
+  - Editing recording metadata
+  - YouTube upload configuration
+
+Use this when you need the complete recording workflow with metadata entry.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := runTUIApp(noSplash, presetsMode); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(tuiCmd)
 }

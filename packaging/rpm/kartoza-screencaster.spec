@@ -1,5 +1,5 @@
 Name:           kartoza-screencaster
-Version:        0.8.0
+Version:        0.8.1
 Release:        1%{?dist}
 Summary:        Screen recording tool for Wayland
 
@@ -46,6 +46,10 @@ install -D -m 0644 resources/icon_ready.svg %{buildroot}%{_datadir}/icons/hicolo
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Tue Mar 11 2026 Tim Sutton <tim@kartoza.com> - 0.8.1-1
+- Make systray mode the default when running without arguments
+- Add 'tui' subcommand to explicitly run the TUI interface
+
 * Tue Mar 11 2026 Tim Sutton <tim@kartoza.com> - 0.8.0-1
 - Add YouTube brand channel selection during account enrollment
 - Add YouTube permission guidance and graceful error handling
