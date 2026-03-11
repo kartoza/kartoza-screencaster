@@ -26,6 +26,12 @@ vendor/
 *.swo
 *~
 
+# Claude Code local settings
+.claude/settings.local.json
+
+# Local binaries
+/ksc
+
 # OS files
 .DS_Store
 Thumbs.db
