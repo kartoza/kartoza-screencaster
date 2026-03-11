@@ -1,0 +1,41 @@
+name: kartoza-screencaster
+arch: amd64
+platform: linux
+version: v0.8.0
+version_schema: semver
+section: video
+priority: optional
+maintainer: Tim Sutton <tim@kartoza.com>
+description: Screen recording tool for Wayland with YouTube integration
+vendor: Kartoza
+homepage: https://github.com/kartoza/kartoza-screencaster
+license: MIT
+
+contents:
+  - src: ./release/kartoza-screencaster-linux-amd64
+    dst: /usr/bin/kartoza-screencaster
+    file_info:
+      mode: 0755
+  - src: ./resources/kartoza-screencaster.desktop
+    dst: /usr/share/applications/kartoza-screencaster.desktop
+    file_info:
+      mode: 0644
+  - src: ./resources/icon_ready.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
+    file_info:
+      mode: 0644
+
+depends:
+  - ffmpeg
+  - libnotify4
+
+recommends:
+  - wl-screenrec
+  - pipewire
+
+deb:
+  fields:
+    Bugs: https://github.com/kartoza/kartoza-screencaster/issues
+
+rpm:
+  group: Applications/Multimedia
