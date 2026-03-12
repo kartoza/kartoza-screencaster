@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	version           = "0.8.1"
+	version           = "0.8.2"
 	debugMode         bool
 	dataDir           string
 	noSplash          bool
@@ -36,6 +36,14 @@ It supports:
 
 The tool integrates with Hyprland and other wlroots-based compositors.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// If presets or edit-recording mode is requested, run TUI instead of systray
+		if presetsMode || editRecordingMode {
+			if err := runTUIApp(noSplash, presetsMode); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
 		// Default action: run systray mode
 		systray.RunWithHandler()
 	},

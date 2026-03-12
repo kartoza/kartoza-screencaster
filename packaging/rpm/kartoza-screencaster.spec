@@ -1,5 +1,5 @@
 Name:           kartoza-screencaster
-Version:        0.8.1
+Version:        0.8.2
 Release:        1%{?dist}
 Summary:        Screen recording tool for Wayland
 
@@ -46,6 +46,13 @@ install -D -m 0644 resources/icon_ready.svg %{buildroot}%{_datadir}/icons/hicolo
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Wed Mar 12 2026 Tim Sutton <tim@kartoza.com> - 0.8.2-1
+- Fix multiple systray icons spawning on stop/tui open
+- Fix icon not spinning during room noise capture
+- Fix blank TUI console when opening from systray
+- Simplify click behavior: single click toggles start/pause/resume
+- Add regression tests for systray behavior
+
 * Tue Mar 11 2026 Tim Sutton <tim@kartoza.com> - 0.8.1-1
 - Make systray mode the default when running without arguments
 - Add 'tui' subcommand to explicitly run the TUI interface

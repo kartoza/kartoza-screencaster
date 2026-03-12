@@ -98,29 +98,31 @@ type Manager struct {
 	// Recording info for tooltip
 	recordingInfo *RecordingInfo
 
-	// Double-click detection
-	lastClickTime time.Time
-
 	// Countdown icons (digits 1-5 overlaid on ready icon)
 	countdownIcons [6][]byte // index 1-5 = digit icons, 0 unused
 
 	// Countdown cancellation
 	cancelCountdown chan struct{}
 	isCountingDown  bool
+
+	// Room noise capture
+	roomNoiseDoneChan chan struct{}
+	pendingOutputDir  string // Output dir to open TUI after room noise capture
 }
 
 // New creates a new systray manager
 func New() *Manager {
 	m := &Manager{
-		recorder:     recorder.New(),
-		startChan:    make(chan struct{}, 1),
-		stopChan:     make(chan struct{}, 1),
-		pauseChan:    make(chan struct{}, 1),
-		tuiChan:      make(chan struct{}, 1),
-		quitChan:     make(chan struct{}, 1),
-		stopRotation: make(chan struct{}),
-		stopStatus:   make(chan struct{}),
-		currentState: StateIdle,
+		recorder:          recorder.New(),
+		startChan:         make(chan struct{}, 1),
+		stopChan:          make(chan struct{}, 1),
+		pauseChan:         make(chan struct{}, 1),
+		tuiChan:           make(chan struct{}, 1),
+		quitChan:          make(chan struct{}, 1),
+		stopRotation:      make(chan struct{}),
+		stopStatus:        make(chan struct{}),
+		roomNoiseDoneChan: make(chan struct{}, 1),
+		currentState:      StateIdle,
 	}
 	m.loadAndPrepareIcons()
 	return m
@@ -269,6 +271,11 @@ func (m *Manager) QuitChan() <-chan struct{} {
 	return m.quitChan
 }
 
+// RoomNoiseDoneChan returns the channel that signals when room noise capture is complete
+func (m *Manager) RoomNoiseDoneChan() <-chan struct{} {
+	return m.roomNoiseDoneChan
+}
+
 // OnReady is called when the systray is ready
 func (m *Manager) OnReady() {
 	// Set initial icon (ready/idle state)
@@ -276,15 +283,12 @@ func (m *Manager) OnReady() {
 	systray.SetTitle("Kartoza Video")
 	systray.SetTooltip("Kartoza Video Processor - Click to start recording")
 
-	// Set up left-click handler with double-click detection
-	// Single click while recording: pause/resume
-	// Double click while recording: stop recording
-	// Single click while idle: start recording
+	// Set up left-click handler
+	// Click while idle: start recording with countdown
+	// Click while recording: pause
+	// Click while paused: resume
+	// Stop is only available via right-click menu
 	systray.SetOnTapped(func() {
-		now := time.Now()
-		isDoubleClick := now.Sub(m.lastClickTime) < 400*time.Millisecond
-		m.lastClickTime = now
-
 		// If counting down, cancel on any click
 		if m.isCountingDown {
 			m.CancelCountdown()
@@ -298,26 +302,20 @@ func (m *Manager) OnReady() {
 
 		status := m.recorder.GetStatus()
 
-		if isDoubleClick && (status.IsRecording || status.IsPaused) {
-			// Double-click while recording or paused: stop recording
-			select {
-			case m.stopChan <- struct{}{}:
-			default:
-			}
-		} else if status.IsRecording {
-			// Single click while recording: pause
+		if status.IsRecording {
+			// Click while recording: pause
 			select {
 			case m.pauseChan <- struct{}{}:
 			default:
 			}
 		} else if status.IsPaused {
-			// Single click while paused: resume
+			// Click while paused: resume
 			select {
 			case m.pauseChan <- struct{}{}:
 			default:
 			}
 		} else {
-			// Single click while idle: start recording with countdown
+			// Click while idle: start recording with countdown
 			select {
 			case m.startChan <- struct{}{}:
 			default:
@@ -452,8 +450,8 @@ func (m *Manager) updateStatus() {
 			m.SetRecordingPaused()
 		}
 	} else {
-		// Idle (but check if we're processing - don't change from processing to idle)
-		if statusChanged && m.currentState != StateProcessing {
+		// Idle (but check if we're processing or recording room noise - don't change state)
+		if statusChanged && m.currentState != StateProcessing && m.currentState != StateRoomNoise {
 			m.SetIdle()
 		}
 	}
@@ -996,11 +994,12 @@ func (m *Manager) StartRecording() error {
 	return m.recorder.StartWithOptions(opts)
 }
 
-// StopRecording stops the current recording, captures room noise if audio was enabled,
-// then marks it as needing metadata
-func (m *Manager) StopRecording() error {
+// StopRecording stops the current recording and starts room noise capture if audio was enabled.
+// Returns (capturingRoomNoise, error) - if capturingRoomNoise is true, caller should wait for
+// RoomNoiseDoneChan before opening TUI.
+func (m *Manager) StopRecording() (bool, error) {
 	if !m.recorder.IsRecording() && !m.recorder.IsPaused() {
-		return fmt.Errorf("no recording in progress")
+		return false, fmt.Errorf("no recording in progress")
 	}
 
 	// Get output directory before stopping
@@ -1014,14 +1013,19 @@ func (m *Manager) StopRecording() error {
 		}
 	}
 
-	// Stop recording without processing - we'll process after user provides metadata
-	if err := m.recorder.Stop(); err != nil {
-		return err
+	// If we'll capture room noise, set state BEFORE stopping recorder
+	// This prevents status polling from calling SetIdle() during the transition
+	willCaptureRoomNoise := audioEnabled && outputDir != ""
+	if willCaptureRoomNoise {
+		m.SetRoomNoise()
 	}
 
-	// If audio was enabled, capture room noise for calibration
-	if audioEnabled && outputDir != "" {
-		m.captureRoomNoise(outputDir)
+	// Stop recording without processing - we'll process after user provides metadata
+	if err := m.recorder.Stop(); err != nil {
+		if willCaptureRoomNoise {
+			m.ClearRoomNoise() // Reset state if stop failed
+		}
+		return false, err
 	}
 
 	// Mark the recording as needing metadata
@@ -1032,37 +1036,54 @@ func (m *Manager) StopRecording() error {
 		}
 	}
 
-	return nil
+	// If audio was enabled, start room noise capture (async)
+	if willCaptureRoomNoise {
+		m.pendingOutputDir = outputDir
+		m.startRoomNoiseCapture(outputDir)
+		return true, nil
+	}
+
+	return false, nil
 }
 
-// captureRoomNoise captures 30 seconds of room noise for audio calibration
-// This runs synchronously and blocks until complete
-func (m *Manager) captureRoomNoise(outputDir string) {
-	// Set room noise state - reverse spinning icon at 2x speed
-	m.SetRoomNoise()
+// startRoomNoiseCapture captures 30 seconds of room noise for audio calibration
+// This runs asynchronously and signals completion via roomNoiseDoneChan
+// Note: SetRoomNoise() must be called before this function
+func (m *Manager) startRoomNoiseCapture(outputDir string) {
+	go func() {
+		roomNoiseFile := filepath.Join(outputDir, "room_noise.wav")
 
-	roomNoiseFile := filepath.Join(outputDir, "room_noise.wav")
+		// Start audio recorder for room noise
+		roomNoiseRecorder := audio.NewRecorder("", roomNoiseFile)
+		if err := roomNoiseRecorder.Start(); err != nil {
+			// If room noise recording fails, just signal done
+			m.ClearRoomNoise()
+			select {
+			case m.roomNoiseDoneChan <- struct{}{}:
+			default:
+			}
+			return
+		}
 
-	// Start audio recorder for room noise
-	roomNoiseRecorder := audio.NewRecorder("", roomNoiseFile)
-	if err := roomNoiseRecorder.Start(); err != nil {
-		// If room noise recording fails, just continue
+		// Capture for 30 seconds with countdown updates
+		for countdown := 30; countdown > 0; countdown-- {
+			m.mStatus.SetTitle(fmt.Sprintf("Room Noise: %ds", countdown))
+			systray.SetTooltip(fmt.Sprintf("🎤 Recording room noise - %d seconds remaining\nPlease keep quiet!", countdown))
+			time.Sleep(1 * time.Second)
+		}
+
+		// Stop the room noise recorder
+		_ = roomNoiseRecorder.Stop()
+
+		// Return to idle state
 		m.ClearRoomNoise()
-		return
-	}
 
-	// Capture for 30 seconds with countdown updates
-	for countdown := 30; countdown > 0; countdown-- {
-		m.mStatus.SetTitle(fmt.Sprintf("Room Noise: %ds", countdown))
-		systray.SetTooltip(fmt.Sprintf("🎤 Recording room noise - %d seconds remaining\nPlease keep quiet!", countdown))
-		time.Sleep(1 * time.Second)
-	}
-
-	// Stop the room noise recorder
-	_ = roomNoiseRecorder.Stop()
-
-	// Return to idle state (will be set to processing later by TUI)
-	m.ClearRoomNoise()
+		// Signal completion
+		select {
+		case m.roomNoiseDoneChan <- struct{}{}:
+		default:
+		}
+	}()
 }
 
 // PauseRecording pauses or resumes the current recording
@@ -1079,12 +1100,12 @@ func (m *Manager) PauseRecording() error {
 
 // OpenTUI opens the TUI for metadata entry, going directly to the recording edit screen
 func (m *Manager) OpenTUI() error {
-	return m.openTUIWithArgs("--edit-recording", "--nosplash")
+	return m.openTUIWithArgs("tui", "--edit-recording", "--nosplash")
 }
 
 // OpenTUIMain opens the normal TUI (main menu)
 func (m *Manager) OpenTUIMain() error {
-	return m.openTUIWithArgs()
+	return m.openTUIWithArgs("tui")
 }
 
 // openTUIWithArgs launches the TUI in a terminal with the given extra arguments
@@ -1128,7 +1149,7 @@ func (m *Manager) openTUIWithArgs(extraArgs ...string) error {
 
 // OpenTUIToPresets opens the TUI directly to the recording presets configuration
 func (m *Manager) OpenTUIToPresets() error {
-	return m.openTUIWithArgs("--presets")
+	return m.openTUIWithArgs("tui", "--presets")
 }
 
 // formatDuration formats a duration as HH:MM:SS or MM:SS
@@ -1164,13 +1185,20 @@ func RunWithHandler() {
 				fmt.Fprintf(os.Stderr, "Failed to start recording: %v\n", err)
 			}
 		case <-manager.StopChan():
-			if err := manager.StopRecording(); err != nil {
+			capturingRoomNoise, err := manager.StopRecording()
+			if err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to stop recording: %v\n", err)
-			} else {
-				// Open TUI for metadata entry
+			} else if !capturingRoomNoise {
+				// No room noise capture needed, open TUI immediately
 				if err := manager.OpenTUI(); err != nil {
 					fmt.Fprintf(os.Stderr, "Failed to open TUI: %v\n", err)
 				}
+			}
+			// If capturingRoomNoise is true, TUI will be opened when RoomNoiseDoneChan fires
+		case <-manager.RoomNoiseDoneChan():
+			// Room noise capture complete, now open TUI for metadata entry
+			if err := manager.OpenTUI(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to open TUI: %v\n", err)
 			}
 		case <-manager.PauseChan():
 			if err := manager.PauseRecording(); err != nil {
