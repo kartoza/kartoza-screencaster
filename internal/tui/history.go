@@ -881,6 +881,7 @@ func (h *HistoryModel) initEditForm() {
 	h.editForm.State.RecordScreen = rec.Settings.ScreenEnabled
 	h.editForm.State.VerticalVideo = rec.Settings.VerticalEnabled
 	h.editForm.State.LeftSplit = rec.Settings.LeftSplitEnabled
+	h.editForm.State.WebcamBubble = rec.Settings.WebcamBubbleEnabled
 	h.editForm.State.AddLogos = rec.Settings.LogosEnabled
 
 	// Set logo indices from existing settings
@@ -972,6 +973,7 @@ func (h *HistoryModel) saveRecording() tea.Cmd {
 	h.selectedRecording.Settings.ScreenEnabled = h.editForm.State.RecordScreen
 	h.selectedRecording.Settings.VerticalEnabled = h.editForm.State.VerticalVideo
 	h.selectedRecording.Settings.LeftSplitEnabled = h.editForm.State.LeftSplit
+	h.selectedRecording.Settings.WebcamBubbleEnabled = h.editForm.State.WebcamBubble
 	h.selectedRecording.Settings.LogosEnabled = h.editForm.State.AddLogos
 	h.selectedRecording.Settings.LeftLogo = h.resolveLogoPath(h.editForm.State.SelectedLeftIdx)
 	h.selectedRecording.Settings.RightLogo = h.resolveLogoPath(h.editForm.State.SelectedRightIdx)

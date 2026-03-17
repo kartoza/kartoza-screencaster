@@ -299,6 +299,7 @@ func (m *RecordingSetupModel) GetRecordingPresets() config.RecordingPresets {
 		RecordScreen:  m.form.State.RecordScreen,
 		VerticalVideo: m.form.State.VerticalVideo,
 		LeftSplit:     m.form.State.LeftSplit,
+		WebcamBubble:  m.form.State.WebcamBubble,
 		AddLogos:      m.form.State.AddLogos,
 		Topic:         m.form.GetSelectedTopic().Name,
 	}

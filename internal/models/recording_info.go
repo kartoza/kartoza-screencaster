@@ -111,9 +111,10 @@ type RecordingSettings struct {
 	WebcamEnabled  bool `json:"webcam_enabled"`
 
 	// Output options
-	VerticalEnabled  bool `json:"vertical_enabled"`   // Whether vertical video will be created
-	LeftSplitEnabled bool `json:"left_split_enabled"` // Use left half of screen for vertical video
-	LogosEnabled     bool `json:"logos_enabled"`      // Whether logos will be added
+	VerticalEnabled     bool `json:"vertical_enabled"`      // Whether vertical video will be created
+	LeftSplitEnabled    bool `json:"left_split_enabled"`    // Use left half of screen for vertical video
+	WebcamBubbleEnabled bool `json:"webcam_bubble_enabled"` // Use circular webcam bubble (true) or rectangular (false)
+	LogosEnabled        bool `json:"logos_enabled"`         // Whether logos will be added
 
 	// Hardware/device settings
 	HardwareAccel bool   `json:"hardware_accel"`

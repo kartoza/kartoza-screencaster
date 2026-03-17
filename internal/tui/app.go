@@ -1182,6 +1182,7 @@ func (m AppModel) handleCountdownTick() (tea.Model, tea.Cmd) {
 			m.recordingInfo.Settings.WebcamEnabled = m.recordingSetup.form.State.RecordWebcam
 			m.recordingInfo.Settings.VerticalEnabled = m.recordingSetup.form.State.VerticalVideo && m.recordingSetup.form.State.RecordWebcam && m.recordingSetup.form.State.RecordScreen
 			m.recordingInfo.Settings.LeftSplitEnabled = m.recordingSetup.form.State.LeftSplit
+			m.recordingInfo.Settings.WebcamBubbleEnabled = m.recordingSetup.form.State.WebcamBubble
 			m.recordingInfo.Settings.LogosEnabled = m.recordingSetup.form.State.AddLogos
 
 			// Logo details

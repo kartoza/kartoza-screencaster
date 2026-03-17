@@ -39,6 +39,7 @@ const (
 	OptionsFieldPresetRecordScreen
 	OptionsFieldPresetVerticalVideo
 	OptionsFieldPresetLeftSplit
+	OptionsFieldPresetWebcamBubble
 	OptionsFieldPresetAddLogos
 	OptionsFieldSave
 )
@@ -104,6 +105,7 @@ type OptionsModel struct {
 	presetRecordScreen  bool
 	presetVerticalVideo bool
 	presetLeftSplit     bool
+	presetWebcamBubble  bool
 	presetAddLogos      bool
 
 	// State
@@ -193,6 +195,7 @@ func NewOptionsModel() *OptionsModel {
 		presetRecordScreen:  presets.RecordScreen,
 		presetVerticalVideo: presets.VerticalVideo,
 		presetLeftSplit:     presets.LeftSplit,
+		presetWebcamBubble:  presets.WebcamBubble,
 		presetAddLogos:      presets.AddLogos,
 	}
 }
@@ -411,6 +414,12 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 					m.presetLeftSplit = !m.presetLeftSplit
 				}
 				return m, nil
+			case OptionsFieldPresetWebcamBubble:
+				// Only allow if vertical video and left split are enabled
+				if m.presetVerticalVideo && m.presetLeftSplit {
+					m.presetWebcamBubble = !m.presetWebcamBubble
+				}
+				return m, nil
 			case OptionsFieldPresetAddLogos:
 				m.presetAddLogos = !m.presetAddLogos
 				return m, nil
@@ -565,6 +574,7 @@ func (m *OptionsModel) save() {
 		RecordScreen:  m.presetRecordScreen,
 		VerticalVideo: m.presetVerticalVideo,
 		LeftSplit:     m.presetLeftSplit,
+		WebcamBubble:  m.presetWebcamBubble,
 		AddLogos:      m.presetAddLogos,
 	}
 	m.config.PresetsConfigured = true
@@ -835,6 +845,14 @@ func (m *OptionsModel) View() string {
 	leftSplitPresetRow := lipgloss.JoinHorizontal(lipgloss.Center,
 		leftSplitPresetLabel, m.renderPresetToggleWithDisabled(m.presetLeftSplit, m.focusedField == OptionsFieldPresetLeftSplit, leftSplitDisabled))
 
+	webcamBubbleDisabled := !m.presetVerticalVideo || !m.presetLeftSplit
+	webcamBubblePresetLabel := labelStyle.Render("Webcam Bubble: ")
+	if m.focusedField == OptionsFieldPresetWebcamBubble {
+		webcamBubblePresetLabel = labelActiveStyle.Render("Webcam Bubble: ")
+	}
+	webcamBubblePresetRow := lipgloss.JoinHorizontal(lipgloss.Center,
+		webcamBubblePresetLabel, m.renderPresetToggleWithDisabledMsg(m.presetWebcamBubble, m.focusedField == OptionsFieldPresetWebcamBubble, webcamBubbleDisabled, "(requires left split)"))
+
 	logosPresetLabel := labelStyle.Render("Logos: ")
 	if m.focusedField == OptionsFieldPresetAddLogos {
 		logosPresetLabel = labelActiveStyle.Render("Logos: ")
@@ -891,6 +909,7 @@ func (m *OptionsModel) View() string {
 		screenPresetRow,
 		verticalPresetRow,
 		leftSplitPresetRow,
+		webcamBubblePresetRow,
 		logosPresetRow,
 		"",
 		saveRow,
@@ -925,9 +944,14 @@ func (m *OptionsModel) renderPresetToggle(value bool, focused bool) string {
 
 // renderPresetToggleWithDisabled renders a toggle or disabled hint
 func (m *OptionsModel) renderPresetToggleWithDisabled(value bool, focused bool, disabled bool) string {
+	return m.renderPresetToggleWithDisabledMsg(value, focused, disabled, "(requires webcam or screen)")
+}
+
+// renderPresetToggleWithDisabledMsg renders a toggle or disabled hint with a custom message
+func (m *OptionsModel) renderPresetToggleWithDisabledMsg(value bool, focused bool, disabled bool, msg string) string {
 	if disabled {
 		disabledStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
-		return disabledStyle.Render("(requires webcam or screen)")
+		return disabledStyle.Render(msg)
 	}
 	return m.renderPresetToggle(value, focused)
 }

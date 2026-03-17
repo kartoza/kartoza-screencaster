@@ -144,6 +144,7 @@ type MergeOptions struct {
 	RoomNoiseFile  string             // Room noise file for audio processing calibration
 	CreateVertical bool
 	LeftSplit      bool               // Use left half of screen for vertical video
+	WebcamBubble   bool               // Use circular webcam bubble (true) or rectangular (false)
 	AddLogos       bool               // Whether to add logo overlays
 	ProductLogo1   string             // Path to product logo 1 (top-left)
 	ProductLogo2   string             // Path to product logo 2 (top-right)
@@ -977,11 +978,22 @@ func (m *Merger) buildLeftSplitVerticalFilterComplex(videoFile, webcamFile strin
 		inputIdx++
 	}
 
-	// Add circular webcam overlay (bottom-right, same style as merged video)
-	// Build webcam circle filter
-	webcamCircleFragment, webcamOut := buildWebcamCircleOverlay(1, webcamOverlaySize, webcamOverlayMargin, currentOutput)
-	filterComplex += ";" + webcamCircleFragment
-	currentOutput = webcamOut
+	// Add webcam overlay based on WebcamBubble setting
+	// WebcamBubble=true: circular overlay in bottom-right corner
+	// WebcamBubble=false: rectangular overlay at top of lower third
+	if opts != nil && !opts.WebcamBubble {
+		// Rectangular webcam: positioned at top of lower third, beneath screen recording
+		// Leave space for logos on sides and title/banner at bottom
+		webcamY := scaledHeight + 10 // Just below the screen recording with padding
+		webcamRectFragment, webcamOut := buildWebcamRectOverlay(1, YouTubeShortsWidth, webcamY, currentOutput)
+		filterComplex += ";" + webcamRectFragment
+		currentOutput = webcamOut
+	} else {
+		// Circular webcam: bottom-right corner (default/bubble mode)
+		webcamCircleFragment, webcamOut := buildWebcamCircleOverlay(1, webcamOverlaySize, webcamOverlayMargin, currentOutput)
+		filterComplex += ";" + webcamCircleFragment
+		currentOutput = webcamOut
+	}
 
 	// Add title text below banner, centered, 10px from bottom of frame
 	if opts != nil && opts.VideoTitle != "" {
@@ -1548,6 +1560,24 @@ func buildWebcamCircleOverlay(inputIdx, size, margin int, currentOutput string) 
 		inputIdx, size, size, size, size,
 		radius, radius, radius, radius, radius, radius,
 		currentOutput, margin, margin, outLabel,
+	)
+	return fragment, outLabel
+}
+
+// buildWebcamRectOverlay builds an FFmpeg filter fragment for a rectangular webcam overlay.
+// It scales the webcam to fill the specified width while maintaining aspect ratio,
+// and positions it at the specified Y coordinate (top of lower third).
+// The webcam is centered horizontally and positioned at the top of the lower third area.
+// Returns: (filterFragment, newOutputLabel)
+func buildWebcamRectOverlay(inputIdx, width, yPosition int, currentOutput string) (string, string) {
+	outLabel := "[out_webcam_rect]"
+	// Scale webcam to fill width while maintaining aspect ratio
+	// Position it centered horizontally at the specified Y position
+	fragment := fmt.Sprintf(
+		"[%d:v]scale=%d:-1:flags=lanczos[webcam_rect];"+
+			"%s[webcam_rect]overlay=(W-w)/2:%d%s",
+		inputIdx, width,
+		currentOutput, yPosition, outLabel,
 	)
 	return fragment, outLabel
 }

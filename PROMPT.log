@@ -1466,3 +1466,70 @@ there have been some regressions. Let's revisit the expectations of a user:
    - Added "Required Permissions" section to setup instructions
    - Added hint in empty playlists view about re-authenticating for permissions
    - Graceful degradation when playlist features unavailable
+2026-03-11 23:43:17 - Fix regressions: (1) multiple systray icons on stop/tui open, (2) icon not spinning during room noise capture, (3) blank TUI console. Root cause: rootCmd ignoring --edit-recording and --presets flags, running systray instead of TUI.
+2026-03-11 23:54:38 - Additional fix: Changed OpenTUI, OpenTUIMain, and OpenTUIToPresets to use 'tui' subcommand explicitly instead of relying on flags alone.
+2026-03-11 23:58:40 - Fix: status polling was resetting icon to idle during room noise capture. Added StateRoomNoise check to updateStatus() at line 456.
+2026-03-12 00:02:51 - Simplified click behavior: removed double-click detection. Now click toggles start/pause/resume, stop only via right-click menu.
+2026-03-12 00:23:53 - Fix: Made room noise capture async. Main event loop no longer blocked, allowing systray icon rotation to update properly during 30-second capture.
+2026-03-12 00:34:05 - Fix: Set StateRoomNoise BEFORE stopping recorder to prevent race with status polling. Renamed captureRoomNoiseAsync to startRoomNoiseCapture.
+2026-03-12 00:50:22 - Released v0.8.2 with fixes for systray regressions and added regression tests.
+
+---
+
+**Prompt:** update my flake to provision claude and antigravity via jail.nix providing permissions to only this folder
+
+**Summary:** Updated flake.nix to add sandboxed AI coding agents:
+1. Added jail-nix input from sourcehut:~alexdavid/jail.nix
+2. Added llm-agents input from github:numtide/llm-agents.nix for Claude Code
+3. Added antigravity-nix input from github:jacopone/antigravity-nix for Google Antigravity IDE
+4. Created jailedClaude and jailedAntigravity derivations using jail.nix combinators
+5. Restricted both agents to read-write access only to the project folder
+6. Added network access for API calls
+7. Added gui/gpu access for Antigravity (IDE needs display)
+8. Added config directory access for both tools
+9. Added jailed packages to devShell buildInputs
+10. Added nix run .#claude and nix run .#antigravity apps
+11. Added nixConfig with numtide cachix substituter
+12. Set allowUnfree = true for Claude Code (proprietary)
+
+---
+
+**Prompt:** in the Output Options, if user has chosen vertical video, there should be a 'webcam bubble' option. When enabled, it puts the webcam in a circle as currently implemented. When unchecked the video should be rectangular, anchored in the top of the lower third beneath the screen recording video with a small amount of white space left at the bottom of the output render for displaying the title etc.
+
+**Summary:** Added Webcam Bubble toggle for vertical video mode:
+1. **Config changes:**
+   - Added WebcamBubble field to RecordingPresets in config.go
+   - Added WebcamBubbleEnabled field to RecordingSettings in recording_info.go
+   - Added WebcamBubble field to MergeOptions in merger.go
+   - Default value is true (circular bubble mode)
+
+2. **Recording Form UI:**
+   - Added FormFieldWebcamBubble to form field enum
+   - Added WebcamBubble toggle to RecordingFormState
+   - Toggle only appears when Vertical Video AND Left Split are enabled
+   - Navigation updated for new field
+
+3. **Options/Presets UI:**
+   - Added OptionsFieldPresetWebcamBubble to options field enum
+   - Added presetWebcamBubble to OptionsModel
+   - Toggle appears with "(requires left split)" hint when disabled
+   - Preset saved and restored between sessions
+
+4. **Merger implementation:**
+   - Added buildWebcamRectOverlay() function for rectangular webcam
+   - Modified buildLeftSplitVerticalFilterComplex() to use either:
+     - Circular overlay (bubble mode): bottom-right corner, 250px diameter
+     - Rectangular overlay (non-bubble): full-width, positioned at top of lower third
+   - Rectangular webcam leaves space at bottom for title/banner
+
+5. **Wiring through the flow:**
+   - recording_setup.go: Added WebcamBubble to RecordingPresets
+   - app.go: Added WebcamBubbleEnabled to RecordingSettings
+   - recorder.go: Added WebcamBubble to MergeOptions
+   - history.go: Added WebcamBubble sync for edit form
+
+6. **Documentation:**
+   - Updated SPECIFICATION.md FR-004 with new webcam modes
+   - Updated recording_presets and settings examples
+
+---

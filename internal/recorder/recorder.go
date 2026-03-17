@@ -1024,6 +1024,7 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		RoomNoiseFile:  r.roomNoiseFile,
 		CreateVertical: r.createVertical && webcamFile != "",
 		LeftSplit:      r.recordingInfo != nil && r.recordingInfo.Settings.LeftSplitEnabled,
+		WebcamBubble:   r.recordingInfo == nil || r.recordingInfo.Settings.WebcamBubbleEnabled,
 	}
 	// Add part files if available (for pause/resume support)
 	if r.recordingInfo != nil && len(r.recordingInfo.Files.VideoParts) > 0 {

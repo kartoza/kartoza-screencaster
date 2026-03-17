@@ -151,7 +151,9 @@ The recording can be in the following states:
 
 ### FR-004: Vertical Video Options
 - Standard layout: Screen video with webcam circle overlay (bottom-right)
-- Left-split layout: Left half of screen fills frame, webcam bottom-right
+- Left-split layout: Left half of screen fills frame, with webcam overlay options:
+  - **Webcam Bubble (default)**: Circular webcam overlay in the bottom-right corner
+  - **Webcam Rectangle**: Full-width rectangular webcam positioned at the top of the lower third, beneath the screen recording, leaving space at the bottom for title/banner
 - Logo overlays: Product logos (top corners), company logo with title (lower third)
 - Configurable background color for letterboxing
 
@@ -167,7 +169,7 @@ The recording can be in the following states:
 
 ### FR-006: Presets
 - First-run detection - Open presets config if not configured
-- Recording presets: Record screen, audio, webcam, vertical video, logos
+- Recording presets: Record screen, audio, webcam, vertical video, left split, webcam bubble, logos
 - Presets are saved and used for subsequent systray-initiated recordings
 
 ### FR-007: YouTube Integration
@@ -228,6 +230,8 @@ The recording can be in the following states:
     "audio_enabled": true,
     "webcam_enabled": true,
     "vertical_enabled": true,
+    "left_split_enabled": true,
+    "webcam_bubble_enabled": true,
     "logos_enabled": true,
     "left_logo": "/path/to/logo.png",
     "right_logo": "/path/to/logo.png",
@@ -253,6 +257,8 @@ The recording can be in the following states:
     "record_audio": true,
     "record_webcam": true,
     "vertical_video": true,
+    "left_split": true,
+    "webcam_bubble": true,
     "add_logos": true
   },
   "youtube": {

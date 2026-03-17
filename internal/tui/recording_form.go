@@ -35,6 +35,7 @@ const (
 	FormFieldMonitor
 	FormFieldVerticalVideo
 	FormFieldLeftSplit
+	FormFieldWebcamBubble
 	FormFieldAddLogos
 	FormFieldLeftLogo
 	FormFieldRightLogo
@@ -83,6 +84,7 @@ type RecordingFormState struct {
 	RecordScreen  bool
 	VerticalVideo bool
 	LeftSplit     bool // Use left half of screen for vertical video
+	WebcamBubble  bool // Use circular webcam bubble (true) or rectangular (false)
 	AddLogos      bool
 
 	// Logo selection
@@ -171,6 +173,7 @@ func NewRecordingFormState(mode RecordingFormMode) *RecordingFormState {
 		state.RecordScreen = presets.RecordScreen
 		state.VerticalVideo = presets.VerticalVideo
 		state.LeftSplit = presets.LeftSplit
+		state.WebcamBubble = presets.WebcamBubble
 		state.AddLogos = presets.AddLogos
 	}
 
@@ -451,6 +454,12 @@ func (f *RecordingForm) nextFieldEditMode() {
 				f.State.FocusedField = FormFieldAddLogos
 			}
 		case FormFieldLeftSplit:
+			if f.State.LeftSplit {
+				f.State.FocusedField = FormFieldWebcamBubble
+			} else {
+				f.State.FocusedField = FormFieldAddLogos
+			}
+		case FormFieldWebcamBubble:
 			f.State.FocusedField = FormFieldAddLogos
 		case FormFieldAddLogos:
 			if f.State.AddLogos {
@@ -515,6 +524,12 @@ func (f *RecordingForm) nextFieldNewMode() {
 				f.State.FocusedField = FormFieldAddLogos
 			}
 		case FormFieldLeftSplit:
+			if f.State.LeftSplit {
+				f.State.FocusedField = FormFieldWebcamBubble
+			} else {
+				f.State.FocusedField = FormFieldAddLogos
+			}
+		case FormFieldWebcamBubble:
 			f.State.FocusedField = FormFieldAddLogos
 		case FormFieldAddLogos:
 			if f.State.AddLogos {
@@ -586,8 +601,12 @@ func (f *RecordingForm) prevFieldEditMode() {
 			}
 		case FormFieldLeftSplit:
 			f.State.FocusedField = FormFieldVerticalVideo
+		case FormFieldWebcamBubble:
+			f.State.FocusedField = FormFieldLeftSplit
 		case FormFieldAddLogos:
-			if f.State.VerticalVideo {
+			if f.State.VerticalVideo && f.State.LeftSplit {
+				f.State.FocusedField = FormFieldWebcamBubble
+			} else if f.State.VerticalVideo {
 				f.State.FocusedField = FormFieldLeftSplit
 			} else {
 				f.State.FocusedField = FormFieldVerticalVideo
@@ -649,8 +668,12 @@ func (f *RecordingForm) prevFieldNewMode() {
 			}
 		case FormFieldLeftSplit:
 			f.State.FocusedField = FormFieldVerticalVideo
+		case FormFieldWebcamBubble:
+			f.State.FocusedField = FormFieldLeftSplit
 		case FormFieldAddLogos:
-			if f.State.VerticalVideo {
+			if f.State.VerticalVideo && f.State.LeftSplit {
+				f.State.FocusedField = FormFieldWebcamBubble
+			} else if f.State.VerticalVideo {
 				f.State.FocusedField = FormFieldLeftSplit
 			} else {
 				f.State.FocusedField = FormFieldVerticalVideo
@@ -698,6 +721,9 @@ func (f *RecordingForm) shouldSkipField(field RecordingFormField) bool {
 	case FormFieldLeftSplit:
 		// Only show left split if vertical video is enabled
 		return !f.State.VerticalVideo
+	case FormFieldWebcamBubble:
+		// Only show webcam bubble if vertical video and left split are enabled
+		return !f.State.VerticalVideo || !f.State.LeftSplit
 	case FormFieldLeftLogo, FormFieldRightLogo, FormFieldBottomLogo, FormFieldTitleColor:
 		// Only show logo fields if logos enabled
 		return !f.State.AddLogos
@@ -741,6 +767,8 @@ func (f *RecordingForm) handleLeftRight(dir int) {
 		}
 	case FormFieldLeftSplit:
 		f.State.LeftSplit = !f.State.LeftSplit
+	case FormFieldWebcamBubble:
+		f.State.WebcamBubble = !f.State.WebcamBubble
 	case FormFieldAddLogos:
 		f.State.AddLogos = !f.State.AddLogos
 	case FormFieldLeftLogo:
@@ -1101,6 +1129,20 @@ func (f *RecordingForm) View() string {
 			"  ",
 			f.renderToggle(f.State.LeftSplit, f.State.FocusedField == FormFieldLeftSplit),
 		))
+
+		// Webcam Bubble toggle (only shown when left split is enabled)
+		if f.State.LeftSplit {
+			f.fieldLinePositions[FormFieldWebcamBubble] = len(rows)
+			bubbleLabel := labelStyle.Render("Webcam Bubble:")
+			if f.State.FocusedField == FormFieldWebcamBubble {
+				bubbleLabel = focusedLabelStyle.Render("Webcam Bubble:")
+			}
+			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+				bubbleLabel,
+				"  ",
+				f.renderToggle(f.State.WebcamBubble, f.State.FocusedField == FormFieldWebcamBubble),
+			))
+		}
 	}
 
 	// Add Logos toggle
