@@ -38,7 +38,8 @@
       "Bash(mutter --display-info:*)",
       "Bash(gdbus call:*)",
       "Bash(timeout 3 gst-launch-1.0:*)",
-      "Bash(timeout 2 wl-screenrec:*)"
+      "Bash(timeout 2 wl-screenrec:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

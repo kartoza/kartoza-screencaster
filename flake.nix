@@ -1,16 +1,64 @@
 {
   description = "Kartoza Screencaster - Screen recording tool for Wayland";
 
+  # Allow unfree packages (required for Claude Code)
+  nixConfig = {
+    extra-substituters = [
+      "https://numtide.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "numtide.cachix.org-1:2ps1kLBUWjxIneOy1Ik6cQjb41X0iXVXeHigGmycPPE="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+
+    # Sandboxing for AI agents
+    jail-nix.url = "sourcehut:~alexdavid/jail.nix";
+
+    # Claude Code CLI (uses its own nixpkgs for electron compatibility)
+    llm-agents.url = "github:numtide/llm-agents.nix";
+
+    # Google Antigravity IDE - disabled due to electron version mismatch
+    # antigravity-nix.url = "github:jacopone/antigravity-nix";
+    # antigravity-nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, jail-nix, llm-agents, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;  # Required for Claude Code
+        };
         version = "0.8.2";
+
+        # Initialize jail.nix for sandboxing AI agents
+        jail = jail-nix.lib.init pkgs;
+
+        # Project root for sandboxed access (update if project moves)
+        projectRoot = builtins.toString ./.;
+        homeDir = builtins.getEnv "HOME";
+
+        # Jailed Claude Code - restricted to this project folder only
+        jailedClaude = jail "claude-code" llm-agents.packages.${system}.claude-code [
+          jail.combinators.network
+          (jail.combinators.rw-bind projectRoot projectRoot)
+          # Only Claude's own config directory
+          (jail.combinators.rw-bind "${homeDir}/.claude" "${homeDir}/.claude")
+        ];
+
+        # Jailed Antigravity - disabled due to electron version mismatch
+        # jailedAntigravity = jail "antigravity" antigravity-nix.packages.${system}.default [
+        #   jail.combinators.network
+        #   jail.combinators.gui
+        #   jail.combinators.gpu
+        #   (jail.combinators.rw-bind projectRoot projectRoot)
+        #   # Only Antigravity's own config directory (capital A)
+        #   (jail.combinators.rw-bind "${homeDir}/.config/Antigravity" "${homeDir}/.config/Antigravity")
+        # ];
 
         # MkDocs with Material theme for documentation
         mkdocsEnv = pkgs.python3.withPackages (ps: with ps; [
@@ -218,6 +266,10 @@
               self.packages.${system}.windows-amd64
             ];
           };
+
+          # Jailed AI agents (sandboxed to project folder)
+          claude-jailed = jailedClaude;
+          # antigravity-jailed = jailedAntigravity;  # disabled due to electron version mismatch
         };
 
         devShells.default = pkgs.mkShell {
@@ -280,6 +332,10 @@
 
             # Security
             trivy
+
+            # Jailed AI Agents (sandboxed to project folder only)
+            jailedClaude
+            # jailedAntigravity  # disabled due to electron version mismatch
           ];
 
           shellHook = ''
@@ -324,6 +380,14 @@
             echo "  make release  - Build all platforms"
             echo ""
             echo "CGO is enabled for systray support."
+            echo ""
+            echo "AI Agents (sandboxed to this project folder only):"
+            echo "  claude-code   Run Claude Code CLI"
+            echo ""
+            echo "These agents can only access:"
+            echo "  - This project folder (read/write)"
+            echo "  - Their own config dirs (read/write)"
+            echo "  - Network (for API calls)"
             echo ""
           '';
         };
@@ -380,6 +444,17 @@
               echo "Release $TAG uploaded successfully!"
             '');
           };
+
+          # Jailed AI agents - restricted to this project folder
+          claude = {
+            type = "app";
+            program = "${jailedClaude}/bin/claude-code";
+          };
+
+          # antigravity = {  # disabled due to electron version mismatch
+          #   type = "app";
+          #   program = "${jailedAntigravity}/bin/antigravity";
+          # };
         };
       }
     );
