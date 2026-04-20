@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/kartoza/kartoza-screencaster/internal/models"
 	"github.com/kartoza/kartoza-screencaster/internal/monitor"
 	"github.com/kartoza/kartoza-screencaster/internal/recorder"
+	"github.com/kartoza/kartoza-screencaster/internal/webcam"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +22,8 @@ var (
 	noScreen      bool
 	hwAccel       bool
 	outputDir     string
-	webcamDevice  string
+	webcamDevice  string // Legacy: single webcam device override
+	webcamConfig  string // Multi-webcam: JSON config string or file path
 	webcamFPS     int
 	audioDevice   string
 )
@@ -97,6 +100,23 @@ Use 'kartoza-screencaster stop' to stop recording and process files.`,
 		recordingInfo.Settings.WebcamDevice = webcamDevice
 		recordingInfo.Settings.WebcamFPS = webcamFPS
 
+		// Parse multi-webcam config override from CLI flag
+		if webcamConfig != "" {
+			var configs []webcam.WebcamConfig
+			// Try as file path first
+			if data, err := os.ReadFile(webcamConfig); err == nil {
+				_ = json.Unmarshal(data, &configs)
+			} else {
+				// Try as inline JSON
+				_ = json.Unmarshal([]byte(webcamConfig), &configs)
+			}
+			if len(configs) > 0 {
+				cfg, _ := config.Load()
+				cfg.WebcamConfigs = configs
+				_ = config.Save(cfg)
+			}
+		}
+
 		// Save initial recording.json
 		if err := recordingInfo.Save(); err != nil {
 			return fmt.Errorf("failed to save recording metadata: %w", err)
@@ -134,7 +154,8 @@ func init() {
 	startCmd.Flags().BoolVar(&noScreen, "no-screen", false, "Disable screen recording")
 	startCmd.Flags().BoolVar(&hwAccel, "hw-accel", false, "Enable hardware acceleration (VAAPI)")
 	startCmd.Flags().StringVarP(&outputDir, "output", "o", "", "Output directory (default: ~/Videos/Screencasts/NNN-timestamp)")
-	startCmd.Flags().StringVar(&webcamDevice, "webcam-device", "", "Webcam device (default: auto-detect)")
+	startCmd.Flags().StringVar(&webcamDevice, "webcam-device", "", "Webcam device (legacy single device override)")
+	startCmd.Flags().StringVar(&webcamConfig, "webcam-config", "", "Multi-webcam config: JSON string or file path")
 	startCmd.Flags().IntVar(&webcamFPS, "webcam-fps", 60, "Webcam framerate")
 	startCmd.Flags().StringVar(&audioDevice, "audio-device", "@DEFAULT_SOURCE@", "PipeWire audio device")
 }
