@@ -139,8 +139,22 @@ The recording can be in the following states:
 - Screen recording via wl-screenrec (Wayland)
 - Audio recording via FFmpeg with PulseAudio/PipeWire
 - Webcam recording via FFmpeg with v4l2
+- **Multi-webcam recording**: All detected webcams are recorded simultaneously by default
 - Multi-monitor support with automatic detection
 - Support for any monitor resolution
+
+### FR-002a: Multi-Webcam Support
+- Auto-detect and record from ALL available webcam devices by default
+- Per-webcam display mode configuration (persists across sessions):
+  - **Landscape modes**: Bubble (circle overlay, left or right), Rectangle (strip below video), Off
+  - **Vertical modes**: Bottom Third (middle section), Bubble (overlay on screen), Off
+- Multiple bubbles on same side stack vertically
+- Multiple rectangles share equal width in horizontal strip
+- Human-readable device names shown via sysfs (Linux), ffmpeg listing (macOS/Windows)
+- New devices get defaults: enabled=true, bubble mode, right side
+- Configuration stored in config.json by device path
+- CLI override via `--webcam-config` flag (JSON string or file path)
+- Backward compatible: existing single-webcam recordings process unchanged
 
 ### FR-003: Video Processing Pipeline
 1. **Stop recorders** - Finalize all recording processes
