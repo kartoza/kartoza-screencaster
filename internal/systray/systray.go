@@ -1117,15 +1117,14 @@ func (m *Manager) openTUIWithArgs(extraArgs ...string) error {
 		cmd     string
 		argsFmt func(args []string) []string
 	}{
+		{"kitty", func(args []string) []string {
+			return append([]string{"--title=Kartoza Screencaster"}, args...)
+		}},
 		{"cosmic-term", func(args []string) []string {
-			// cosmic-term uses -e for command execution
 			return append([]string{"-e"}, args...)
 		}},
 		{"foot", func(args []string) []string {
 			return append([]string{"--title=Kartoza Screencaster", "-e"}, args...)
-		}},
-		{"kitty", func(args []string) []string {
-			return append([]string{"--title=Kartoza Screencaster"}, args...)
 		}},
 		{"alacritty", func(args []string) []string {
 			return append([]string{"--title", "Kartoza Screencaster", "-e"}, args...)
