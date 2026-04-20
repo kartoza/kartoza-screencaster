@@ -1117,6 +1117,10 @@ func (m *Manager) openTUIWithArgs(extraArgs ...string) error {
 		cmd     string
 		argsFmt func(args []string) []string
 	}{
+		{"cosmic-term", func(args []string) []string {
+			// cosmic-term uses -e for command execution
+			return append([]string{"-e"}, args...)
+		}},
 		{"foot", func(args []string) []string {
 			return append([]string{"--title=Kartoza Screencaster", "-e"}, args...)
 		}},
@@ -1128,6 +1132,9 @@ func (m *Manager) openTUIWithArgs(extraArgs ...string) error {
 		}},
 		{"gnome-terminal", func(args []string) []string {
 			return append([]string{"--title=Kartoza Screencaster", "--"}, args...)
+		}},
+		{"konsole", func(args []string) []string {
+			return append([]string{"--title", "Kartoza Screencaster", "-e"}, args...)
 		}},
 		{"xterm", func(args []string) []string {
 			return append([]string{"-T", "Kartoza Screencaster", "-e"}, args...)
