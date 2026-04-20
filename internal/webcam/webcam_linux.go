@@ -4,7 +4,6 @@ package webcam
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strconv"
 	"syscall"
@@ -30,26 +29,16 @@ func New(opts Options) *Webcam {
 	}
 }
 
-// DetectDevice finds the first available webcam device
+// DetectDevice finds the first available webcam device (legacy single-device API)
 func DetectDevice() (string, error) {
-	devices := []string{"video0", "video1", "video2", "video3"}
-
-	for _, dev := range devices {
-		path := "/dev/" + dev
-		if _, err := os.Stat(path); err == nil {
-			// Check if it's a character device (webcam)
-			info, err := os.Stat(path)
-			if err != nil {
-				continue
-			}
-			// Check for character device
-			if info.Mode()&os.ModeCharDevice != 0 {
-				return dev, nil
-			}
-		}
+	devices, err := DetectAllDevices()
+	if err != nil {
+		return "", err
 	}
-
-	return "", fmt.Errorf("no webcam device found")
+	if len(devices) == 0 {
+		return "", fmt.Errorf("no webcam device found")
+	}
+	return devices[0].Device, nil
 }
 
 // Start begins webcam recording using v4l2
@@ -134,20 +123,19 @@ func (w *Webcam) IsRecording() bool {
 	return err == nil
 }
 
-// ListDevices returns a list of available webcam devices on Linux
+// ListDevices returns a list of available webcam device paths on Linux (legacy API).
+// Prefer DetectAllDevices() which also provides human-readable names.
 func ListDevices() ([]string, error) {
-	var devices []string
-	for i := 0; i < 10; i++ {
-		dev := fmt.Sprintf("video%d", i)
-		path := "/dev/" + dev
-		if info, err := os.Stat(path); err == nil {
-			if info.Mode()&os.ModeCharDevice != 0 {
-				devices = append(devices, dev)
-			}
-		}
+	all, err := DetectAllDevices()
+	if err != nil {
+		return nil, err
 	}
-	if len(devices) == 0 {
+	if len(all) == 0 {
 		return nil, fmt.Errorf("no webcam devices found")
+	}
+	var devices []string
+	for _, d := range all {
+		devices = append(devices, d.Device)
 	}
 	return devices, nil
 }
