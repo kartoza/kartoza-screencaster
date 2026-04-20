@@ -12,6 +12,7 @@ import (
 	"github.com/kartoza/kartoza-screencaster/internal/config"
 	"github.com/kartoza/kartoza-screencaster/internal/models"
 	"github.com/kartoza/kartoza-screencaster/internal/spellcheck"
+	"github.com/kartoza/kartoza-screencaster/internal/webcam"
 )
 
 // RecordingFormMode indicates whether the form is for new recording or editing existing
@@ -86,6 +87,11 @@ type RecordingFormState struct {
 	LeftSplit     bool // Use left half of screen for vertical video
 	WebcamBubble  bool // Use circular webcam bubble (true) or rectangular (false)
 	AddLogos      bool
+
+	// Multi-webcam configuration
+	WebcamDevices    []webcam.DeviceInfo   // Detected devices
+	WebcamConfigs    []webcam.WebcamConfig // Per-device configs
+	WebcamFocusedIdx int                   // Which webcam row is focused
 
 	// Logo selection
 	SelectedLeftIdx    int
@@ -175,6 +181,11 @@ func NewRecordingFormState(mode RecordingFormMode) *RecordingFormState {
 		state.LeftSplit = presets.LeftSplit
 		state.WebcamBubble = presets.WebcamBubble
 		state.AddLogos = presets.AddLogos
+
+		// Detect webcams and load per-device configs
+		detected, _ := webcam.DetectAllDevices()
+		state.WebcamDevices = detected
+		state.WebcamConfigs = webcam.MergeConfigsWithDetected(cfg.WebcamConfigs, detected)
 	}
 
 	return state
@@ -1067,6 +1078,28 @@ func (f *RecordingForm) View() string {
 		"  ",
 		f.renderToggle(f.State.RecordWebcam, f.State.FocusedField == FormFieldRecordWebcam),
 	))
+
+	// Show detected webcam devices when webcam recording is enabled
+	if f.State.RecordWebcam && len(f.State.WebcamDevices) > 0 {
+		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+		for i, dev := range f.State.WebcamDevices {
+			cfg := f.State.WebcamConfigs[i]
+			name := dev.Name
+			if name == "" {
+				name = dev.Device
+			}
+			modeStr := string(cfg.LandscapeMode)
+			if !cfg.Enabled {
+				modeStr = "off"
+			}
+			sideStr := ""
+			if cfg.LandscapeMode == webcam.DisplayBubble {
+				sideStr = fmt.Sprintf(" %s", cfg.LandscapeSide)
+			}
+			line := dimStyle.Render(fmt.Sprintf("    %s (%s) [%s%s]", dev.Device, name, modeStr, sideStr))
+			rows = append(rows, line)
+		}
+	}
 
 	// Screen toggle
 	f.fieldLinePositions[FormFieldRecordScreen] = len(rows)
