@@ -74,6 +74,15 @@ type VideoFileMetadata struct {
 	Size        int64   `json:"size,omitempty"`
 }
 
+// WebcamFileInfo holds file information for a single webcam device in multi-webcam mode
+type WebcamFileInfo struct {
+	Device        string `json:"device"`
+	File          string `json:"file"`
+	LandscapeMode string `json:"landscape_mode"`
+	LandscapeSide string `json:"landscape_side"`
+	VerticalMode  string `json:"vertical_mode"`
+}
+
 // FileInfo contains information about recording files
 type FileInfo struct {
 	FolderPath   string `json:"folder_path"`
@@ -86,8 +95,12 @@ type FileInfo struct {
 	// Part files for pause/resume support
 	VideoParts  []string `json:"video_parts,omitempty"`
 	AudioParts  []string `json:"audio_parts,omitempty"`
-	WebcamParts []string `json:"webcam_parts,omitempty"`
-	CurrentPart int      `json:"current_part"` // Current part number (0-indexed)
+	WebcamParts []string `json:"webcam_parts,omitempty"` // Legacy single webcam parts
+	CurrentPart int      `json:"current_part"`           // Current part number (0-indexed)
+
+	// Multi-webcam support
+	WebcamFiles    []WebcamFileInfo       `json:"webcam_files,omitempty"`      // Per-device file info
+	WebcamPartsMap map[string][]string    `json:"webcam_parts_map,omitempty"` // device -> parts list
 
 	VideoSize    int64 `json:"video_size,omitempty"`
 	AudioSize    int64 `json:"audio_size,omitempty"`
