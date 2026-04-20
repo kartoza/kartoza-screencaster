@@ -1,6 +1,7 @@
 package recorder
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -56,7 +57,10 @@ type Recorder struct {
 	// Active recorder instances
 	video  *recorderInstance
 	audio  *recorderInstance
-	webcam *recorderInstance
+	webcam *recorderInstance // Legacy single webcam (kept for backward compat)
+
+	// Multi-webcam manager
+	webcamManager *webcam.Manager
 
 	// Recording metadata
 	recordingInfo  *models.RecordingInfo
@@ -85,7 +89,31 @@ func (r *Recorder) IsRecording() bool {
 
 	return checkPID(config.VideoPIDFile) ||
 		checkPID(config.AudioPIDFile) ||
-		checkPID(config.WebcamPIDFile)
+		checkPID(config.WebcamPIDFile) ||
+		checkMultiWebcamPIDs()
+}
+
+// checkMultiWebcamPIDs checks if any multi-webcam PIDs are active
+func checkMultiWebcamPIDs() bool {
+	data, err := os.ReadFile(config.WebcamPIDsFile)
+	if err != nil {
+		return false
+	}
+	var pids map[string]int
+	if err := json.Unmarshal(data, &pids); err != nil {
+		return false
+	}
+	for _, pid := range pids {
+		if pid > 0 {
+			process, err := os.FindProcess(pid)
+			if err == nil {
+				if process.Signal(syscall.Signal(0)) == nil {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // SetRecordingInfo sets the recording info for reprocessing
@@ -224,7 +252,19 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 		r.audio = &recorderInstance{name: "audio", file: audioFile}
 	}
 	if !opts.NoWebcam {
-		r.webcam = &recorderInstance{name: "webcam", file: webcamFile}
+		// Multi-webcam: detect all devices and create manager
+		detected, _ := webcam.DetectAllDevices()
+		webcamConfigs := webcam.MergeConfigsWithDetected(r.config.WebcamConfigs, detected)
+		if len(webcamConfigs) > 0 {
+			fps := opts.WebcamFPS
+			if fps == 0 {
+				fps = 60
+			}
+			r.webcamManager = webcam.NewManager(webcamConfigs, fps, "1920x1080")
+		} else {
+			// Fallback to legacy single webcam if no multi-webcam configs
+			r.webcam = &recorderInstance{name: "webcam", file: webcamFile}
+		}
 	}
 
 	// Update recording info with file paths and part tracking
@@ -238,7 +278,17 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 			r.recordingInfo.Files.AudioFile = audioFile
 			r.recordingInfo.Files.AudioParts = append(r.recordingInfo.Files.AudioParts, audioFile)
 		}
-		if r.webcam != nil {
+		if r.webcamManager != nil {
+			// Multi-webcam: track per-device file paths
+			if r.recordingInfo.Files.WebcamPartsMap == nil {
+				r.recordingInfo.Files.WebcamPartsMap = make(map[string][]string)
+			}
+			paths := r.webcamManager.OutputFilePaths(outputDir, partNum)
+			for device, path := range paths {
+				r.recordingInfo.Files.WebcamPartsMap[device] = append(
+					r.recordingInfo.Files.WebcamPartsMap[device], path)
+			}
+		} else if r.webcam != nil {
 			r.recordingInfo.Files.WebcamFile = webcamFile
 			r.recordingInfo.Files.WebcamParts = append(r.recordingInfo.Files.WebcamParts, webcamFile)
 		}
@@ -262,7 +312,9 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 	if r.audio != nil {
 		numRecorders++
 	}
-	if r.webcam != nil {
+	if r.webcamManager != nil {
+		numRecorders++
+	} else if r.webcam != nil {
 		numRecorders++
 	}
 
@@ -298,8 +350,21 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 		}()
 	}
 
-	// Start webcam recorder in goroutine
-	if r.webcam != nil {
+	// Start webcam recorder(s) in goroutine
+	if r.webcamManager != nil {
+		r.wg.Add(1)
+		go func() {
+			defer r.wg.Done()
+			ready <- "webcam"
+			<-r.startBarrier
+			if err := r.webcamManager.StartAll(outputDir, partNum); err != nil {
+				errors <- fmt.Errorf("webcam: %w", err)
+				return
+			}
+			started <- "webcam"
+			<-r.stopSignal
+		}()
+	} else if r.webcam != nil {
 		r.wg.Add(1)
 		go func() {
 			defer r.wg.Done()
@@ -363,7 +428,11 @@ waitStarted:
 		writePID(config.AudioPIDFile, r.audio.pid)
 		_ = os.WriteFile(config.AudioPathFile, []byte(r.audio.file), 0644)
 	}
-	if r.webcam != nil && r.webcam.started {
+	if r.webcamManager != nil && r.webcamManager.IsRecording() {
+		pids := r.webcamManager.PIDs()
+		pidsJSON, _ := json.Marshal(pids)
+		_ = os.WriteFile(config.WebcamPIDsFile, pidsJSON, 0644)
+	} else if r.webcam != nil && r.webcam.started {
 		writePID(config.WebcamPIDFile, r.webcam.pid)
 		_ = os.WriteFile(config.WebcamPathFile, []byte(r.webcam.file), 0644)
 	}
@@ -823,8 +892,15 @@ func (r *Recorder) stopInternal(waitForProcessing bool) error {
 			}(pid)
 		}
 
-		// Stop webcam
-		if pid := readPID(config.WebcamPIDFile); pid > 0 {
+		// Stop webcam(s)
+		if r.webcamManager != nil {
+			stopWg.Add(1)
+			go func() {
+				defer stopWg.Done()
+				_ = r.webcamManager.StopAll()
+				_ = os.Remove(config.WebcamPIDsFile)
+			}()
+		} else if pid := readPID(config.WebcamPIDFile); pid > 0 {
 			stopWg.Add(1)
 			go func(p int) {
 				defer stopWg.Done()
