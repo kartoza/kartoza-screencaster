@@ -7,6 +7,7 @@ import (
 
 	"github.com/kartoza/kartoza-screencaster/internal/models"
 	"github.com/kartoza/kartoza-screencaster/internal/syndication"
+	"github.com/kartoza/kartoza-screencaster/internal/webcam"
 	"github.com/kartoza/kartoza-screencaster/internal/youtube"
 )
 
@@ -23,7 +24,8 @@ const (
 const (
 	VideoPIDFile   = "/tmp/kartoza-video.pid"
 	AudioPIDFile   = "/tmp/kartoza-audio.pid"
-	WebcamPIDFile  = "/tmp/kartoza-webcam.pid"
+	WebcamPIDFile  = "/tmp/kartoza-webcam.pid"  // Legacy single webcam PID
+	WebcamPIDsFile = "/tmp/kartoza-webcam-pids.json" // Multi-webcam: JSON map of device->pid
 	StatusFile     = "/tmp/kartoza-video.status"
 	VideoPathFile  = "/tmp/kartoza-video.path"
 	AudioPathFile  = "/tmp/kartoza-audio.path"
@@ -145,6 +147,9 @@ type Config struct {
 
 	// Terminal recording settings (asciinema)
 	TerminalRecording TerminalRecordingSettings `json:"terminal_recording,omitempty"`
+
+	// Multi-webcam configuration (persisted per device)
+	WebcamConfigs []webcam.WebcamConfig `json:"webcam_configs,omitempty"`
 }
 
 // DefaultConfig returns the default configuration
