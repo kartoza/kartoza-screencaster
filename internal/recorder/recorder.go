@@ -945,10 +945,26 @@ func (r *Recorder) stopInternal(waitForProcessing bool) error {
 		}
 	}
 
+	// Populate multi-webcam file info in recording info before processing
+	if r.webcamManager != nil && r.recordingInfo != nil {
+		outputs := r.webcamManager.GetOutputs()
+		for _, out := range outputs {
+			r.recordingInfo.Files.WebcamFiles = append(r.recordingInfo.Files.WebcamFiles, models.WebcamFileInfo{
+				Device:        out.Device,
+				File:          out.File,
+				LandscapeMode: string(out.LandscapeMode),
+				LandscapeSide: string(out.LandscapeSide),
+				VerticalMode:  string(out.VerticalMode),
+			})
+		}
+		_ = r.recordingInfo.Save()
+	}
+
 	// Clear instances
 	r.video = nil
 	r.audio = nil
 	r.webcam = nil
+	r.webcamManager = nil
 
 	// Clean up state files
 	_ = os.Remove(config.PartNumberFile)
@@ -1107,6 +1123,19 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		mergeOpts.VideoParts = r.recordingInfo.Files.VideoParts
 		mergeOpts.AudioParts = r.recordingInfo.Files.AudioParts
 		mergeOpts.WebcamParts = r.recordingInfo.Files.WebcamParts
+	}
+
+	// Multi-webcam: build WebcamOutputs from recording info
+	if r.recordingInfo != nil && len(r.recordingInfo.Files.WebcamFiles) > 0 {
+		for _, wf := range r.recordingInfo.Files.WebcamFiles {
+			mergeOpts.WebcamOutputs = append(mergeOpts.WebcamOutputs, webcam.WebcamOutput{
+				File:          wf.File,
+				Device:        wf.Device,
+				LandscapeMode: webcam.WebcamDisplayMode(wf.LandscapeMode),
+				LandscapeSide: webcam.WebcamSide(wf.LandscapeSide),
+				VerticalMode:  webcam.WebcamDisplayMode(wf.VerticalMode),
+			})
+		}
 	}
 
 	// Add logo options from the recording's logo selection (in-memory)
