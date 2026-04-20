@@ -160,6 +160,9 @@ type MergeOptions struct {
 	VideoParts  []string
 	AudioParts  []string
 	WebcamParts []string
+
+	// Multi-webcam outputs (overrides WebcamFile/WebcamParts if set)
+	WebcamOutputs []webcam.WebcamOutput
 }
 
 // MergeResult contains the paths to merged files and processing info
@@ -322,6 +325,30 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 	hasVideo := opts.VideoFile != "" && fileExists(opts.VideoFile)
 	hasAudio := opts.AudioFile != "" && fileExists(opts.AudioFile)
 	hasWebcam := opts.WebcamFile != "" && fileExists(opts.WebcamFile)
+
+	// Multi-webcam: if WebcamOutputs are set, check if any have valid files
+	hasMultiWebcam := false
+	if len(opts.WebcamOutputs) > 0 {
+		for _, wo := range opts.WebcamOutputs {
+			if wo.File != "" && fileExists(wo.File) {
+				hasMultiWebcam = true
+				break
+			}
+		}
+		// Multi-webcam overrides legacy single webcam
+		if hasMultiWebcam {
+			hasWebcam = true
+			// Use first available webcam file as the legacy WebcamFile for backward compat
+			if opts.WebcamFile == "" {
+				for _, wo := range opts.WebcamOutputs {
+					if wo.File != "" && fileExists(wo.File) {
+						opts.WebcamFile = wo.File
+						break
+					}
+				}
+			}
+		}
+	}
 
 	// If we have no inputs at all, return early
 	if !hasVideo && !hasAudio && !hasWebcam {
