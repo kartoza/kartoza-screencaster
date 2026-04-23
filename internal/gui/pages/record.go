@@ -36,20 +36,22 @@ type RecordPage struct {
 	descInput      *qt.QTextEdit
 
 	// Toggles
-	audioCheck    *qt.QCheckBox
-	webcamCheck   *qt.QCheckBox
-	screenCheck   *qt.QCheckBox
-	verticalCheck *qt.QCheckBox
+	audioCheck     *qt.QCheckBox
+	webcamCheck    *qt.QCheckBox
+	screenCheck    *qt.QCheckBox
+	verticalCheck  *qt.QCheckBox
 	leftSplitCheck *qt.QCheckBox
-	logosCheck    *qt.QCheckBox
-
-	// Monitor picker
-	monitorPicker *widgets.MonitorPicker
+	logosCheck     *qt.QCheckBox
 
 	// Logo drop zones
 	leftLogo   *widgets.LogoDropZone
 	rightLogo  *widgets.LogoDropZone
 	bottomLogo *widgets.LogoDropZone
+
+	// Central canvas
+	canvas        *widgets.RecordingCanvas
+	monitorPicker *widgets.MonitorPicker
+	webcamGrid    *widgets.WebcamGrid
 
 	// Controls
 	startBtn *qt.QPushButton
@@ -61,16 +63,13 @@ type RecordPage struct {
 	statusLabel  *qt.QLabel
 
 	// State
-	state       RecordingState
-	rec         *recorder.Recorder
-	monitors    []models.Monitor
-	webcamDevs  []webcam.DeviceInfo
+	state        RecordingState
+	rec          *recorder.Recorder
+	monitors     []models.Monitor
+	webcamDevs   []webcam.DeviceInfo
 	elapsedTimer *qt.QTimer
-	startTime   time.Time
+	startTime    time.Time
 	countdownVal int
-
-	// Webcam preview
-	webcamGrid *widgets.WebcamGrid
 
 	// Callbacks
 	onStatusChange func(string)
@@ -101,133 +100,168 @@ func (p *RecordPage) SetStatusCallback(cb func(string)) {
 
 func (p *RecordPage) setupUI() {
 	layout := qt.NewQHBoxLayout(p.widget)
-	layout.SetSpacing(15)
-	layout.SetContentsMargins(15, 15, 15, 15)
+	layout.SetSpacing(12)
+	layout.SetContentsMargins(10, 10, 10, 10)
 
-	labelStyle := "QLabel { color: #cdd6f4; font-size: 13px; }"
-	inputStyle := "QLineEdit { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 6px; font-size: 13px; }"
-	checkStyle := "QCheckBox { color: #cdd6f4; font-size: 13px; } QCheckBox::indicator { width: 16px; height: 16px; }"
-
-	// === Left column: setup form ===
-	leftCol := qt.NewQWidget2()
-	leftLayout := qt.NewQVBoxLayout(leftCol)
-	leftLayout.SetSpacing(8)
-
-	sectionTitle := qt.NewQLabel3("Recording Setup")
-	sectionTitle.SetStyleSheet("QLabel { color: #cdd6f4; font-size: 18px; font-weight: bold; padding-bottom: 5px; }")
-	leftLayout.AddWidget(sectionTitle.QFrame.QWidget)
-
-	// Title
-	p.titleInput = p.addFormRow(leftLayout, "Title:", "Enter recording title...", labelStyle, inputStyle)
-	p.titleInput.SetToolTip("The title for this recording.\nUsed in output filenames and metadata.")
-
-	// Number
-	p.numberInput = p.addFormRow(leftLayout, "Number:", "001", labelStyle, inputStyle)
-	recordingNumber := config.GetCurrentRecordingNumber()
-	p.numberInput.SetText(fmt.Sprintf("%03d", recordingNumber))
-	p.numberInput.SetToolTip("Sequential recording number.\nAuto-increments after each recording.\nUsed as prefix in output filenames (e.g. 001-title.mp4).")
-
-	// Presenter
 	cfg, _ := config.Load()
-	p.presenterInput = p.addFormRow(leftLayout, "Presenter:", "Presenter name...", labelStyle, inputStyle)
-	if cfg.DefaultPresenter != "" {
-		p.presenterInput.SetText(cfg.DefaultPresenter)
-	}
-	p.presenterInput.SetToolTip("Name of the presenter.\nSaved in recording metadata.\nDefault can be set in Settings.")
-
-	// Monitor selector (visual preview)
-	monLabel := qt.NewQLabel3("Monitor:")
-	monLabel.SetStyleSheet(labelStyle)
-	leftLayout.AddWidget(monLabel.QFrame.QWidget)
-	p.monitorPicker = widgets.NewMonitorPicker(p.monitors)
-	p.monitorPicker.Widget().SetToolTip("Select which monitor to record.\nLive preview updates every 2 seconds.\nChoose 'No Screen' for webcam-only recording.")
-	leftLayout.AddWidget(p.monitorPicker.Widget())
-
-	// Separator
-	sep1 := qt.NewQLabel3("Sources")
-	sep1.SetStyleSheet("QLabel { color: #89b4fa; font-size: 14px; font-weight: bold; padding-top: 8px; }")
-	leftLayout.AddWidget(sep1.QFrame.QWidget)
-
-	// Source toggles
 	presets := cfg.RecordingPresets
 	if !cfg.PresetsConfigured {
 		presets = config.DefaultRecordingPresets()
 	}
 
-	p.screenCheck = qt.NewQCheckBox3("Record Screen")
+	labelStyle := "QLabel { color: #cdd6f4; font-size: 12px; }"
+	inputStyle := "QLineEdit { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px; font-size: 12px; }"
+	checkStyle := "QCheckBox { color: #cdd6f4; font-size: 12px; } QCheckBox::indicator { width: 14px; height: 14px; }"
+	sectionStyle := "QLabel { color: #89b4fa; font-size: 13px; font-weight: bold; padding-top: 6px; }"
+
+	// === Left sidebar: compact form ===
+	leftScroll := qt.NewQScrollArea2()
+	leftScroll.SetWidgetResizable(true)
+	leftScroll.SetFixedWidth(240)
+	leftScroll.SetStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+	leftCol := qt.NewQWidget2()
+	leftLayout := qt.NewQVBoxLayout(leftCol)
+	leftLayout.SetSpacing(5)
+	leftLayout.SetContentsMargins(0, 0, 5, 0)
+
+	// Title — also updates the canvas preview
+	p.titleInput = p.addFormRow(leftLayout, "Title:", "Recording title...", labelStyle, inputStyle)
+	p.titleInput.SetToolTip("Title for this recording.\nUsed in output filenames.\nDraggable on the canvas preview.")
+	p.titleInput.OnTextChanged(func(text string) {
+		if p.canvas != nil {
+			p.canvas.SetTitle(text)
+		}
+	})
+
+	// Number
+	p.numberInput = p.addFormRow(leftLayout, "Number:", "001", labelStyle, inputStyle)
+	p.numberInput.SetText(fmt.Sprintf("%03d", config.GetCurrentRecordingNumber()))
+	p.numberInput.SetToolTip("Sequential recording number.")
+
+	// Presenter
+	p.presenterInput = p.addFormRow(leftLayout, "Presenter:", "Name...", labelStyle, inputStyle)
+	if cfg.DefaultPresenter != "" {
+		p.presenterInput.SetText(cfg.DefaultPresenter)
+	}
+	p.presenterInput.SetToolTip("Presenter name for metadata.")
+
+	// Sources
+	srcLabel := qt.NewQLabel3("Sources")
+	srcLabel.SetStyleSheet(sectionStyle)
+	leftLayout.AddWidget(srcLabel.QFrame.QWidget)
+
+	p.screenCheck = qt.NewQCheckBox3("Screen")
 	p.screenCheck.SetChecked(presets.RecordScreen)
 	p.screenCheck.SetStyleSheet(checkStyle)
-	p.screenCheck.SetToolTip("Capture the selected monitor's screen.\nUses wl-screenrec on Wayland compositors.")
+	p.screenCheck.SetToolTip("Record the selected monitor.")
 	leftLayout.AddWidget(p.screenCheck.QAbstractButton.QWidget)
 
-	p.audioCheck = qt.NewQCheckBox3("Record Audio")
+	p.audioCheck = qt.NewQCheckBox3("Audio")
 	p.audioCheck.SetChecked(presets.RecordAudio)
 	p.audioCheck.SetStyleSheet(checkStyle)
-	p.audioCheck.SetToolTip("Record audio from your microphone.\nUses PipeWire/PulseAudio.\nAudio is processed (denoised, normalized) after recording.")
+	p.audioCheck.SetToolTip("Record microphone audio.\nProcessed after recording.")
 	leftLayout.AddWidget(p.audioCheck.QAbstractButton.QWidget)
 
-	p.webcamCheck = qt.NewQCheckBox3("Record Webcam")
+	p.webcamCheck = qt.NewQCheckBox3("Webcam")
 	p.webcamCheck.SetChecked(presets.RecordWebcam)
 	p.webcamCheck.SetStyleSheet(checkStyle)
-	p.webcamCheck.SetToolTip("Record from webcam cameras.\nEnable/disable individual cameras\nin the preview panel on the right.")
+	p.webcamCheck.SetToolTip("Record from webcam cameras.")
 	leftLayout.AddWidget(p.webcamCheck.QAbstractButton.QWidget)
 
-	// Show detected webcams
-	if len(p.webcamDevs) > 0 {
-		for _, dev := range p.webcamDevs {
-			devLabel := qt.NewQLabel3(fmt.Sprintf("    %s (%s)", dev.Device, dev.Name))
-			devLabel.SetStyleSheet("QLabel { color: #6c7086; font-size: 11px; }")
-			leftLayout.AddWidget(devLabel.QFrame.QWidget)
-		}
-	} else {
-		noDevLabel := qt.NewQLabel3("    No webcams detected")
-		noDevLabel.SetStyleSheet("QLabel { color: #6c7086; font-size: 11px; font-style: italic; }")
-		leftLayout.AddWidget(noDevLabel.QFrame.QWidget)
-	}
+	// Output
+	outLabel := qt.NewQLabel3("Output")
+	outLabel.SetStyleSheet(sectionStyle)
+	leftLayout.AddWidget(outLabel.QFrame.QWidget)
 
-	// Output options separator
-	sep2 := qt.NewQLabel3("Output")
-	sep2.SetStyleSheet("QLabel { color: #89b4fa; font-size: 14px; font-weight: bold; padding-top: 8px; }")
-	leftLayout.AddWidget(sep2.QFrame.QWidget)
-
-	p.verticalCheck = qt.NewQCheckBox3("Create vertical video")
+	p.verticalCheck = qt.NewQCheckBox3("Vertical video")
 	p.verticalCheck.SetChecked(presets.VerticalVideo)
 	p.verticalCheck.SetStyleSheet(checkStyle)
-	p.verticalCheck.SetToolTip("Create a 9:16 vertical video\n(1080x1920) for YouTube Shorts,\nInstagram Reels, or TikTok.")
+	p.verticalCheck.SetToolTip("Create 9:16 vertical video\nfor Shorts/Reels/TikTok.")
+	p.verticalCheck.OnStateChanged(func(state int) {
+		if p.canvas != nil {
+			p.canvas.SetVertical(state == 2)
+		}
+	})
 	leftLayout.AddWidget(p.verticalCheck.QAbstractButton.QWidget)
 
-	p.leftSplitCheck = qt.NewQCheckBox3("Left split mode")
-	p.leftSplitCheck.SetChecked(presets.LeftSplit)
-	p.leftSplitCheck.SetStyleSheet(checkStyle)
-	p.leftSplitCheck.SetToolTip("Use the left half of the screen\nfor vertical video instead of\nthe full screen scaled down.")
-	leftLayout.AddWidget(p.leftSplitCheck.QAbstractButton.QWidget)
+	// Split side radio buttons
+	splitRow := qt.NewQHBoxLayout2()
+	radioStyle := "QRadioButton { color: #cdd6f4; font-size: 12px; } QRadioButton::indicator { width: 14px; height: 14px; }"
 
-	p.logosCheck = qt.NewQCheckBox3("Add logos")
+	leftSplitRadio := qt.NewQRadioButton3("Left split")
+	leftSplitRadio.SetStyleSheet(radioStyle)
+	leftSplitRadio.SetToolTip("Show left half of screen\nin vertical video.")
+	leftSplitRadio.SetChecked(presets.LeftSplit)
+	splitRow.AddWidget(leftSplitRadio.QAbstractButton.QWidget)
+
+	rightSplitRadio := qt.NewQRadioButton3("Right split")
+	rightSplitRadio.SetStyleSheet(radioStyle)
+	rightSplitRadio.SetToolTip("Show right half of screen\nin vertical video.")
+	rightSplitRadio.SetChecked(!presets.LeftSplit)
+	splitRow.AddWidget(rightSplitRadio.QAbstractButton.QWidget)
+
+	leftSplitRadio.OnClicked(func() {
+		if p.canvas != nil {
+			p.canvas.SetLeftSplit(true)
+			p.canvas.SetSplitSide(widgets.SplitLeft)
+		}
+	})
+	rightSplitRadio.OnClicked(func() {
+		if p.canvas != nil {
+			p.canvas.SetLeftSplit(true)
+			p.canvas.SetSplitSide(widgets.SplitRight)
+		}
+	})
+
+	// Keep a reference for startRecording
+	p.leftSplitCheck = qt.NewQCheckBox2() // hidden, tracks state
+	p.leftSplitCheck.SetChecked(presets.LeftSplit)
+	p.leftSplitCheck.SetVisible(false)
+	leftSplitRadio.OnClicked(func() { p.leftSplitCheck.SetChecked(true) })
+	rightSplitRadio.OnClicked(func() { p.leftSplitCheck.SetChecked(true) }) // both mean split is enabled
+
+	leftLayout.AddLayout(splitRow.QLayout)
+
+	p.logosCheck = qt.NewQCheckBox3("Logos")
 	p.logosCheck.SetChecked(presets.AddLogos)
 	p.logosCheck.SetStyleSheet(checkStyle)
-	p.logosCheck.SetToolTip("Overlay logos on the output video.\nDrag-and-drop images below or click Browse.\nShown for the first 15 seconds.")
+	p.logosCheck.SetToolTip("Add logo overlays.\nDrag logos onto the canvas.")
 	leftLayout.AddWidget(p.logosCheck.QAbstractButton.QWidget)
 
-	// Logo drop zones (shown when Add logos is checked)
-	logoRow := qt.NewQHBoxLayout2()
-	logoRow.SetSpacing(8)
+	// Logo drop zones (compact, vertical stack)
+	logoLabel := qt.NewQLabel3("Logos")
+	logoLabel.SetStyleSheet(sectionStyle)
+	leftLayout.AddWidget(logoLabel.QFrame.QWidget)
 
-	p.leftLogo = widgets.NewLogoDropZone("Left Logo")
-	p.leftLogo.Widget().SetToolTip("Top-left corner logo.\nScaled to 1/8 of video width.\nDrag an image or click Browse.")
-	logoRow.AddWidget(p.leftLogo.Widget())
+	p.leftLogo = widgets.NewLogoDropZone("Left")
+	p.leftLogo.OnChange(func(path string) {
+		p.canvas.RemoveLogo(widgets.ItemLogoLeft)
+		if path != "" {
+			p.canvas.AddLogo(widgets.ItemLogoLeft, path)
+		}
+	})
+	leftLayout.AddWidget(p.leftLogo.Widget())
 
-	p.rightLogo = widgets.NewLogoDropZone("Right Logo")
-	p.rightLogo.Widget().SetToolTip("Top-right corner logo.\nScaled to 1/8 of video width.\nDrag an image or click Browse.")
-	logoRow.AddWidget(p.rightLogo.Widget())
+	p.rightLogo = widgets.NewLogoDropZone("Right")
+	p.rightLogo.OnChange(func(path string) {
+		p.canvas.RemoveLogo(widgets.ItemLogoRight)
+		if path != "" {
+			p.canvas.AddLogo(widgets.ItemLogoRight, path)
+		}
+	})
+	leftLayout.AddWidget(p.rightLogo.Widget())
 
-	p.bottomLogo = widgets.NewLogoDropZone("Bottom Logo")
-	p.bottomLogo.Widget().SetToolTip("Lower-third banner logo.\nScaled to half the video width.\nDrag an image or click Browse.")
-	logoRow.AddWidget(p.bottomLogo.Widget())
+	p.bottomLogo = widgets.NewLogoDropZone("Banner")
+	p.bottomLogo.OnChange(func(path string) {
+		p.canvas.RemoveLogo(widgets.ItemLogoBanner)
+		if path != "" {
+			p.canvas.AddLogo(widgets.ItemLogoBanner, path)
+		}
+	})
+	leftLayout.AddWidget(p.bottomLogo.Widget())
 
-	logoContainer := qt.NewQWidget2()
-	logoContainer.SetLayout(logoRow.QLayout)
-
-	// Pre-fill from last used logos
+	// Pre-fill logos
 	if cfg.LastUsedLogos.LeftLogo != "" {
 		p.leftLogo.SetFile(cfg.LastUsedLogos.LeftLogo)
 	}
@@ -238,122 +272,132 @@ func (p *RecordPage) setupUI() {
 		p.bottomLogo.SetFile(cfg.LastUsedLogos.BottomLogo)
 	}
 
-	// Show/hide based on checkbox
-	logoContainer.SetVisible(presets.AddLogos)
-	p.logosCheck.OnStateChanged(func(state int) {
-		logoContainer.SetVisible(state == 2)
-	})
-	leftLayout.AddWidget(logoContainer)
-
 	// Description
-	descLabel := qt.NewQLabel3("Description:")
-	descLabel.SetStyleSheet(labelStyle)
+	descLabel := qt.NewQLabel3("Description")
+	descLabel.SetStyleSheet(sectionStyle)
 	leftLayout.AddWidget(descLabel.QFrame.QWidget)
 	p.descInput = qt.NewQTextEdit2()
-	p.descInput.SetPlaceholderText("Optional description...")
-	p.descInput.SetToolTip("Optional description for this recording.\nSaved in recording metadata.")
-	p.descInput.SetMaximumHeight(80)
-	p.descInput.SetStyleSheet("QTextEdit { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 4px; font-size: 13px; }")
+	p.descInput.SetPlaceholderText("Optional...")
+	p.descInput.SetMaximumHeight(60)
+	p.descInput.SetStyleSheet("QTextEdit { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 3px; font-size: 12px; }")
+	p.descInput.SetToolTip("Optional recording description.")
 	leftLayout.AddWidget(p.descInput.QAbstractScrollArea.QFrame.QWidget)
 
 	leftLayout.AddStretch()
-	layout.AddWidget(leftCol)
+	leftScroll.SetWidget(leftCol)
+	layout.AddWidget(leftScroll.QAbstractScrollArea.QFrame.QWidget)
 
-	// === Right column: preview & controls ===
-	rightCol := qt.NewQWidget2()
-	rightLayout := qt.NewQVBoxLayout(rightCol)
-	rightLayout.SetSpacing(10)
+	// === Center: WYSIWYG canvas + controls ===
+	centerCol := qt.NewQWidget2()
+	centerLayout := qt.NewQVBoxLayout(centerCol)
+	centerLayout.SetSpacing(8)
+	centerLayout.SetContentsMargins(0, 0, 0, 0)
 
-	previewTitle := qt.NewQLabel3("Preview & Controls")
-	previewTitle.SetStyleSheet("QLabel { color: #cdd6f4; font-size: 18px; font-weight: bold; padding-bottom: 5px; }")
-	rightLayout.AddWidget(previewTitle.QFrame.QWidget)
+	// Canvas
+	p.canvas = widgets.NewRecordingCanvas()
+	p.canvas.Widget().SetToolTip("WYSIWYG preview of your video output.\nDrag webcam bubbles and logos to position them.\nLive screen preview updates every 2 seconds.")
+	centerLayout.AddWidget3(p.canvas.Widget(), 1, qt.AlignHCenter)
 
-	// Status + elapsed in a compact row
+	// Add webcams to canvas
+	for i, dev := range p.webcamDevs {
+		p.canvas.AddWebcam(dev.Device, dev.Name, i)
+	}
+
+	// Add pre-filled logos to canvas
+	if cfg.LastUsedLogos.LeftLogo != "" {
+		p.canvas.AddLogo(widgets.ItemLogoLeft, cfg.LastUsedLogos.LeftLogo)
+	}
+	if cfg.LastUsedLogos.RightLogo != "" {
+		p.canvas.AddLogo(widgets.ItemLogoRight, cfg.LastUsedLogos.RightLogo)
+	}
+	if cfg.LastUsedLogos.BottomLogo != "" {
+		p.canvas.AddLogo(widgets.ItemLogoBanner, cfg.LastUsedLogos.BottomLogo)
+	}
+
+	// Set initial monitor on canvas
+	for _, m := range p.monitors {
+		if m.Focused {
+			mon := m
+			p.canvas.SetMonitor(&mon)
+			break
+		}
+	}
+
+	// Monitor picker below canvas
+	monLabel := qt.NewQLabel3("Monitor")
+	monLabel.SetStyleSheet("QLabel { color: #89b4fa; font-size: 12px; font-weight: bold; }")
+	centerLayout.AddWidget(monLabel.QFrame.QWidget)
+
+	p.monitorPicker = widgets.NewMonitorPicker(p.monitors)
+	p.monitorPicker.Widget().SetToolTip("Select monitor to record.\nChoose 'No Screen' for webcam-only.")
+	p.monitorPicker.OnSelected(func(idx int) {
+		mon := p.monitorPicker.SelectedMonitor()
+		p.canvas.SetMonitor(mon)
+	})
+	centerLayout.AddWidget(p.monitorPicker.Widget())
+
+	// Status + elapsed + controls row
 	statusRow := qt.NewQHBoxLayout2()
-	p.statusLabel = qt.NewQLabel3("Ready to record")
-	p.statusLabel.SetStyleSheet("QLabel { color: #a6e3a1; font-size: 14px; font-weight: bold; }")
+	p.statusLabel = qt.NewQLabel3("Ready")
+	p.statusLabel.SetStyleSheet("QLabel { color: #a6e3a1; font-size: 13px; font-weight: bold; }")
 	statusRow.AddWidget(p.statusLabel.QFrame.QWidget)
 	statusRow.AddStretch()
 	p.elapsedLabel = qt.NewQLabel3("00:00:00")
-	p.elapsedLabel.SetStyleSheet("QLabel { color: #cdd6f4; font-size: 20px; font-weight: bold; font-family: monospace; }")
+	p.elapsedLabel.SetStyleSheet("QLabel { color: #cdd6f4; font-size: 18px; font-weight: bold; font-family: monospace; }")
 	statusRow.AddWidget(p.elapsedLabel.QFrame.QWidget)
-	rightLayout.AddLayout(statusRow.QLayout)
+	centerLayout.AddLayout(statusRow.QLayout)
 
-	// Live webcam preview grid
-	p.webcamGrid = widgets.NewWebcamGrid(p.webcamDevs)
-	p.webcamGrid.Widget().SetMinimumHeight(180)
-	rightLayout.AddWidget(p.webcamGrid.Widget())
-
-	// Auto-start webcam previews if webcams are detected
-	if len(p.webcamDevs) > 0 {
-		p.webcamGrid.StartAll()
-	}
-
-	// Control buttons
+	// Buttons
 	btnRow := qt.NewQHBoxLayout2()
-	btnRow.SetSpacing(10)
+	btnRow.SetSpacing(8)
 
 	p.startBtn = qt.NewQPushButton3("Start Recording")
-	p.startBtn.SetStyleSheet(`
-		QPushButton {
-			background-color: #a6e3a1;
-			color: #1e1e2e;
-			border: none;
-			border-radius: 8px;
-			padding: 15px 30px;
-			font-size: 16px;
-			font-weight: bold;
-		}
-		QPushButton:hover { background-color: #94e2d5; }
-		QPushButton:disabled { background-color: #45475a; color: #6c7086; }
-	`)
+	p.startBtn.SetStyleSheet("QPushButton { background: #a6e3a1; color: #1e1e2e; border: none; border-radius: 6px; padding: 10px 24px; font-size: 14px; font-weight: bold; } QPushButton:hover { background: #94e2d5; } QPushButton:disabled { background: #45475a; color: #6c7086; }")
 	p.startBtn.OnClicked(func() { p.onStartClicked() })
 	btnRow.AddWidget(p.startBtn.QAbstractButton.QWidget)
 
 	p.pauseBtn = qt.NewQPushButton3("Pause")
-	p.pauseBtn.SetStyleSheet(`
-		QPushButton {
-			background-color: #fab387;
-			color: #1e1e2e;
-			border: none;
-			border-radius: 8px;
-			padding: 15px 20px;
-			font-size: 14px;
-			font-weight: bold;
-		}
-		QPushButton:hover { background-color: #f9e2af; }
-	`)
+	p.pauseBtn.SetStyleSheet("QPushButton { background: #fab387; color: #1e1e2e; border: none; border-radius: 6px; padding: 10px 16px; font-size: 13px; font-weight: bold; } QPushButton:hover { background: #f9e2af; }")
 	p.pauseBtn.SetVisible(false)
 	p.pauseBtn.OnClicked(func() { p.onPauseClicked() })
 	btnRow.AddWidget(p.pauseBtn.QAbstractButton.QWidget)
 
 	p.stopBtn = qt.NewQPushButton3("Stop")
-	p.stopBtn.SetStyleSheet(`
-		QPushButton {
-			background-color: #f38ba8;
-			color: #1e1e2e;
-			border: none;
-			border-radius: 8px;
-			padding: 15px 20px;
-			font-size: 14px;
-			font-weight: bold;
-		}
-		QPushButton:hover { background-color: #eba0ac; }
-	`)
+	p.stopBtn.SetStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 6px; padding: 10px 16px; font-size: 13px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }")
 	p.stopBtn.SetVisible(false)
 	p.stopBtn.OnClicked(func() { p.onStopClicked() })
 	btnRow.AddWidget(p.stopBtn.QAbstractButton.QWidget)
 
-	rightLayout.AddLayout(btnRow.QLayout)
-	rightLayout.AddStretch()
-	layout.AddWidget(rightCol)
+	centerLayout.AddLayout(btnRow.QLayout)
+
+	layout.AddWidget2(centerCol, 1)
+
+	// === Right panel: webcam previews ===
+	if len(p.webcamDevs) > 0 {
+		rightCol := qt.NewQWidget2()
+		rightCol.SetFixedWidth(200)
+		rightLayout := qt.NewQVBoxLayout(rightCol)
+		rightLayout.SetSpacing(5)
+		rightLayout.SetContentsMargins(5, 0, 0, 0)
+
+		camLabel := qt.NewQLabel3("Cameras")
+		camLabel.SetStyleSheet("QLabel { color: #89b4fa; font-size: 12px; font-weight: bold; }")
+		rightLayout.AddWidget(camLabel.QFrame.QWidget)
+
+		p.webcamGrid = widgets.NewWebcamGrid(p.webcamDevs)
+		rightLayout.AddWidget(p.webcamGrid.Widget())
+		p.webcamGrid.StartAll()
+
+		rightLayout.AddStretch()
+		layout.AddWidget(rightCol)
+	}
 }
 
 func (p *RecordPage) addFormRow(layout *qt.QVBoxLayout, label, placeholder, labelStyle, inputStyle string) *qt.QLineEdit {
 	row := qt.NewQHBoxLayout2()
 	lbl := qt.NewQLabel3(label)
 	lbl.SetStyleSheet(labelStyle)
-	lbl.SetFixedWidth(80)
+	lbl.SetFixedWidth(65)
 	row.AddWidget(lbl.QFrame.QWidget)
 	input := qt.NewQLineEdit2()
 	input.SetPlaceholderText(placeholder)
@@ -364,16 +408,16 @@ func (p *RecordPage) addFormRow(layout *qt.QVBoxLayout, label, placeholder, labe
 }
 
 func (p *RecordPage) setupTimers() {
-	// Elapsed time timer - ticks every second while recording
 	p.elapsedTimer = qt.NewQTimer()
 	p.elapsedTimer.OnTimeout(func() {
-		if p.state == StateRecording {
+		switch p.state {
+		case StateRecording:
 			elapsed := time.Since(p.startTime)
 			h := int(elapsed.Hours())
 			m := int(elapsed.Minutes()) % 60
 			s := int(elapsed.Seconds()) % 60
 			p.elapsedLabel.SetText(fmt.Sprintf("%02d:%02d:%02d", h, m, s))
-		} else if p.state == StateCountdown {
+		case StateCountdown:
 			p.countdownVal--
 			if p.countdownVal <= 0 {
 				p.startRecording()
@@ -388,20 +432,16 @@ func (p *RecordPage) onStartClicked() {
 	if p.state != StateIdle {
 		return
 	}
-
-	// Validate title
 	title := p.titleInput.Text()
 	if title == "" {
-		p.statusLabel.SetText("Please enter a title")
-		p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 16px; font-weight: bold; padding: 10px; }")
+		p.statusLabel.SetText("Enter a title")
+		p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
 		return
 	}
-
-	// Start countdown
 	p.state = StateCountdown
 	p.countdownVal = 5
-	p.statusLabel.SetText(fmt.Sprintf("Starting in %d...", p.countdownVal))
-	p.statusLabel.SetStyleSheet("QLabel { color: #fab387; font-size: 16px; font-weight: bold; padding: 10px; }")
+	p.statusLabel.SetText("Starting in 5...")
+	p.statusLabel.SetStyleSheet("QLabel { color: #fab387; font-size: 13px; font-weight: bold; }")
 	p.startBtn.SetEnabled(false)
 	p.elapsedTimer.Start(1000)
 }
@@ -409,19 +449,18 @@ func (p *RecordPage) onStartClicked() {
 func (p *RecordPage) startRecording() {
 	p.elapsedTimer.Stop()
 
-	// Get monitor from picker
 	monitorName := ""
+	monitorRes := ""
 	if m := p.monitorPicker.SelectedMonitor(); m != nil {
 		monitorName = m.Name
+		monitorRes = fmt.Sprintf("%dx%d", m.Width, m.Height)
 	}
 
-	// Get recording number
 	number, _ := strconv.Atoi(p.numberInput.Text())
 	if number == 0 {
 		number = config.GetCurrentRecordingNumber()
 	}
 
-	// Build recording directory
 	cfg, _ := config.Load()
 	outputDir := cfg.OutputDir
 	if outputDir == "" {
@@ -430,13 +469,6 @@ func (p *RecordPage) startRecording() {
 	timestamp := time.Now().Format("2006-01-02_15-04-05")
 	recordingDir := filepath.Join(outputDir, fmt.Sprintf("%03d-%s", number, timestamp))
 
-	// Get monitor resolution
-	monitorRes := ""
-	if m := p.monitorPicker.SelectedMonitor(); m != nil {
-		monitorRes = fmt.Sprintf("%dx%d", m.Width, m.Height)
-	}
-
-	// Create metadata
 	metadata := models.RecordingMetadata{
 		Title:       p.titleInput.Text(),
 		Description: p.descInput.ToPlainText(),
@@ -444,7 +476,6 @@ func (p *RecordPage) startRecording() {
 		Presenter:   p.presenterInput.Text(),
 	}
 
-	// Create RecordingInfo
 	recordingInfo := models.NewRecordingInfo(metadata, monitorName, monitorRes)
 	recordingInfo.Files.FolderPath = recordingDir
 	recordingInfo.Settings.ScreenEnabled = p.screenCheck.IsChecked()
@@ -454,20 +485,16 @@ func (p *RecordPage) startRecording() {
 	recordingInfo.Settings.LeftSplitEnabled = p.leftSplitCheck.IsChecked()
 	recordingInfo.Settings.LogosEnabled = p.logosCheck.IsChecked()
 
-	// Build logo selection
 	logoSelection := config.LogoSelection{}
 	if p.logosCheck.IsChecked() {
 		logoSelection.LeftLogo = p.leftLogo.FilePath()
 		logoSelection.RightLogo = p.rightLogo.FilePath()
 		logoSelection.BottomLogo = p.bottomLogo.FilePath()
-
-		// Save logo settings to recording info
 		recordingInfo.Settings.LeftLogo = logoSelection.LeftLogo
 		recordingInfo.Settings.RightLogo = logoSelection.RightLogo
 		recordingInfo.Settings.BottomLogo = logoSelection.BottomLogo
 	}
 
-	// Build recorder options
 	noScreen := !p.screenCheck.IsChecked() || monitorName == ""
 	opts := recorder.Options{
 		Monitor:        monitorName,
@@ -480,24 +507,21 @@ func (p *RecordPage) startRecording() {
 		LogoSelection:  logoSelection,
 	}
 
-	// Start recording in goroutine to not block the UI
 	go func() {
 		err := p.rec.StartWithOptions(opts)
 		if err != nil {
-			// Use QTimer.singleShot equivalent to update UI from main thread
 			runOnUI(func() {
 				p.statusLabel.SetText(fmt.Sprintf("Error: %v", err))
-				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 16px; font-weight: bold; padding: 10px; }")
+				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
 				p.resetToIdle()
 			})
 			return
 		}
-
 		runOnUI(func() {
 			p.state = StateRecording
 			p.startTime = time.Now()
 			p.statusLabel.SetText("Recording")
-			p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 16px; font-weight: bold; padding: 10px; }")
+			p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
 			p.startBtn.SetVisible(false)
 			p.pauseBtn.SetVisible(true)
 			p.stopBtn.SetVisible(true)
@@ -510,36 +534,37 @@ func (p *RecordPage) startRecording() {
 }
 
 func (p *RecordPage) onPauseClicked() {
-	if p.state == StateRecording {
+	switch p.state {
+	case StateRecording:
 		go func() {
 			err := p.rec.Pause()
 			runOnUI(func() {
 				if err != nil {
-					p.statusLabel.SetText(fmt.Sprintf("Pause error: %v", err))
+					p.statusLabel.SetText(fmt.Sprintf("Error: %v", err))
 					return
 				}
 				p.state = StatePaused
 				p.elapsedTimer.Stop()
 				p.statusLabel.SetText("Paused")
-				p.statusLabel.SetStyleSheet("QLabel { color: #fab387; font-size: 16px; font-weight: bold; padding: 10px; }")
+				p.statusLabel.SetStyleSheet("QLabel { color: #fab387; font-size: 13px; font-weight: bold; }")
 				p.pauseBtn.SetText("Resume")
 				if p.onStatusChange != nil {
 					p.onStatusChange("Paused")
 				}
 			})
 		}()
-	} else if p.state == StatePaused {
+	case StatePaused:
 		go func() {
 			err := p.rec.Resume()
 			runOnUI(func() {
 				if err != nil {
-					p.statusLabel.SetText(fmt.Sprintf("Resume error: %v", err))
+					p.statusLabel.SetText(fmt.Sprintf("Error: %v", err))
 					return
 				}
 				p.state = StateRecording
 				p.elapsedTimer.Start(1000)
 				p.statusLabel.SetText("Recording")
-				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 16px; font-weight: bold; padding: 10px; }")
+				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
 				p.pauseBtn.SetText("Pause")
 				if p.onStatusChange != nil {
 					p.onStatusChange("Recording")
@@ -553,9 +578,8 @@ func (p *RecordPage) onStopClicked() {
 	if p.state != StateRecording && p.state != StatePaused {
 		return
 	}
-
 	p.statusLabel.SetText("Stopping...")
-	p.statusLabel.SetStyleSheet("QLabel { color: #fab387; font-size: 16px; font-weight: bold; padding: 10px; }")
+	p.statusLabel.SetStyleSheet("QLabel { color: #fab387; font-size: 13px; font-weight: bold; }")
 	p.stopBtn.SetEnabled(false)
 	p.pauseBtn.SetEnabled(false)
 
@@ -564,10 +588,10 @@ func (p *RecordPage) onStopClicked() {
 		runOnUI(func() {
 			if err != nil {
 				p.statusLabel.SetText(fmt.Sprintf("Error: %v", err))
-				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 16px; font-weight: bold; padding: 10px; }")
+				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
 			} else {
-				p.statusLabel.SetText("Recording complete!")
-				p.statusLabel.SetStyleSheet("QLabel { color: #a6e3a1; font-size: 16px; font-weight: bold; padding: 10px; }")
+				p.statusLabel.SetText("Complete!")
+				p.statusLabel.SetStyleSheet("QLabel { color: #a6e3a1; font-size: 13px; font-weight: bold; }")
 			}
 			p.resetToIdle()
 			if p.onStatusChange != nil {
@@ -588,8 +612,6 @@ func (p *RecordPage) resetToIdle() {
 	p.pauseBtn.SetText("Pause")
 	p.stopBtn.SetVisible(false)
 	p.stopBtn.SetEnabled(true)
-
-	// Increment recording number
 	num, _ := strconv.Atoi(p.numberInput.Text())
 	p.numberInput.SetText(fmt.Sprintf("%03d", num+1))
 }
@@ -609,7 +631,7 @@ func (p *RecordPage) TriggerPause() {
 // TriggerResume resumes the recording (called from tray)
 func (p *RecordPage) TriggerResume() {
 	if p.state == StatePaused {
-		p.onPauseClicked() // onPauseClicked handles both pause and resume
+		p.onPauseClicked()
 	}
 }
 
@@ -618,9 +640,15 @@ func (p *RecordPage) TriggerStop() {
 	p.onStopClicked()
 }
 
-// StopPreviews stops all webcam preview captures
+// StopPreviews stops all webcam preview captures and screen refresh
 func (p *RecordPage) StopPreviews() {
 	if p.webcamGrid != nil {
 		p.webcamGrid.StopAll()
+	}
+	if p.canvas != nil {
+		p.canvas.Stop()
+	}
+	if p.monitorPicker != nil {
+		p.monitorPicker.Stop()
 	}
 }

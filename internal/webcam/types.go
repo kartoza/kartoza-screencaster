@@ -25,6 +25,9 @@ type WebcamConfig struct {
 	LandscapeMode WebcamDisplayMode `json:"landscape_mode"`
 	LandscapeSide WebcamSide        `json:"landscape_side"`
 	VerticalMode  WebcamDisplayMode `json:"vertical_mode"`
+	OverlayX      int               `json:"overlay_x,omitempty"`    // custom X position in video coords (-1 = auto)
+	OverlayY      int               `json:"overlay_y,omitempty"`    // custom Y position in video coords (-1 = auto)
+	OverlaySize   int               `json:"overlay_size,omitempty"` // diameter/width in video pixels (0 = default 250)
 }
 
 // DefaultWebcamConfig returns the default config for a newly detected device
