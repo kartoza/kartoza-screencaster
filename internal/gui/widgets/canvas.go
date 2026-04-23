@@ -781,8 +781,13 @@ func (c *RecordingCanvas) paint() {
 			}
 			painter.DrawText2(qt.NewQPoint2(item.x-item.w/3, item.y+item.h/2+12), name)
 		} else if item.itemType == ItemTitle {
-			// Title text — draw as styled text
-			titleFont := qt.NewQFont6("Sans", 10)
+			// Title text — font size scales with item height
+			painter.Save()
+			fontSize := item.h * 2 / 3
+			if fontSize < 6 {
+				fontSize = 6
+			}
+			titleFont := qt.NewQFont6("Sans", fontSize)
 			painter.SetFont(titleFont)
 			color := c.titleColor
 			if color == "" {
@@ -800,6 +805,7 @@ func (c *RecordingCanvas) paint() {
 				painter.SetPenWithPen(qt.NewQPen3(qt.NewQColor3(137, 180, 250)))
 				painter.DrawRect2(item.x-item.w/2-2, item.y-item.h/2-2, item.w+4, item.h+4)
 			}
+			painter.Restore()
 		} else {
 			// Rectangle item
 			if isDragging {
@@ -1269,6 +1275,144 @@ func (c *RecordingCanvas) ReorderItems(order []int) {
 	}
 	c.items = newItems
 	c.widget.Update()
+}
+
+// ExportState exports the current canvas state for persistence
+func (c *RecordingCanvas) ExportState() []CanvasItemExport {
+	var items []CanvasItemExport
+	for _, item := range c.items {
+		e := CanvasItemExport{
+			Type:       itemTypeToString(item.itemType),
+			Label:      item.label,
+			X:          item.x,
+			Y:          item.y,
+			W:          item.w,
+			H:          item.h,
+			Device:     item.device,
+			FilePath:   item.logoPath,
+			Shape:      int(item.shape),
+			GifLoop:    int(item.gifLoop),
+			GifLoopMax: item.gifLoopMax,
+		}
+		items = append(items, e)
+	}
+	return items
+}
+
+// CanvasItemExport is a serializable representation of a canvas item
+type CanvasItemExport struct {
+	Type       string `json:"type"`
+	Label      string `json:"label"`
+	X          int    `json:"x"`
+	Y          int    `json:"y"`
+	W          int    `json:"w"`
+	H          int    `json:"h"`
+	Device     string `json:"device,omitempty"`
+	FilePath   string `json:"file_path,omitempty"`
+	Shape      int    `json:"shape,omitempty"`
+	Monitor    string `json:"monitor,omitempty"`
+	GifLoop    int    `json:"gif_loop,omitempty"`
+	GifLoopMax int    `json:"gif_loop_max,omitempty"`
+}
+
+// ImportItem adds an item from saved state, validating that resources exist
+func (c *RecordingCanvas) ImportItem(e CanvasItemExport) {
+	switch e.Type {
+	case "screen":
+		item := canvasItem{
+			itemType: ItemScreen,
+			label:    e.Label,
+			x:        e.X, y: e.Y, w: e.W, h: e.H,
+			visible: true,
+		}
+		c.items = append(c.items, item)
+	case "webcam":
+		item := canvasItem{
+			itemType: ItemWebcam,
+			label:    e.Label,
+			x:        e.X, y: e.Y, w: e.W, h: e.H,
+			device:   e.Device,
+			shape:    WebcamShape(e.Shape),
+			circular: WebcamShape(e.Shape) == ShapeRound,
+			visible:  true,
+		}
+		c.items = append(c.items, item)
+		c.startWebcamCapture(e.Device)
+	case "logo":
+		c.AddLogo(ItemLogo, e.FilePath)
+		// Override position/size from saved state
+		if len(c.items) > 0 {
+			last := &c.items[len(c.items)-1]
+			last.x = e.X
+			last.y = e.Y
+			last.w = e.W
+			last.h = e.H
+			last.gifLoop = GifLoopMode(e.GifLoop)
+			last.gifLoopMax = e.GifLoopMax
+			// Apply GIF loop mode if it's a GIF
+			if last.isGif && last.movie != nil {
+				c.SetGifLoopMode(len(c.items)-1, GifLoopMode(e.GifLoop), e.GifLoopMax)
+			}
+		}
+	case "title":
+		item := canvasItem{
+			itemType: ItemTitle,
+			label:    e.Label,
+			x:        e.X, y: e.Y, w: e.W, h: e.H,
+			visible: true,
+		}
+		c.items = append(c.items, item)
+	}
+}
+
+// GetMode returns the current canvas mode as a string
+func (c *RecordingCanvas) GetMode() string {
+	if !c.vertical {
+		return "landscape"
+	}
+	if !c.leftSplit {
+		return "vertical"
+	}
+	if c.splitSide == SplitLeft {
+		return "left_split"
+	}
+	return "right_split"
+}
+
+// SetMode restores the canvas mode from a string
+func (c *RecordingCanvas) SetMode(mode string) {
+	switch mode {
+	case "landscape":
+		c.vertical = false
+		c.leftSplit = false
+	case "vertical":
+		c.vertical = true
+		c.leftSplit = false
+	case "left_split":
+		c.vertical = true
+		c.leftSplit = true
+		c.splitSide = SplitLeft
+	case "right_split":
+		c.vertical = true
+		c.leftSplit = true
+		c.splitSide = SplitRight
+	}
+	c.widget.Update()
+}
+
+func itemTypeToString(t CanvasItemType) string {
+	switch t {
+	case ItemScreen:
+		return "screen"
+	case ItemWebcam:
+		return "webcam"
+	case ItemLogo:
+		return "logo"
+	case ItemTitle:
+		return "title"
+	default:
+		return "logo" // legacy logo types
+	}
 }
 
 // GetWebcamPositions returns webcam positions scaled to video coordinates (1920x1080)

@@ -2,6 +2,7 @@ package pages
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -267,10 +268,27 @@ func (p *RecordPage) setupUI() {
 	gifCombo.AddItem("Disabled")
 	gifCombo.AddItem("Once")
 	gifCombo.AddItem("Continuous")
-	gifCombo.AddItem("Count...")
+	gifCombo.AddItem("Count")
 	gifCombo.SetCurrentIndex(2) // default continuous
+
+	gifCountSpin := qt.NewQSpinBox2()
+	gifCountSpin.SetMinimum(1)
+	gifCountSpin.SetMaximum(100)
+	gifCountSpin.SetValue(3)
+	gifCountSpin.SetFixedWidth(50)
+	gifCountSpin.SetStyleSheet("QSpinBox { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 3px; padding: 2px; font-size: 10px; }")
+	gifCountSpin.SetVisible(false)
+	gifCountSpin.SetToolTip("Number of times to loop the GIF.")
+	gifCountSpin.OnValueChanged(func(val int) {
+		row := int(p.layerList.CurrentRow())
+		if row >= 0 && p.canvas.IsGifItem(row) {
+			p.canvas.SetGifLoopMode(row, widgets.GifLoopCount, val)
+		}
+	})
+
 	gifCombo.OnCurrentIndexChanged(func(index int) {
 		row := int(p.layerList.CurrentRow())
+		gifCountSpin.SetVisible(index == 3)
 		if row < 0 || !p.canvas.IsGifItem(row) {
 			return
 		}
@@ -282,10 +300,11 @@ func (p *RecordPage) setupUI() {
 		case 2:
 			p.canvas.SetGifLoopMode(row, widgets.GifLoopContinuous, 0)
 		case 3:
-			p.canvas.SetGifLoopMode(row, widgets.GifLoopCount, 3) // default 3 loops
+			p.canvas.SetGifLoopMode(row, widgets.GifLoopCount, gifCountSpin.Value())
 		}
 	})
 	gifLayout.AddWidget(gifCombo.QWidget)
+	gifLayout.AddWidget(gifCountSpin.QAbstractSpinBox.QWidget)
 
 	gifBox.SetVisible(false) // hidden until a GIF is selected
 	leftLayout.AddWidget(gifBox)
@@ -298,16 +317,21 @@ func (p *RecordPage) setupUI() {
 		// Show/hide GIF controls
 		if row >= 0 && p.canvas.IsGifItem(row) {
 			gifBox.SetVisible(true)
-			mode, _ := p.canvas.GetGifLoopMode(row)
+			mode, count := p.canvas.GetGifLoopMode(row)
 			switch mode {
 			case widgets.GifLoopDisabled:
 				gifCombo.SetCurrentIndex(0)
+				gifCountSpin.SetVisible(false)
 			case widgets.GifLoopOnce:
 				gifCombo.SetCurrentIndex(1)
+				gifCountSpin.SetVisible(false)
 			case widgets.GifLoopContinuous:
 				gifCombo.SetCurrentIndex(2)
+				gifCountSpin.SetVisible(false)
 			case widgets.GifLoopCount:
 				gifCombo.SetCurrentIndex(3)
+				gifCountSpin.SetValue(count)
+				gifCountSpin.SetVisible(true)
 			}
 		} else {
 			gifBox.SetVisible(false)
@@ -329,6 +353,7 @@ func (p *RecordPage) setupUI() {
 			p.layerList.InsertItem(row-1, item)
 			p.layerList.SetCurrentRow(row - 1)
 			p.canvas.SwapItems(row, row-1)
+			p.saveCanvasState()
 		}
 	})
 	layerBtnRow.AddWidget(upBtn.QAbstractButton.QWidget)
@@ -344,6 +369,7 @@ func (p *RecordPage) setupUI() {
 			p.layerList.InsertItem(row+1, item)
 			p.layerList.SetCurrentRow(row + 1)
 			p.canvas.SwapItems(row, row+1)
+			p.saveCanvasState()
 		}
 	})
 	layerBtnRow.AddWidget(downBtn.QAbstractButton.QWidget)
@@ -376,6 +402,14 @@ func (p *RecordPage) setupUI() {
 	p.canvas = widgets.NewRecordingCanvas()
 	p.canvas.Widget().SetToolTip("WYSIWYG preview.\nAdd elements with + button.\nDrag to move, scroll to resize,\narrow keys to nudge.")
 	centerLayout.AddWidget2(p.canvas.Widget(), 1)
+
+	// Auto-save canvas state on any change
+	p.canvas.OnChange(func() {
+		p.saveCanvasState()
+	})
+
+	// Restore canvas state from config
+	p.restoreCanvasState()
 
 	// Sync canvas selection → layer list
 	p.canvas.OnSelectionChanged(func(index int) {
@@ -766,6 +800,142 @@ func (p *RecordPage) resetToIdle() {
 	p.stopBtn.SetEnabled(true)
 	num, _ := strconv.Atoi(p.numberInput.Text())
 	p.numberInput.SetText(fmt.Sprintf("%03d", num+1))
+}
+
+// saveCanvasState persists the current canvas state to config
+func (p *RecordPage) saveCanvasState() {
+	cfg, _ := config.Load()
+	if cfg == nil {
+		return
+	}
+
+	exported := p.canvas.ExportState()
+	var items []config.CanvasItemState
+	for _, e := range exported {
+		items = append(items, config.CanvasItemState{
+			Type:       e.Type,
+			Label:      e.Label,
+			X:          e.X,
+			Y:          e.Y,
+			W:          e.W,
+			H:          e.H,
+			Device:     e.Device,
+			FilePath:   e.FilePath,
+			Shape:      e.Shape,
+			GifLoop:    e.GifLoop,
+			GifLoopMax: e.GifLoopMax,
+		})
+	}
+
+	cfg.CanvasState = &config.CanvasState{
+		Mode:         p.canvas.GetMode(),
+		Items:        items,
+		TitleColor:   "", // could persist this too
+		AudioEnabled: p.audioCheck.IsChecked(),
+		Presenter:    p.presenterInput.Text(),
+	}
+	_ = config.Save(cfg)
+}
+
+// restoreCanvasState loads canvas state from config and validates resources
+func (p *RecordPage) restoreCanvasState() {
+	cfg, _ := config.Load()
+	if cfg == nil || cfg.CanvasState == nil || len(cfg.CanvasState.Items) == 0 {
+		return
+	}
+
+	state := cfg.CanvasState
+
+	// Restore mode
+	p.canvas.SetMode(state.Mode)
+
+	// Build sets of available devices for validation
+	availableDevices := make(map[string]bool)
+	for _, dev := range p.webcamDevs {
+		availableDevices[dev.Device] = true
+	}
+	availableMonitors := make(map[string]bool)
+	for _, mon := range p.monitors {
+		availableMonitors[mon.Name] = true
+	}
+
+	for _, item := range state.Items {
+		switch item.Type {
+		case "screen":
+			// Validate monitor still exists
+			monName := ""
+			for _, mon := range p.monitors {
+				desc := mon.Description
+				if desc == "" {
+					desc = mon.Name
+				}
+				if "Screen: "+desc == item.Label || mon.Name == item.Monitor {
+					monName = mon.Name
+					p.addScreen(&mon)
+					break
+				}
+			}
+			if monName == "" {
+				continue // monitor disconnected, skip
+			}
+
+		case "webcam":
+			if !availableDevices[item.Device] {
+				continue // webcam disconnected, skip
+			}
+			p.canvas.ImportItem(widgets.CanvasItemExport{
+				Type:   "webcam",
+				Label:  item.Label,
+				X:      item.X,
+				Y:      item.Y,
+				W:      item.W,
+				H:      item.H,
+				Device: item.Device,
+				Shape:  item.Shape,
+			})
+
+		case "logo":
+			if item.FilePath == "" {
+				continue
+			}
+			// Validate file still exists
+			if _, err := os.Stat(item.FilePath); err != nil {
+				continue // file deleted, skip
+			}
+			p.canvas.ImportItem(widgets.CanvasItemExport{
+				Type:       "logo",
+				Label:      item.Label,
+				X:          item.X,
+				Y:          item.Y,
+				W:          item.W,
+				H:          item.H,
+				FilePath:   item.FilePath,
+				GifLoop:    item.GifLoop,
+				GifLoopMax: item.GifLoopMax,
+			})
+
+		case "title":
+			p.canvas.ImportItem(widgets.CanvasItemExport{
+				Type:  "title",
+				Label: item.Label,
+				X:     item.X,
+				Y:     item.Y,
+				W:     item.W,
+				H:     item.H,
+			})
+		}
+	}
+
+	// Restore audio and presenter
+	if state.AudioEnabled {
+		p.audioCheck.SetChecked(true)
+	}
+	if state.Presenter != "" {
+		p.presenterInput.SetText(state.Presenter)
+	}
+
+	// Refresh the layer list
+	p.refreshLayerList()
 }
 
 // refreshLayerList rebuilds the layer list from canvas items

@@ -150,6 +150,34 @@ type Config struct {
 
 	// Multi-webcam configuration (persisted per device)
 	WebcamConfigs []webcam.WebcamConfig `json:"webcam_configs,omitempty"`
+
+	// Canvas state (persisted across sessions)
+	CanvasState *CanvasState `json:"canvas_state,omitempty"`
+}
+
+// CanvasItemState is the serializable state of a single canvas item
+type CanvasItemState struct {
+	Type        string `json:"type"`                   // "screen", "webcam", "logo", "title"
+	Label       string `json:"label"`
+	X           int    `json:"x"`
+	Y           int    `json:"y"`
+	W           int    `json:"w"`
+	H           int    `json:"h"`
+	Device      string `json:"device,omitempty"`       // webcam device path
+	FilePath    string `json:"file_path,omitempty"`    // logo file path
+	Shape       int    `json:"shape,omitempty"`        // webcam shape: 0=round, 1=square, 2=rect
+	Monitor     string `json:"monitor,omitempty"`      // monitor name for screen items
+	GifLoop     int    `json:"gif_loop,omitempty"`     // 0=disabled, 1=once, 2=continuous, 3=count
+	GifLoopMax  int    `json:"gif_loop_max,omitempty"` // loop count for gif_loop=3
+}
+
+// CanvasState holds the full persisted canvas configuration
+type CanvasState struct {
+	Mode      string             `json:"mode"`       // "landscape", "vertical", "left_split", "right_split"
+	Items     []CanvasItemState  `json:"items"`
+	TitleColor string            `json:"title_color,omitempty"`
+	AudioEnabled bool            `json:"audio_enabled"`
+	Presenter string             `json:"presenter,omitempty"`
 }
 
 // DefaultConfig returns the default configuration
