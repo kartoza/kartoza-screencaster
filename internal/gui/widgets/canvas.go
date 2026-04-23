@@ -23,7 +23,8 @@ const (
 type CanvasItemType int
 
 const (
-	ItemWebcam CanvasItemType = iota
+	ItemScreen CanvasItemType = iota
+	ItemWebcam
 	ItemLogo
 	ItemTitle
 	// Legacy — kept for backward compat with config
@@ -112,7 +113,8 @@ type RecordingCanvas struct {
 	// Current canvas dimensions (changes with landscape/vertical)
 	cw, ch int
 
-	onChange func()
+	onChange          func()
+	onSelectionChanged func(int) // called when selected item changes (for layer list sync)
 }
 
 // NewRecordingCanvas creates a new WYSIWYG canvas
@@ -201,6 +203,28 @@ func (c *RecordingCanvas) SetTitle(text string) {
 // SetTitleColor sets the title text color
 func (c *RecordingCanvas) SetTitleColor(color string) {
 	c.titleColor = color
+	c.widget.Update()
+}
+
+// AddScreenItem adds the screen as a layer list entry (not draggable — it's the background)
+func (c *RecordingCanvas) AddScreenItem(name string) {
+	// Remove any existing screen item first
+	for i := len(c.items) - 1; i >= 0; i-- {
+		if c.items[i].itemType == ItemScreen {
+			c.items = append(c.items[:i], c.items[i+1:]...)
+		}
+	}
+	// Insert at position 0 (bottom of draw order = background)
+	screenItem := canvasItem{
+		itemType: ItemScreen,
+		label:    "Screen: " + name,
+		x:        c.cw / 2,
+		y:        c.ch / 2,
+		w:        c.cw,
+		h:        c.ch,
+		visible:  true,
+	}
+	c.items = append([]canvasItem{screenItem}, c.items...)
 	c.widget.Update()
 }
 
@@ -407,18 +431,28 @@ func (c *RecordingCanvas) setupEvents() {
 	c.widget.OnMousePressEvent(func(super func(event *qt.QMouseEvent), event *qt.QMouseEvent) {
 		pos := event.Position()
 		mx, my := int(pos.X()), int(pos.Y())
+		hit := -1
 		for i := len(c.items) - 1; i >= 0; i-- {
 			item := c.items[i]
-			if !item.visible {
+			if !item.visible || item.itemType == ItemScreen {
 				continue
 			}
 			if c.hitTest(item, mx, my) {
+				hit = i
 				c.dragging = i
 				c.dragOffX = mx - item.x
 				c.dragOffY = my - item.y
 				break
 			}
 		}
+		// Update selection
+		c.selectedItem = hit
+		c.widget.Update()
+		if c.onSelectionChanged != nil {
+			c.onSelectionChanged(hit)
+		}
+		// Take keyboard focus for arrow key nudging
+		c.widget.SetFocus()
 	})
 
 	c.widget.OnMouseMoveEvent(func(super func(event *qt.QMouseEvent), event *qt.QMouseEvent) {
@@ -465,17 +499,48 @@ func (c *RecordingCanvas) setupEvents() {
 		}
 	})
 
-	// Key press: Delete removes selected item
+	// Key press: Delete removes, arrows nudge selected item
 	c.widget.OnKeyPressEvent(func(super func(event *qt.QKeyEvent), event *qt.QKeyEvent) {
-		if event.Key() == int(qt.Key_Delete) && c.selectedItem >= 0 {
+		key := event.Key()
+		if key == int(qt.Key_Delete) && c.selectedItem >= 0 {
 			c.RemoveItem(c.selectedItem)
 			c.selectedItem = -1
 			if c.onChange != nil {
 				c.onChange()
 			}
-		} else {
-			super(event)
+			if c.onSelectionChanged != nil {
+				c.onSelectionChanged(-1)
+			}
+			return
 		}
+
+		// Arrow keys nudge selected item by 1px
+		if c.selectedItem >= 0 && c.selectedItem < len(c.items) {
+			item := &c.items[c.selectedItem]
+			if item.itemType == ItemScreen {
+				super(event)
+				return
+			}
+			switch key {
+			case int(qt.Key_Left):
+				item.x--
+				c.widget.Update()
+				return
+			case int(qt.Key_Right):
+				item.x++
+				c.widget.Update()
+				return
+			case int(qt.Key_Up):
+				item.y--
+				c.widget.Update()
+				return
+			case int(qt.Key_Down):
+				item.y++
+				c.widget.Update()
+				return
+			}
+		}
+		super(event)
 	})
 
 	// Mouse wheel: resize item under cursor
@@ -574,8 +639,8 @@ func (c *RecordingCanvas) paint() {
 
 	// Draw items
 	for i, item := range c.items {
-		if !item.visible {
-			continue
+		if !item.visible || item.itemType == ItemScreen {
+			continue // screen is rendered by drawScreen()
 		}
 		isDragging := i == c.dragging
 		isSelected := i == c.selectedItem
@@ -975,6 +1040,11 @@ func (c *RecordingCanvas) Widget() *qt.QWidget {
 // OnChange sets a callback for when positions change
 func (c *RecordingCanvas) OnChange(cb func()) {
 	c.onChange = cb
+}
+
+// OnSelectionChanged sets a callback for when the selected item changes on the canvas
+func (c *RecordingCanvas) OnSelectionChanged(cb func(int)) {
+	c.onSelectionChanged = cb
 }
 
 // Stop stops the screen refresh timer and all webcam captures

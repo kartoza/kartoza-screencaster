@@ -319,8 +319,17 @@ func (p *RecordPage) setupUI() {
 
 	// Canvas — starts empty
 	p.canvas = widgets.NewRecordingCanvas()
-	p.canvas.Widget().SetToolTip("WYSIWYG preview.\nAdd elements with the + button below.\nDrag to reposition.")
+	p.canvas.Widget().SetToolTip("WYSIWYG preview.\nAdd elements with + button.\nDrag to move, scroll to resize,\narrow keys to nudge.")
 	centerLayout.AddWidget2(p.canvas.Widget(), 1)
+
+	// Sync canvas selection → layer list
+	p.canvas.OnSelectionChanged(func(index int) {
+		if p.layerList != nil && index >= 0 && index < int(p.layerList.Count()) {
+			p.layerList.SetCurrentRow(index)
+		} else if p.layerList != nil {
+			p.layerList.SetCurrentRow(-1)
+		}
+	})
 
 	// Add element button + controls row
 	addRow := qt.NewQHBoxLayout2()
@@ -462,12 +471,18 @@ func (p *RecordPage) addScreen(mon *models.Monitor) {
 	p.hasScreen = true
 	p.screenMonitor = mon
 	p.canvas.SetMonitor(mon)
+	// The screen is a background element, but we add it as a named item
+	// so it appears in the layer list
+	desc := mon.Description
+	if desc == "" {
+		desc = mon.Name
+	}
+	p.canvas.AddScreenItem(desc)
 }
 
 func (p *RecordPage) addLogo(itemType widgets.CanvasItemType) {
 	file := qt.QFileDialog_GetOpenFileName3(p.widget, "Select Logo", "")
 	if file != "" {
-		p.canvas.RemoveLogo(itemType)
 		p.canvas.AddLogo(itemType, file)
 	}
 }
