@@ -37,7 +37,8 @@ type RecordPage struct {
 	audioCheck     *qt.QCheckBox
 
 	// Central canvas
-	canvas *widgets.RecordingCanvas
+	canvas    *widgets.RecordingCanvas
+	layerList *qt.QListWidget
 
 	// Add element menu
 	addMenu *qt.QMenu
@@ -206,6 +207,107 @@ func (p *RecordPage) setupUI() {
 		}
 	})
 
+	// === Layer list ===
+	layerLabel := qt.NewQLabel3("Layers")
+	layerLabel.SetStyleSheet("QLabel { color: #89b4fa; font-size: 12px; font-weight: bold; padding-top: 6px; }")
+	layerLabel.SetToolTip("Canvas elements in draw order.\nDrag to reorder (bottom = drawn last = on top).\nPress Delete to remove selected item.")
+	leftLayout.AddWidget(layerLabel.QFrame.QWidget)
+
+	p.layerList = qt.NewQListWidget2()
+	p.layerList.SetStyleSheet(`
+		QListWidget {
+			background: #313244;
+			color: #cdd6f4;
+			border: 1px solid #45475a;
+			border-radius: 4px;
+			font-size: 11px;
+		}
+		QListWidget::item { padding: 4px 8px; }
+		QListWidget::item:selected { background: #45475a; }
+		QListWidget::item:hover { background: #3b3b52; }
+	`)
+	p.layerList.SetDragDropMode(qt.QAbstractItemView__InternalMove)
+	p.layerList.SetDefaultDropAction(qt.MoveAction)
+	p.layerList.SetMaximumHeight(150)
+	p.layerList.SetToolTip("Drag items to change draw order.\nPress Delete to remove.")
+	leftLayout.AddWidget(p.layerList.QListView.QAbstractItemView.QAbstractScrollArea.QFrame.QWidget)
+
+	// Sync layer list selection to canvas
+	p.layerList.OnCurrentRowChanged(func(row int) {
+		if p.canvas != nil {
+			p.canvas.SetSelectedItem(row)
+		}
+	})
+
+	// After drag-drop reorder, sync back to canvas
+	p.layerList.OnDropEvent(func(super func(event *qt.QDropEvent), event *qt.QDropEvent) {
+		super(event) // let Qt handle the visual reorder
+		// Rebuild canvas item order from list
+		p.syncLayerOrderToCanvas()
+	})
+
+	// Delete key on layer list
+	p.layerList.OnKeyPressEvent(func(super func(event *qt.QKeyEvent), event *qt.QKeyEvent) {
+		if event.Key() == int(qt.Key_Delete) {
+			row := int(p.layerList.CurrentRow())
+			if row >= 0 {
+				p.canvas.RemoveItem(row)
+				p.layerList.TakeItem(row)
+			}
+		} else {
+			super(event)
+		}
+	})
+
+	// Up/Down buttons for z-order
+	layerBtnRow := qt.NewQHBoxLayout2()
+	layerBtnRow.SetSpacing(4)
+
+	upBtn := qt.NewQPushButton3("Up")
+	upBtn.SetFixedHeight(22)
+	upBtn.SetStyleSheet("QPushButton { background: #45475a; color: #cdd6f4; border: none; border-radius: 3px; font-size: 10px; padding: 2px 8px; } QPushButton:hover { background: #585b70; }")
+	upBtn.SetToolTip("Move selected layer up (drawn earlier, behind others).")
+	upBtn.OnClicked(func() {
+		row := int(p.layerList.CurrentRow())
+		if row > 0 {
+			item := p.layerList.TakeItem(row)
+			p.layerList.InsertItem(row-1, item)
+			p.layerList.SetCurrentRow(row - 1)
+			p.canvas.SwapItems(row, row-1)
+		}
+	})
+	layerBtnRow.AddWidget(upBtn.QAbstractButton.QWidget)
+
+	downBtn := qt.NewQPushButton3("Down")
+	downBtn.SetFixedHeight(22)
+	downBtn.SetStyleSheet("QPushButton { background: #45475a; color: #cdd6f4; border: none; border-radius: 3px; font-size: 10px; padding: 2px 8px; } QPushButton:hover { background: #585b70; }")
+	downBtn.SetToolTip("Move selected layer down (drawn later, in front of others).")
+	downBtn.OnClicked(func() {
+		row := int(p.layerList.CurrentRow())
+		if row >= 0 && row < int(p.layerList.Count())-1 {
+			item := p.layerList.TakeItem(row)
+			p.layerList.InsertItem(row+1, item)
+			p.layerList.SetCurrentRow(row + 1)
+			p.canvas.SwapItems(row, row+1)
+		}
+	})
+	layerBtnRow.AddWidget(downBtn.QAbstractButton.QWidget)
+
+	delBtn := qt.NewQPushButton3("Delete")
+	delBtn.SetFixedHeight(22)
+	delBtn.SetStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 3px; font-size: 10px; padding: 2px 8px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }")
+	delBtn.SetToolTip("Remove selected element from canvas.")
+	delBtn.OnClicked(func() {
+		row := int(p.layerList.CurrentRow())
+		if row >= 0 {
+			p.canvas.RemoveItem(row)
+			p.layerList.TakeItem(row)
+		}
+	})
+	layerBtnRow.AddWidget(delBtn.QAbstractButton.QWidget)
+
+	leftLayout.AddLayout(layerBtnRow.QLayout)
+
 	leftLayout.AddStretch()
 	layout.AddWidget(leftCol)
 
@@ -263,6 +365,7 @@ func (p *RecordPage) setupUI() {
 		}
 		action.OnTriggered(func() {
 			p.addScreen(&mon)
+			p.refreshLayerList()
 		})
 	}
 
@@ -275,22 +378,28 @@ func (p *RecordPage) setupUI() {
 		roundAction := devMenu.AddActionWithText("Round bubble")
 		roundAction.OnTriggered(func() {
 			p.canvas.AddWebcamWithShape(d.Device, d.Name, widgets.ShapeRound)
+			p.refreshLayerList()
 		})
 
 		squareAction := devMenu.AddActionWithText("Square")
 		squareAction.OnTriggered(func() {
 			p.canvas.AddWebcamWithShape(d.Device, d.Name, widgets.ShapeSquare)
+			p.refreshLayerList()
 		})
 
 		rectAction := devMenu.AddActionWithText("Rectangle")
 		rectAction.OnTriggered(func() {
 			p.canvas.AddWebcamWithShape(d.Device, d.Name, widgets.ShapeRect)
+			p.refreshLayerList()
 		})
 	}
 
 	// Logo — unlimited, no position names
 	addLogoAction := p.addMenu.AddActionWithText("Logo")
-	addLogoAction.OnTriggered(func() { p.addLogo(widgets.ItemLogo) })
+	addLogoAction.OnTriggered(func() {
+		p.addLogo(widgets.ItemLogo)
+		p.refreshLayerList()
+	})
 
 	// Title text
 	titleAction := p.addMenu.AddActionWithText("Title Text")
@@ -300,6 +409,7 @@ func (p *RecordPage) setupUI() {
 			title = "Title"
 		}
 		p.canvas.SetTitle(title)
+		p.refreshLayerList()
 	})
 
 	addBtn.OnClicked(func() {
@@ -586,6 +696,34 @@ func (p *RecordPage) resetToIdle() {
 	p.stopBtn.SetEnabled(true)
 	num, _ := strconv.Atoi(p.numberInput.Text())
 	p.numberInput.SetText(fmt.Sprintf("%03d", num+1))
+}
+
+// refreshLayerList rebuilds the layer list from canvas items
+func (p *RecordPage) refreshLayerList() {
+	if p.layerList == nil || p.canvas == nil {
+		return
+	}
+	p.layerList.Clear()
+	names := p.canvas.ItemNames()
+	for _, name := range names {
+		p.layerList.AddItem(name)
+	}
+}
+
+// syncLayerOrderToCanvas reads the current list widget order and reorders canvas items
+func (p *RecordPage) syncLayerOrderToCanvas() {
+	if p.layerList == nil || p.canvas == nil {
+		return
+	}
+	var order []int
+	for i := 0; i < int(p.layerList.Count()); i++ {
+		text := p.layerList.Item(i).Text()
+		idx := p.canvas.FindItemByName(text)
+		if idx >= 0 {
+			order = append(order, idx)
+		}
+	}
+	p.canvas.ReorderItems(order)
 }
 
 // Widget returns the underlying QWidget

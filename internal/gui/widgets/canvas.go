@@ -98,10 +98,11 @@ type RecordingCanvas struct {
 	titleText string
 	titleColor string
 
-	// Drag state
-	dragging int
-	dragOffX int
-	dragOffY int
+	// Selection/Drag state
+	selectedItem int // highlighted item from layer list, -1 = none
+	dragging     int
+	dragOffX     int
+	dragOffY     int
 
 	// Live refresh
 	refreshTimer *qt.QTimer
@@ -118,6 +119,7 @@ type RecordingCanvas struct {
 func NewRecordingCanvas() *RecordingCanvas {
 	c := &RecordingCanvas{
 		widget:         qt.NewQWidget2(),
+		selectedItem:   -1,
 		dragging:       -1,
 		cw:             560,
 		ch:             315,
@@ -463,6 +465,19 @@ func (c *RecordingCanvas) setupEvents() {
 		}
 	})
 
+	// Key press: Delete removes selected item
+	c.widget.OnKeyPressEvent(func(super func(event *qt.QKeyEvent), event *qt.QKeyEvent) {
+		if event.Key() == int(qt.Key_Delete) && c.selectedItem >= 0 {
+			c.RemoveItem(c.selectedItem)
+			c.selectedItem = -1
+			if c.onChange != nil {
+				c.onChange()
+			}
+		} else {
+			super(event)
+		}
+	})
+
 	// Mouse wheel: resize item under cursor
 	c.widget.OnWheelEvent(func(super func(event *qt.QWheelEvent), event *qt.QWheelEvent) {
 		pos := event.Position()
@@ -563,6 +578,7 @@ func (c *RecordingCanvas) paint() {
 			continue
 		}
 		isDragging := i == c.dragging
+		isSelected := i == c.selectedItem
 
 		if item.pixmap != nil {
 			// Logo: draw the pixmap
@@ -670,6 +686,14 @@ func (c *RecordingCanvas) paint() {
 			outlinePen := qt.NewQPen3(qt.NewQColor3(205, 214, 244))
 			painter.SetPenWithPen(outlinePen)
 			painter.DrawRect2(item.x-item.w/2, item.y-item.h/2, item.w, item.h)
+		}
+
+		// Selection highlight
+		if isSelected && !isDragging {
+			selPen := qt.NewQPen3(qt.NewQColor3(249, 226, 175)) // yellow
+			painter.SetPenWithPen(selPen)
+			painter.SetBrushWithStyle(qt.NoBrush)
+			painter.DrawRect2(item.x-item.w/2-3, item.y-item.h/2-3, item.w+6, item.h+6)
 		}
 	}
 
@@ -1007,6 +1031,68 @@ func (c *RecordingCanvas) GetAllLogoPaths() []string {
 		}
 	}
 	return paths
+}
+
+// SetSelectedItem highlights an item on the canvas (e.g., from layer list selection)
+func (c *RecordingCanvas) SetSelectedItem(index int) {
+	c.selectedItem = index
+	c.widget.Update()
+}
+
+// RemoveItem removes an item by index and stops its webcam capture if applicable
+func (c *RecordingCanvas) RemoveItem(index int) {
+	if index < 0 || index >= len(c.items) {
+		return
+	}
+	item := c.items[index]
+	if item.itemType == ItemWebcam {
+		c.stopWebcamCapture(item.device)
+	}
+	c.items = append(c.items[:index], c.items[index+1:]...)
+	c.widget.Update()
+}
+
+// SwapItems swaps two items by index (for z-order changes)
+func (c *RecordingCanvas) SwapItems(i, j int) {
+	if i < 0 || j < 0 || i >= len(c.items) || j >= len(c.items) {
+		return
+	}
+	c.items[i], c.items[j] = c.items[j], c.items[i]
+	c.widget.Update()
+}
+
+// ItemNames returns the display names of all items (for the layer list)
+func (c *RecordingCanvas) ItemNames() []string {
+	var names []string
+	for _, item := range c.items {
+		names = append(names, item.label)
+	}
+	return names
+}
+
+// FindItemByName returns the index of the first item with the given name, or -1
+func (c *RecordingCanvas) FindItemByName(name string) int {
+	for i, item := range c.items {
+		if item.label == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// ReorderItems reorders items based on the given index order
+func (c *RecordingCanvas) ReorderItems(order []int) {
+	if len(order) != len(c.items) {
+		return
+	}
+	newItems := make([]canvasItem, len(c.items))
+	for i, oldIdx := range order {
+		if oldIdx >= 0 && oldIdx < len(c.items) {
+			newItems[i] = c.items[oldIdx]
+		}
+	}
+	c.items = newItems
+	c.widget.Update()
 }
 
 // GetWebcamPositions returns webcam positions scaled to video coordinates (1920x1080)
