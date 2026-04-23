@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/bubbles v0.21.1-0.20250623103423-23b8fd6302d7
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
+	github.com/mappu/miqt v0.13.0
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/sajari/fuzzy v1.0.0
 	github.com/spf13/cobra v1.10.2

@@ -46,6 +46,11 @@ func listMonitorsWayland() ([]models.Monitor, error) {
 		return monitors, nil
 	}
 
+	// Try cosmic-randr (COSMIC desktop)
+	if monitors, err := listMonitorsCosmic(); err == nil {
+		return monitors, nil
+	}
+
 	// Try GNOME Mutter DBus interface
 	if monitors, err := listMonitorsGnome(); err == nil {
 		return monitors, nil
@@ -61,6 +66,93 @@ func listMonitorsWayland() ([]models.Monitor, error) {
 		Y:       0,
 		Focused: true,
 	}}, nil
+}
+
+// listMonitorsCosmic returns monitors using cosmic-randr
+func listMonitorsCosmic() ([]models.Monitor, error) {
+	cmd := exec.Command("cosmic-randr", "list")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("cosmic-randr not available: %w", err)
+	}
+
+	var monitors []models.Monitor
+	lines := strings.Split(string(output), "\n")
+
+	var current *models.Monitor
+	first := true
+	for _, line := range lines {
+		// Strip ANSI escape codes
+		clean := stripAnsi(line)
+		trimmed := strings.TrimSpace(clean)
+
+		// New output starts with a non-indented name like "DP-9" or "eDP-1"
+		if len(clean) > 0 && clean[0] != ' ' && !strings.HasPrefix(trimmed, "Make:") {
+			// Extract output name (first word)
+			parts := strings.Fields(trimmed)
+			if len(parts) > 0 && (strings.Contains(parts[0], "-") || strings.HasPrefix(parts[0], "HDMI") || strings.HasPrefix(parts[0], "VGA")) {
+				if current != nil {
+					monitors = append(monitors, *current)
+				}
+				current = &models.Monitor{
+					Name:    parts[0],
+					Focused: first,
+				}
+				first = false
+			}
+		}
+
+		if current == nil {
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "Make:") {
+			make := strings.TrimSpace(strings.TrimPrefix(trimmed, "Make:"))
+			if current.Description == "" {
+				current.Description = make
+			}
+		}
+		if strings.HasPrefix(trimmed, "Model:") {
+			model := strings.TrimSpace(strings.TrimPrefix(trimmed, "Model:"))
+			if current.Description != "" {
+				current.Description += " " + model
+			} else {
+				current.Description = model
+			}
+		}
+		// Parse current mode line like "1920x1080 @ 60.000 Hz (current)"
+		if strings.Contains(trimmed, "(current)") {
+			re := regexp.MustCompile(`(\d+)x(\d+)`)
+			matches := re.FindStringSubmatch(trimmed)
+			if len(matches) >= 3 {
+				current.Width, _ = strconv.Atoi(matches[1])
+				current.Height, _ = strconv.Atoi(matches[2])
+			}
+		}
+		if strings.HasPrefix(trimmed, "Position:") {
+			posStr := strings.TrimSpace(strings.TrimPrefix(trimmed, "Position:"))
+			parts := strings.Split(posStr, ",")
+			if len(parts) >= 2 {
+				current.X, _ = strconv.Atoi(strings.TrimSpace(parts[0]))
+				current.Y, _ = strconv.Atoi(strings.TrimSpace(parts[1]))
+			}
+		}
+	}
+	if current != nil {
+		monitors = append(monitors, *current)
+	}
+
+	if len(monitors) == 0 {
+		return nil, fmt.Errorf("no monitors found via cosmic-randr")
+	}
+
+	return monitors, nil
+}
+
+// stripAnsi removes ANSI escape sequences from a string
+func stripAnsi(s string) string {
+	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	return re.ReplaceAllString(s, "")
 }
 
 // listMonitorsNiri returns monitors using niri msg

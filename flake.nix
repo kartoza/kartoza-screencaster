@@ -289,7 +289,7 @@
             gcc
             pkg-config
 
-            # CGO dependencies for systray
+            # CGO dependencies for systray (legacy, will be replaced by Qt6)
             gtk3
             glib
             libayatana-appindicator
@@ -300,6 +300,13 @@
             xorg.libXi
             xorg.libXxf86vm
             libGL
+
+            # Qt6 for GUI (miqt bindings)
+            qt6.qtbase
+            qt6.qtmultimedia
+            qt6.qtsvg
+            qt6.qtwayland
+            qt6.wrapQtAppsHook
 
             # CLI utilities
             ripgrep
@@ -345,8 +352,11 @@
             export GOMODCACHE="$PWD/.go/pkg/mod"
             export PATH="$GOPATH/bin:$PATH"
 
-            # Enable CGO for systray support in dev shell
+            # Enable CGO for systray/Qt6 support in dev shell
             export CGO_ENABLED=1
+
+            # Qt6 environment for miqt CGo bindings
+            export QT_QPA_PLATFORM=wayland
 
             # Helpful aliases
             alias gor='go run .'

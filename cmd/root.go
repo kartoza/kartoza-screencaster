@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kartoza/kartoza-screencaster/internal/systray"
+	"github.com/kartoza/kartoza-screencaster/internal/gui"
 	"github.com/spf13/cobra"
 )
 
@@ -36,7 +36,7 @@ It supports:
 
 The tool integrates with Hyprland and other wlroots-based compositors.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// If presets or edit-recording mode is requested, run TUI instead of systray
+		// If presets or edit-recording mode is requested, run TUI instead of GUI
 		if presetsMode || editRecordingMode {
 			if err := runTUIApp(noSplash, presetsMode); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -44,8 +44,12 @@ The tool integrates with Hyprland and other wlroots-based compositors.`,
 			}
 			return
 		}
-		// Default action: run systray mode
-		systray.RunWithHandler()
+		// Default action: launch Qt6 GUI
+		app := gui.NewApp(version)
+		code := app.Run()
+		if code != 0 {
+			os.Exit(code)
+		}
 	},
 }
 

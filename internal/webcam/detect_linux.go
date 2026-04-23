@@ -8,7 +8,8 @@ import (
 	"strings"
 )
 
-// DetectAllDevices finds all available webcam devices with human-readable names.
+// DetectAllDevices finds all available webcam capture devices with human-readable names.
+// Filters out metadata/non-capture devices by checking the sysfs index (only index 0 is a capture device).
 // Returns an empty slice (not error) if no devices are found.
 func DetectAllDevices() ([]DeviceInfo, error) {
 	var devices []DeviceInfo
@@ -22,10 +23,25 @@ func DetectAllDevices() ([]DeviceInfo, error) {
 		if info.Mode()&os.ModeCharDevice == 0 {
 			continue
 		}
+		// Only include capture devices (index 0), skip metadata devices (index 1+)
+		if !isCaptureDevice(dev) {
+			continue
+		}
 		name := getDeviceName(dev)
 		devices = append(devices, DeviceInfo{Device: dev, Name: name})
 	}
 	return devices, nil
+}
+
+// isCaptureDevice checks if the device is a video capture device (index 0)
+// rather than a metadata stream (index 1+).
+func isCaptureDevice(dev string) bool {
+	indexPath := fmt.Sprintf("/sys/class/video4linux/%s/index", dev)
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		return true // if we can't read, assume it's a capture device
+	}
+	return strings.TrimSpace(string(data)) == "0"
 }
 
 // getDeviceName reads the human-readable name from sysfs.
