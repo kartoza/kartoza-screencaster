@@ -55,10 +55,12 @@ const (
 type GifLoopMode int
 
 const (
-	GifLoopDisabled    GifLoopMode = 0
-	GifLoopOnce        GifLoopMode = 1
-	GifLoopContinuous  GifLoopMode = 2
-	GifLoopCount       GifLoopMode = 3
+	GifLoopDisabled       GifLoopMode = 0
+	GifLoopOnce           GifLoopMode = 1
+	GifLoopContinuous     GifLoopMode = 2
+	GifLoopCount          GifLoopMode = 3
+	GifLoopOnceThenHide   GifLoopMode = 4
+	GifLoopCountThenHide  GifLoopMode = 5
 )
 
 // canvasItem is a draggable element on the canvas
@@ -84,10 +86,11 @@ type canvasItem struct {
 
 // webcamCapture holds a live webcam frame reader
 type webcamCapture struct {
-	cmd      *exec.Cmd
-	buf      []byte // latest frame (RGB24, 160x120)
-	newFrame bool
-	active   bool
+	cmd        *exec.Cmd
+	buf        []byte      // latest frame (RGB24, 160x120)
+	newFrame   bool
+	active     bool
+	lastPixmap *qt.QPixmap // cached last rendered pixmap (avoids flicker)
 }
 
 const (
@@ -433,9 +436,9 @@ func (c *RecordingCanvas) AddLogo(itemType CanvasItemType, path string) {
 			itemIdx := len(c.items) // index this item will have
 			movie.OnFrameChanged(func(frameNumber int) {
 				// Update the pixmap with current frame
+				// Don't call c.widget.Update() here — the refresh timer handles repaints
 				if itemIdx < len(c.items) {
 					c.items[itemIdx].pixmap = movie.CurrentPixmap()
-					c.widget.Update()
 				}
 				// Handle loop control
 				if frameNumber == movie.FrameCount()-1 {
@@ -445,9 +448,19 @@ func (c *RecordingCanvas) AddLogo(itemType CanvasItemType, path string) {
 						if c.items[itemIdx].gifLoopsDone >= 1 {
 							movie.Stop()
 						}
+					case GifLoopOnceThenHide:
+						if c.items[itemIdx].gifLoopsDone >= 1 {
+							movie.Stop()
+							c.items[itemIdx].visible = false
+						}
 					case GifLoopCount:
 						if c.items[itemIdx].gifLoopsDone >= c.items[itemIdx].gifLoopMax {
 							movie.Stop()
+						}
+					case GifLoopCountThenHide:
+						if c.items[itemIdx].gifLoopsDone >= c.items[itemIdx].gifLoopMax {
+							movie.Stop()
+							c.items[itemIdx].visible = false
 						}
 					case GifLoopDisabled:
 						movie.Stop()
@@ -715,14 +728,17 @@ func (c *RecordingCanvas) paint() {
 				painter.DrawRect2(item.x-item.w/2, item.y-item.h/2, item.w, item.h)
 			}
 		} else if item.itemType == ItemWebcam {
-			// Webcam — draw live frame if available, else colored shape
+			// Webcam — draw live frame if available, else cached frame, else placeholder
 			c.mu.Lock()
 			cap, hasCapture := c.webcamCaptures[item.device]
 			var framePixmap *qt.QPixmap
 			if hasCapture && cap.newFrame {
 				img := qt.NewQImage6(&cap.buf[0], wcPrevW, wcPrevH, int64(wcPrevW*3), qt.QImage__Format_RGB888)
 				framePixmap = qt.QPixmap_FromImage(img)
+				cap.lastPixmap = framePixmap // cache it
 				cap.newFrame = false
+			} else if hasCapture && cap.lastPixmap != nil {
+				framePixmap = cap.lastPixmap // reuse cached
 			}
 			c.mu.Unlock()
 
@@ -1050,19 +1066,8 @@ func (c *RecordingCanvas) startScreenRefresh() {
 			}
 		}
 
-		// Also repaint for webcam frame updates
-		hasNewWebcamFrame := false
-		c.mu.Lock()
-		for _, cap := range c.webcamCaptures {
-			if cap.newFrame {
-				hasNewWebcamFrame = true
-				break
-			}
-		}
-		c.mu.Unlock()
-		if hasNewWebcamFrame {
-			c.widget.Update()
-		}
+		// Always repaint — webcam frames and GIF animations need regular updates
+		c.widget.Update()
 
 		// Capture screen every 20 ticks (~2 seconds)
 		c.refreshCount++
@@ -1181,13 +1186,16 @@ func (c *RecordingCanvas) SetGifLoopMode(index int, mode GifLoopMode, loopCount 
 	item.gifLoopMax = loopCount
 	item.gifLoopsDone = 0
 
+	// Make visible again (in case it was hidden by a previous "then hide" mode)
+	item.visible = true
+
 	// Reset playback
 	item.movie.Stop()
 	switch mode {
 	case GifLoopDisabled:
 		item.movie.JumpToFrame(0)
 		item.pixmap = item.movie.CurrentPixmap()
-	case GifLoopOnce, GifLoopContinuous, GifLoopCount:
+	case GifLoopOnce, GifLoopOnceThenHide, GifLoopContinuous, GifLoopCount, GifLoopCountThenHide:
 		item.movie.Start()
 	}
 	c.widget.Update()
@@ -1413,6 +1421,25 @@ func itemTypeToString(t CanvasItemType) string {
 	default:
 		return "logo" // legacy logo types
 	}
+}
+
+// ResetPreview resets all animations to their initial state — makes hidden items
+// visible again and restarts all GIF animations from the beginning
+func (c *RecordingCanvas) ResetPreview() {
+	for i := range c.items {
+		item := &c.items[i]
+		item.visible = true
+		if item.isGif && item.movie != nil {
+			item.gifLoopsDone = 0
+			item.movie.Stop()
+			item.movie.JumpToFrame(0)
+			if item.gifLoop != GifLoopDisabled {
+				item.movie.Start()
+			}
+			item.pixmap = item.movie.CurrentPixmap()
+		}
+	}
+	c.widget.Update()
 }
 
 // GetWebcamPositions returns webcam positions scaled to video coordinates (1920x1080)

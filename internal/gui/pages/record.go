@@ -265,10 +265,12 @@ func (p *RecordPage) setupUI() {
 
 	gifCombo := qt.NewQComboBox2()
 	gifCombo.SetStyleSheet("QComboBox { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 3px; padding: 2px; font-size: 10px; } QComboBox QAbstractItemView { background: #313244; color: #cdd6f4; }")
-	gifCombo.AddItem("Disabled")
-	gifCombo.AddItem("Once")
-	gifCombo.AddItem("Continuous")
-	gifCombo.AddItem("Count")
+	gifCombo.AddItem("Disabled")        // 0
+	gifCombo.AddItem("Once")            // 1
+	gifCombo.AddItem("Continuous")      // 2
+	gifCombo.AddItem("Count")           // 3
+	gifCombo.AddItem("Once then hide")  // 4
+	gifCombo.AddItem("Count then hide") // 5
 	gifCombo.SetCurrentIndex(2) // default continuous
 
 	gifCountSpin := qt.NewQSpinBox2()
@@ -288,7 +290,7 @@ func (p *RecordPage) setupUI() {
 
 	gifCombo.OnCurrentIndexChanged(func(index int) {
 		row := int(p.layerList.CurrentRow())
-		gifCountSpin.SetVisible(index == 3)
+		gifCountSpin.SetVisible(index == 3 || index == 5)
 		if row < 0 || !p.canvas.IsGifItem(row) {
 			return
 		}
@@ -301,6 +303,10 @@ func (p *RecordPage) setupUI() {
 			p.canvas.SetGifLoopMode(row, widgets.GifLoopContinuous, 0)
 		case 3:
 			p.canvas.SetGifLoopMode(row, widgets.GifLoopCount, gifCountSpin.Value())
+		case 4:
+			p.canvas.SetGifLoopMode(row, widgets.GifLoopOnceThenHide, 0)
+		case 5:
+			p.canvas.SetGifLoopMode(row, widgets.GifLoopCountThenHide, gifCountSpin.Value())
 		}
 	})
 	gifLayout.AddWidget(gifCombo.QWidget)
@@ -330,6 +336,13 @@ func (p *RecordPage) setupUI() {
 				gifCountSpin.SetVisible(false)
 			case widgets.GifLoopCount:
 				gifCombo.SetCurrentIndex(3)
+				gifCountSpin.SetValue(count)
+				gifCountSpin.SetVisible(true)
+			case widgets.GifLoopOnceThenHide:
+				gifCombo.SetCurrentIndex(4)
+				gifCountSpin.SetVisible(false)
+			case widgets.GifLoopCountThenHide:
+				gifCombo.SetCurrentIndex(5)
 				gifCountSpin.SetValue(count)
 				gifCountSpin.SetVisible(true)
 			}
@@ -402,6 +415,13 @@ func (p *RecordPage) setupUI() {
 	p.canvas = widgets.NewRecordingCanvas()
 	p.canvas.Widget().SetToolTip("WYSIWYG preview.\nAdd elements with + button.\nDrag to move, scroll to resize,\narrow keys to nudge.")
 	centerLayout.AddWidget2(p.canvas.Widget(), 1)
+
+	// Set title color from settings
+	titleColor := cfg.LastUsedLogos.TitleColor
+	if titleColor == "" {
+		titleColor = config.DefaultTitleColor
+	}
+	p.canvas.SetTitleColor(titleColor)
 
 	// Auto-save canvas state on any change
 	p.canvas.OnChange(func() {
@@ -516,6 +536,25 @@ func (p *RecordPage) setupUI() {
 		p.addMenu.Popup(pos)
 	})
 	addRow.AddWidget(addBtn.QAbstractButton.QWidget)
+
+	resetBtn := qt.NewQPushButton3("Reset Preview")
+	resetBtn.SetStyleSheet(`
+		QPushButton {
+			background: #45475a;
+			color: #cdd6f4;
+			border: none;
+			border-radius: 6px;
+			padding: 8px 12px;
+			font-size: 12px;
+		}
+		QPushButton:hover { background: #585b70; }
+	`)
+	resetBtn.SetToolTip("Reset all animations to start.\nShows hidden items and restarts GIFs.")
+	resetBtn.OnClicked(func() {
+		p.canvas.ResetPreview()
+		p.refreshLayerList()
+	})
+	addRow.AddWidget(resetBtn.QAbstractButton.QWidget)
 
 	addRow.AddStretch()
 
@@ -830,7 +869,7 @@ func (p *RecordPage) saveCanvasState() {
 	cfg.CanvasState = &config.CanvasState{
 		Mode:         p.canvas.GetMode(),
 		Items:        items,
-		TitleColor:   "", // could persist this too
+		TitleColor:   cfg.LastUsedLogos.TitleColor,
 		AudioEnabled: p.audioCheck.IsChecked(),
 		Presenter:    p.presenterInput.Text(),
 	}
