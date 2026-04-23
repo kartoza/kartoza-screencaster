@@ -82,7 +82,7 @@ func (t *Tray) setupMenu() {
 		}
 	})
 
-	// Stop
+	// Stop — also show the window for processing
 	t.stopAction.OnTriggered(func() {
 		t.mainWindow.recordPage.TriggerStop()
 	})

@@ -182,6 +182,15 @@ func (mw *MainWindow) setupUI() {
 
 	mw.window.SetCentralWidget(central)
 
+	// Wire Record page recording callbacks — hide window on start, show on stop
+	mw.recordPage.SetRecordingCallbacks(
+		func() { mw.Hide() },   // onStart: hide window
+		func() {                 // onStop: show window
+			mw.Show()
+			mw.Raise()
+		},
+	)
+
 	// Wire Record page navigation callback
 	mw.recordPage.SetNavigateCallback(func(page int) {
 		mw.navigateTo(page)

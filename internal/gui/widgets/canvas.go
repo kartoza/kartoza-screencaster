@@ -134,8 +134,9 @@ type RecordingCanvas struct {
 	// Current canvas dimensions (changes with landscape/vertical)
 	cw, ch int
 
-	onChange          func()
-	onSelectionChanged func(int) // called when selected item changes (for layer list sync)
+	onChange            func()
+	onSelectionChanged  func(int)  // called when selected item changes (for layer list sync)
+	onTick              func()     // called every refresh tick (used to drain UI queue)
 }
 
 // NewRecordingCanvas creates a new WYSIWYG canvas
@@ -1069,6 +1070,11 @@ func (c *RecordingCanvas) startScreenRefresh() {
 		// Always repaint — webcam frames and GIF animations need regular updates
 		c.widget.Update()
 
+		// Call the tick callback (used to drain UI queue from pages package)
+		if c.onTick != nil {
+			c.onTick()
+		}
+
 		// Capture screen every 20 ticks (~2 seconds)
 		c.refreshCount++
 		if c.refreshCount >= 20 {
@@ -1115,6 +1121,12 @@ func (c *RecordingCanvas) OnChange(cb func()) {
 // OnSelectionChanged sets a callback for when the selected item changes on the canvas
 func (c *RecordingCanvas) OnSelectionChanged(cb func(int)) {
 	c.onSelectionChanged = cb
+}
+
+// OnTick sets a callback that fires every refresh tick (~100ms).
+// Used by the pages package to drain the cross-thread UI callback queue.
+func (c *RecordingCanvas) OnTick(cb func()) {
+	c.onTick = cb
 }
 
 // Stop stops the screen refresh timer and all webcam captures

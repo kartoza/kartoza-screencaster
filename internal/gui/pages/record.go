@@ -68,8 +68,10 @@ type RecordPage struct {
 	leftSplit   bool
 
 	// Callbacks
-	onStatusChange func(string)
-	onNavigate     func(int) // navigate to a page (e.g., processing, player)
+	onStatusChange    func(string)
+	onNavigate        func(int)  // navigate to a page (e.g., processing, player)
+	onRecordingStart  func()     // called when recording actually starts (hide window)
+	onRecordingStop   func()     // called when recording stops (show window)
 }
 
 // NewRecordPage creates a new record page
@@ -79,7 +81,8 @@ func NewRecordPage() *RecordPage {
 		rec:    recorder.New(),
 		state:  StateIdle,
 	}
-	initUIQueue() // ensure the main-thread UI queue poller is running
+	// Clean up stale PID/state files from previous crashed sessions
+	cleanStalePIDFiles()
 	p.detectDevices()
 	p.setupUI()
 	p.setupTimers()
@@ -99,6 +102,12 @@ func (p *RecordPage) SetStatusCallback(cb func(string)) {
 // SetNavigateCallback sets a callback for page navigation (used to switch to processing/player)
 func (p *RecordPage) SetNavigateCallback(cb func(int)) {
 	p.onNavigate = cb
+}
+
+// SetRecordingCallbacks sets callbacks for recording start/stop (to hide/show window)
+func (p *RecordPage) SetRecordingCallbacks(onStart, onStop func()) {
+	p.onRecordingStart = onStart
+	p.onRecordingStop = onStop
 }
 
 // GetProgressChannel creates a progress channel and starts processing
@@ -437,6 +446,18 @@ func (p *RecordPage) setupUI() {
 	}
 	p.canvas.SetTitleColor(titleColor)
 
+	// Drain cross-thread UI callback queue on every canvas tick (~100ms)
+	p.canvas.OnTick(func() {
+		for {
+			select {
+			case fn := <-UIQueue:
+				fn()
+			default:
+				return
+			}
+		}
+	})
+
 	// Auto-save canvas state on any change
 	p.canvas.OnChange(func() {
 		p.saveCanvasState()
@@ -575,6 +596,7 @@ func (p *RecordPage) setupUI() {
 	// Status
 	p.statusLabel = qt.NewQLabel3("Ready")
 	p.statusLabel.SetStyleSheet("QLabel { color: #a6e3a1; font-size: 13px; font-weight: bold; }")
+	p.statusLabel.SetWordWrap(true)
 	addRow.AddWidget(p.statusLabel.QFrame.QWidget)
 
 	p.elapsedLabel = qt.NewQLabel3("00:00:00")
@@ -662,6 +684,8 @@ func (p *RecordPage) setupTimers() {
 			}
 		}
 	})
+
+	// Note: UI queue is drained by the canvas refresh tick callback (OnTick)
 }
 
 func (p *RecordPage) onStartClicked() {
@@ -746,17 +770,21 @@ func (p *RecordPage) startRecording() {
 		LogoSelection:  logoSelection,
 	}
 
+	// Show immediate feedback
+	p.statusLabel.SetText("Starting recorders...")
+	p.statusLabel.SetStyleSheet("QLabel { color: #fab387; font-size: 13px; font-weight: bold; }")
+
+	// Start recording in goroutine (StartWithOptions blocks for several seconds)
 	go func() {
 		err := p.rec.StartWithOptions(opts)
-		if err != nil {
-			runOnUI(func() {
+		runOnUI(func() {
+			if err != nil {
 				p.statusLabel.SetText(fmt.Sprintf("Error: %v", err))
 				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
 				p.resetToIdle()
-			})
-			return
-		}
-		runOnUI(func() {
+				return
+			}
+
 			p.state = StateRecording
 			p.startTime = time.Now()
 			p.statusLabel.SetText("Recording")
@@ -767,6 +795,10 @@ func (p *RecordPage) startRecording() {
 			p.elapsedTimer.Start(1000)
 			if p.onStatusChange != nil {
 				p.onStatusChange("Recording")
+			}
+			// Hide window when recording starts
+			if p.onRecordingStart != nil {
+				p.onRecordingStart()
 			}
 		})
 	}()
@@ -836,6 +868,10 @@ func (p *RecordPage) onStopClicked() {
 			p.resetToIdle()
 			if p.onStatusChange != nil {
 				p.onStatusChange("Processing")
+			}
+			// Show window when recording stops
+			if p.onRecordingStop != nil {
+				p.onRecordingStop()
 			}
 
 			// Navigate to processing page and start processing
@@ -995,6 +1031,27 @@ func (p *RecordPage) restoreCanvasState() {
 
 	// Refresh the layer list
 	p.refreshLayerList()
+}
+
+// cleanStalePIDFiles removes leftover PID and state files from crashed sessions
+func cleanStalePIDFiles() {
+	staleFiles := []string{
+		config.VideoPIDFile,
+		config.AudioPIDFile,
+		config.WebcamPIDFile,
+		config.WebcamPIDsFile,
+		config.StatusFile,
+		config.VideoPathFile,
+		config.AudioPathFile,
+		config.WebcamPathFile,
+		config.StopSignalFile,
+		config.OutputDirFile,
+		config.PartNumberFile,
+		config.PausedFile,
+	}
+	for _, f := range staleFiles {
+		_ = os.Remove(f)
+	}
 }
 
 // refreshLayerList rebuilds the layer list from canvas items
