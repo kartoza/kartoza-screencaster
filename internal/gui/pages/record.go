@@ -46,6 +46,11 @@ type RecordPage struct {
 	// Monitor picker
 	monitorPicker *widgets.MonitorPicker
 
+	// Logo drop zones
+	leftLogo   *widgets.LogoDropZone
+	rightLogo  *widgets.LogoDropZone
+	bottomLogo *widgets.LogoDropZone
+
 	// Controls
 	startBtn *qt.QPushButton
 	pauseBtn *qt.QPushButton
@@ -200,8 +205,45 @@ func (p *RecordPage) setupUI() {
 	p.logosCheck = qt.NewQCheckBox3("Add logos")
 	p.logosCheck.SetChecked(presets.AddLogos)
 	p.logosCheck.SetStyleSheet(checkStyle)
-	p.logosCheck.SetToolTip("Overlay logos on the output video.\nConfigure logos in Settings.\nShown for the first 15 seconds.")
+	p.logosCheck.SetToolTip("Overlay logos on the output video.\nDrag-and-drop images below or click Browse.\nShown for the first 15 seconds.")
 	leftLayout.AddWidget(p.logosCheck.QAbstractButton.QWidget)
+
+	// Logo drop zones (shown when Add logos is checked)
+	logoRow := qt.NewQHBoxLayout2()
+	logoRow.SetSpacing(8)
+
+	p.leftLogo = widgets.NewLogoDropZone("Left Logo")
+	p.leftLogo.Widget().SetToolTip("Top-left corner logo.\nScaled to 1/8 of video width.\nDrag an image or click Browse.")
+	logoRow.AddWidget(p.leftLogo.Widget())
+
+	p.rightLogo = widgets.NewLogoDropZone("Right Logo")
+	p.rightLogo.Widget().SetToolTip("Top-right corner logo.\nScaled to 1/8 of video width.\nDrag an image or click Browse.")
+	logoRow.AddWidget(p.rightLogo.Widget())
+
+	p.bottomLogo = widgets.NewLogoDropZone("Bottom Logo")
+	p.bottomLogo.Widget().SetToolTip("Lower-third banner logo.\nScaled to half the video width.\nDrag an image or click Browse.")
+	logoRow.AddWidget(p.bottomLogo.Widget())
+
+	logoContainer := qt.NewQWidget2()
+	logoContainer.SetLayout(logoRow.QLayout)
+
+	// Pre-fill from last used logos
+	if cfg.LastUsedLogos.LeftLogo != "" {
+		p.leftLogo.SetFile(cfg.LastUsedLogos.LeftLogo)
+	}
+	if cfg.LastUsedLogos.RightLogo != "" {
+		p.rightLogo.SetFile(cfg.LastUsedLogos.RightLogo)
+	}
+	if cfg.LastUsedLogos.BottomLogo != "" {
+		p.bottomLogo.SetFile(cfg.LastUsedLogos.BottomLogo)
+	}
+
+	// Show/hide based on checkbox
+	logoContainer.SetVisible(presets.AddLogos)
+	p.logosCheck.OnStateChanged(func(state int) {
+		logoContainer.SetVisible(state == 2)
+	})
+	leftLayout.AddWidget(logoContainer)
 
 	// Description
 	descLabel := qt.NewQLabel3("Description:")
@@ -412,6 +454,19 @@ func (p *RecordPage) startRecording() {
 	recordingInfo.Settings.LeftSplitEnabled = p.leftSplitCheck.IsChecked()
 	recordingInfo.Settings.LogosEnabled = p.logosCheck.IsChecked()
 
+	// Build logo selection
+	logoSelection := config.LogoSelection{}
+	if p.logosCheck.IsChecked() {
+		logoSelection.LeftLogo = p.leftLogo.FilePath()
+		logoSelection.RightLogo = p.rightLogo.FilePath()
+		logoSelection.BottomLogo = p.bottomLogo.FilePath()
+
+		// Save logo settings to recording info
+		recordingInfo.Settings.LeftLogo = logoSelection.LeftLogo
+		recordingInfo.Settings.RightLogo = logoSelection.RightLogo
+		recordingInfo.Settings.BottomLogo = logoSelection.BottomLogo
+	}
+
 	// Build recorder options
 	noScreen := !p.screenCheck.IsChecked() || monitorName == ""
 	opts := recorder.Options{
@@ -422,6 +477,7 @@ func (p *RecordPage) startRecording() {
 		OutputDir:      recordingDir,
 		RecordingInfo:  recordingInfo,
 		CreateVertical: p.verticalCheck.IsChecked(),
+		LogoSelection:  logoSelection,
 	}
 
 	// Start recording in goroutine to not block the UI

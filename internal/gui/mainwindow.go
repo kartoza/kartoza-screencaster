@@ -51,8 +51,78 @@ func NewMainWindow(version string) *MainWindow {
 	mw.window.SetWindowTitle("Kartoza Screencaster")
 	mw.window.SetMinimumSize2(1000, 700)
 
-	// Disable native tooltip popups — we show help text in the sidebar instead
-	mw.window.SetStyleSheet("QToolTip { border: 0; padding: 0; background: transparent; color: transparent; max-height: 0; max-width: 0; }")
+	// Global stylesheet: disable tooltips and style all dialogs with dark theme
+	mw.window.SetStyleSheet(`
+		QToolTip { border: 0; padding: 0; background: transparent; color: transparent; max-height: 0; max-width: 0; }
+		QDialog, QFileDialog, QColorDialog, QInputDialog, QMessageBox {
+			background-color: #1e1e2e;
+			color: #cdd6f4;
+		}
+		QDialog QLabel, QFileDialog QLabel, QMessageBox QLabel {
+			color: #cdd6f4;
+		}
+		QDialog QLineEdit, QFileDialog QLineEdit {
+			background: #313244;
+			color: #cdd6f4;
+			border: 1px solid #45475a;
+			padding: 4px;
+		}
+		QDialog QPushButton, QFileDialog QPushButton, QMessageBox QPushButton {
+			background: #45475a;
+			color: #cdd6f4;
+			border: 1px solid #585b70;
+			border-radius: 3px;
+			padding: 4px 12px;
+		}
+		QDialog QPushButton:hover, QFileDialog QPushButton:hover, QMessageBox QPushButton:hover {
+			background: #585b70;
+		}
+		QDialog QComboBox, QFileDialog QComboBox {
+			background: #313244;
+			color: #cdd6f4;
+			border: 1px solid #45475a;
+			padding: 4px;
+		}
+		QDialog QComboBox QAbstractItemView, QFileDialog QComboBox QAbstractItemView {
+			background: #313244;
+			color: #cdd6f4;
+			selection-background-color: #45475a;
+		}
+		QDialog QTreeView, QFileDialog QTreeView, QDialog QListView, QFileDialog QListView {
+			background: #1e1e2e;
+			color: #cdd6f4;
+			border: 1px solid #45475a;
+		}
+		QDialog QTreeView::item:selected, QFileDialog QTreeView::item:selected,
+		QDialog QListView::item:selected, QFileDialog QListView::item:selected {
+			background: #45475a;
+		}
+		QDialog QHeaderView::section, QFileDialog QHeaderView::section {
+			background: #313244;
+			color: #cdd6f4;
+			border: 1px solid #45475a;
+			padding: 4px;
+		}
+		QDialog QGroupBox, QColorDialog QGroupBox {
+			color: #cdd6f4;
+			font-weight: bold;
+		}
+		QDialog QSpinBox, QColorDialog QSpinBox {
+			background: #313244;
+			color: #cdd6f4;
+			border: 1px solid #45475a;
+			padding: 2px;
+		}
+		QDialog QScrollBar:vertical {
+			background: #1e1e2e;
+			width: 12px;
+		}
+		QDialog QScrollBar::handle:vertical {
+			background: #45475a;
+			border-radius: 6px;
+			min-height: 20px;
+		}
+	`)
 
 	// Set window icon
 	if icon := findIcon("icon_ready.png"); icon != nil {
