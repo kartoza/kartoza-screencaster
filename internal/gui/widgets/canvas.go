@@ -2,6 +2,7 @@ package widgets
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -62,14 +63,33 @@ type canvasItem struct {
 	visible  bool
 }
 
+// webcamCapture holds a live webcam frame reader
+type webcamCapture struct {
+	cmd      *exec.Cmd
+	buf      []byte // latest frame (RGB24, 160x120)
+	newFrame bool
+	active   bool
+}
+
+const (
+	wcPrevW = 160
+	wcPrevH = 120
+	wcFPS   = 10
+	wcFrameSize = wcPrevW * wcPrevH * 3
+)
+
 // RecordingCanvas is a WYSIWYG preview of the final video output
 type RecordingCanvas struct {
 	widget *qt.QWidget
 	items  []canvasItem
 
 	// Screen background
-	screenPixmap *qt.QPixmap
-	monitor      *models.Monitor
+	screenPixmap    *qt.QPixmap
+	pendingScreenPath string // file path written by goroutine, loaded by timer
+	monitor         *models.Monitor
+
+	// Webcam live frames
+	webcamCaptures map[string]*webcamCapture
 
 	// Layout mode
 	vertical  bool
@@ -85,6 +105,7 @@ type RecordingCanvas struct {
 
 	// Live refresh
 	refreshTimer *qt.QTimer
+	refreshCount int
 	mu           sync.Mutex
 
 	// Current canvas dimensions (changes with landscape/vertical)
@@ -96,10 +117,11 @@ type RecordingCanvas struct {
 // NewRecordingCanvas creates a new WYSIWYG canvas
 func NewRecordingCanvas() *RecordingCanvas {
 	c := &RecordingCanvas{
-		widget:   qt.NewQWidget2(),
-		dragging: -1,
-		cw:       560,
-		ch:       315,
+		widget:         qt.NewQWidget2(),
+		dragging:       -1,
+		cw:             560,
+		ch:             315,
+		webcamCaptures: make(map[string]*webcamCapture),
 	}
 
 	c.widget.SetMinimumSize2(400, 225)
@@ -125,8 +147,8 @@ func (c *RecordingCanvas) SetMonitor(mon *models.Monitor) {
 	c.mu.Lock()
 	c.monitor = mon
 	c.mu.Unlock()
-	c.captureScreen()
-	c.widget.Update()
+	// Trigger immediate capture in background
+	go c.captureScreen()
 }
 
 // SetVertical toggles between landscape and vertical preview
@@ -218,7 +240,89 @@ func (c *RecordingCanvas) AddWebcamWithShape(device, name string, shape WebcamSh
 		device:   device,
 		visible:  true,
 	})
+
+	// Start live capture for this webcam
+	c.startWebcamCapture(device)
+
 	c.widget.Update()
+}
+
+// startWebcamCapture starts a ffmpeg process to capture frames from a webcam device
+func (c *RecordingCanvas) startWebcamCapture(device string) {
+	if _, ok := c.webcamCaptures[device]; ok {
+		return // already running
+	}
+
+	cap := &webcamCapture{
+		buf:    make([]byte, wcFrameSize),
+		active: true,
+	}
+
+	args := []string{
+		"-f", "v4l2",
+		"-framerate", fmt.Sprintf("%d", wcFPS),
+		"-i", "/dev/" + device,
+		"-vf", fmt.Sprintf("scale=%d:%d", wcPrevW, wcPrevH),
+		"-f", "rawvideo",
+		"-pix_fmt", "rgb24",
+		"-an",
+		"pipe:1",
+	}
+
+	cap.cmd = exec.Command("ffmpeg", args...)
+	cap.cmd.Stderr = nil
+
+	stdout, err := cap.cmd.StdoutPipe()
+	if err != nil {
+		return
+	}
+	if err := cap.cmd.Start(); err != nil {
+		return
+	}
+
+	c.webcamCaptures[device] = cap
+
+	// Read frames in background
+	go func() {
+		readBuf := make([]byte, wcFrameSize)
+		for {
+			c.mu.Lock()
+			active := cap.active
+			c.mu.Unlock()
+			if !active {
+				break
+			}
+			_, err := io.ReadFull(stdout, readBuf)
+			if err != nil {
+				break
+			}
+			c.mu.Lock()
+			copy(cap.buf, readBuf)
+			cap.newFrame = true
+			c.mu.Unlock()
+		}
+	}()
+}
+
+// stopWebcamCapture stops a webcam capture process
+func (c *RecordingCanvas) stopWebcamCapture(device string) {
+	cap, ok := c.webcamCaptures[device]
+	if !ok {
+		return
+	}
+	cap.active = false
+	if cap.cmd != nil && cap.cmd.Process != nil {
+		_ = cap.cmd.Process.Kill()
+		_ = cap.cmd.Wait()
+	}
+	delete(c.webcamCaptures, device)
+}
+
+// stopAllWebcams stops all webcam captures
+func (c *RecordingCanvas) stopAllWebcams() {
+	for device := range c.webcamCaptures {
+		c.stopWebcamCapture(device)
+	}
 }
 
 // AddLogo adds a draggable logo to the canvas. Can be called multiple times
@@ -358,6 +462,45 @@ func (c *RecordingCanvas) setupEvents() {
 			}
 		}
 	})
+
+	// Mouse wheel: resize item under cursor
+	c.widget.OnWheelEvent(func(super func(event *qt.QWheelEvent), event *qt.QWheelEvent) {
+		pos := event.Position()
+		mx, my := int(pos.X()), int(pos.Y())
+		delta := event.AngleDelta().Y()
+
+		// Find item under cursor
+		for i := len(c.items) - 1; i >= 0; i-- {
+			item := &c.items[i]
+			if !item.visible {
+				continue
+			}
+			if c.hitTest(*item, mx, my) {
+				// Resize by 5px per scroll notch
+				scale := 5
+				if delta > 0 {
+					item.w += scale
+					item.h += scale
+				} else if delta < 0 {
+					item.w -= scale
+					item.h -= scale
+				}
+				// Minimum size
+				if item.w < 20 {
+					item.w = 20
+				}
+				if item.h < 15 {
+					item.h = 15
+				}
+				// For rectangles, maintain aspect ratio
+				if item.shape == ShapeRect && item.itemType == ItemWebcam {
+					item.h = item.w * 2 / 3
+				}
+				c.widget.Update()
+				break
+			}
+		}
+	})
 }
 
 func (c *RecordingCanvas) hitTest(item canvasItem, mx, my int) bool {
@@ -411,58 +554,8 @@ func (c *RecordingCanvas) paint() {
 	// Background
 	painter.FillRect5(0, 0, c.cw, c.ch, qt.NewQColor3(17, 17, 27))
 
-	// Screen area
-	screenX, screenY, screenW, screenH := c.screenArea()
-
-	c.mu.Lock()
-	hasScreen := c.screenPixmap != nil && !c.screenPixmap.IsNull()
-	c.mu.Unlock()
-
-	if hasScreen {
-		c.mu.Lock()
-		// Draw the screen screenshot
-		targetRect := qt.NewQRect4(screenX, screenY, screenW, screenH)
-		painter.DrawPixmap10(targetRect, c.screenPixmap)
-		c.mu.Unlock()
-	} else {
-		// Draw placeholder
-		painter.FillRect5(screenX, screenY, screenW, screenH, qt.NewQColor3(30, 30, 46))
-		placeholderPen := qt.NewQPen3(qt.NewQColor3(69, 71, 90))
-		painter.SetPenWithPen(placeholderPen)
-		painter.DrawRect2(screenX, screenY, screenW, screenH)
-		textPen := qt.NewQPen3(qt.NewQColor3(108, 112, 134))
-		painter.SetPenWithPen(textPen)
-		painter.DrawText2(qt.NewQPoint2(screenX+screenW/2-20, screenY+screenH/2), "Screen")
-	}
-
-	// Canvas border
-	borderPen := qt.NewQPen3(qt.NewQColor3(69, 71, 90))
-	painter.SetPenWithPen(borderPen)
-	painter.SetBrushWithStyle(qt.NoBrush)
-	painter.DrawRect2(0, 0, c.cw-1, c.ch-1)
-
-	// Split crop overlay — dim the side that won't be used in vertical video
-	if c.vertical && c.leftSplit {
-		dimBrush := qt.NewQColor3(0, 0, 0)
-		if c.splitSide == SplitLeft {
-			// Dim right half
-			painter.SetOpacity(0.5)
-			painter.FillRect5(c.cw/2, 0, c.cw/2, c.ch, dimBrush)
-			painter.SetOpacity(1.0)
-			// Draw crop guide line
-			guidePen := qt.NewQPen3(qt.NewQColor3(137, 180, 250))
-			painter.SetPenWithPen(guidePen)
-			painter.DrawLine2(c.cw/2, 0, c.cw/2, c.ch)
-		} else {
-			// Dim left half
-			painter.SetOpacity(0.5)
-			painter.FillRect5(0, 0, c.cw/2, c.ch, dimBrush)
-			painter.SetOpacity(1.0)
-			guidePen := qt.NewQPen3(qt.NewQColor3(137, 180, 250))
-			painter.SetPenWithPen(guidePen)
-			painter.DrawLine2(c.cw/2, 0, c.cw/2, c.ch)
-		}
-	}
+	// Draw screen and mode overlays
+	c.drawScreen(painter)
 
 	// Draw items
 	for i, item := range c.items {
@@ -482,34 +575,71 @@ func (c *RecordingCanvas) paint() {
 				painter.DrawRect2(item.x-item.w/2, item.y-item.h/2, item.w, item.h)
 			}
 		} else if item.itemType == ItemWebcam {
-			// Webcam — shape depends on mode
-			if isDragging {
-				painter.SetBrush(qt.NewQBrush3(qt.NewQColor3(137, 180, 250)))
-			} else {
-				painter.SetBrush(qt.NewQBrush3(qt.NewQColor3(166, 227, 161)))
+			// Webcam — draw live frame if available, else colored shape
+			c.mu.Lock()
+			cap, hasCapture := c.webcamCaptures[item.device]
+			var framePixmap *qt.QPixmap
+			if hasCapture && cap.newFrame {
+				img := qt.NewQImage6(&cap.buf[0], wcPrevW, wcPrevH, int64(wcPrevW*3), qt.QImage__Format_RGB888)
+				framePixmap = qt.QPixmap_FromImage(img)
+				cap.newFrame = false
 			}
+			c.mu.Unlock()
+
 			outlinePen := qt.NewQPen3(qt.NewQColor3(205, 214, 244))
+			if isDragging {
+				outlinePen = qt.NewQPen3(qt.NewQColor3(137, 180, 250))
+			}
 			painter.SetPenWithPen(outlinePen)
 
 			switch item.shape {
 			case ShapeRound:
 				r := item.w / 2
+				if framePixmap != nil && !framePixmap.IsNull() {
+					// Clip to circle using save/restore and clip path
+					painter.Save()
+					path := qt.NewQPainterPath()
+					path.AddEllipse2(float64(item.x-r), float64(item.y-r), float64(item.w), float64(item.h))
+					painter.SetClipPath(path)
+					targetRect := qt.NewQRect4(item.x-r, item.y-r, item.w, item.h)
+					painter.DrawPixmap10(targetRect, framePixmap)
+					painter.Restore()
+				} else {
+					painter.SetBrush(qt.NewQBrush3(qt.NewQColor3(166, 227, 161)))
+				}
+				painter.SetBrushWithStyle(qt.NoBrush)
 				painter.DrawEllipse2(item.x-r, item.y-r, item.w, item.h)
 			case ShapeSquare:
 				r := item.w / 2
+				if framePixmap != nil && !framePixmap.IsNull() {
+					targetRect := qt.NewQRect4(item.x-r, item.y-r, item.w, item.w)
+					painter.DrawPixmap10(targetRect, framePixmap)
+				} else {
+					painter.SetBrush(qt.NewQBrush3(qt.NewQColor3(166, 227, 161)))
+					painter.DrawRect2(item.x-r, item.y-r, item.w, item.w)
+				}
+				painter.SetBrushWithStyle(qt.NoBrush)
 				painter.DrawRect2(item.x-r, item.y-r, item.w, item.w)
 			case ShapeRect:
+				if framePixmap != nil && !framePixmap.IsNull() {
+					targetRect := qt.NewQRect4(item.x-item.w/2, item.y-item.h/2, item.w, item.h)
+					painter.DrawPixmap10(targetRect, framePixmap)
+				} else {
+					painter.SetBrush(qt.NewQBrush3(qt.NewQColor3(166, 227, 161)))
+					painter.DrawRect2(item.x-item.w/2, item.y-item.h/2, item.w, item.h)
+				}
+				painter.SetBrushWithStyle(qt.NoBrush)
 				painter.DrawRect2(item.x-item.w/2, item.y-item.h/2, item.w, item.h)
 			}
 
-			// Label inside
-			labelPen := qt.NewQPen3(qt.NewQColor3(30, 30, 46))
+			// Label below
+			labelPen := qt.NewQPen3(qt.NewQColor3(205, 214, 244))
 			painter.SetPenWithPen(labelPen)
 			name := item.label
-			if len(name) > 6 {
-				name = name[:6]
+			if len(name) > 10 {
+				name = name[:10]
 			}
-			painter.DrawText2(qt.NewQPoint2(item.x-item.w/4, item.y+4), name)
+			painter.DrawText2(qt.NewQPoint2(item.x-item.w/3, item.y+item.h/2+12), name)
 		} else if item.itemType == ItemTitle {
 			// Title text — draw as styled text
 			titleFont := qt.NewQFont6("Sans", 10)
@@ -570,26 +700,222 @@ func (c *RecordingCanvas) paint() {
 	painter.DrawText2(qt.NewQPoint2(5, c.ch-5), mode)
 }
 
+// drawScreen renders the screen screenshot and mode overlays
+func (c *RecordingCanvas) drawScreen(painter *qt.QPainter) {
+	hasScreen := c.screenPixmap != nil && !c.screenPixmap.IsNull()
+
+	if !c.vertical {
+		// === MODE 1: Landscape 16:9 ===
+		// Screen fills the entire canvas
+		if hasScreen {
+			target := qt.NewQRect4(0, 0, c.cw, c.ch)
+			painter.DrawPixmap10(target, c.screenPixmap)
+		} else {
+			c.drawScreenPlaceholder(painter, 0, 0, c.cw, c.ch)
+		}
+	} else if c.vertical && !c.leftSplit {
+		// === MODE 2: Vertical 9:16 ===
+		// 9:16 frame centered. Screen fills top of frame (full frame width, 16:9 height)
+		fx, fy, fw, fh := c.verticalFrame()
+
+		// Dim outside frame
+		c.dimOutsideFrame(painter, fx, fy, fw, fh)
+
+		// Screen at top of frame: full frame width, height maintains 16:9 from source
+		screenH := fw * 9 / 16 // 16:9 source scaled to frame width
+		if hasScreen {
+			target := qt.NewQRect4(fx, fy, fw, screenH)
+			painter.DrawPixmap10(target, c.screenPixmap)
+		} else {
+			c.drawScreenPlaceholder(painter, fx, fy, fw, screenH)
+		}
+
+		// White space below screen within frame
+		belowY := fy + screenH
+		belowH := fh - screenH
+		if belowH > 0 {
+			painter.FillRect5(fx, belowY, fw, belowH, qt.NewQColor3(255, 255, 255))
+		}
+
+		// Frame border
+		c.drawFrameBorder(painter, fx, fy, fw, fh, "9:16 Vertical")
+
+	} else if c.leftSplit && c.splitSide == SplitLeft {
+		// === MODE 3: Vertical Left Split ===
+		// Left half of screen scaled so:
+		// - top-left of screen = top-left of output frame
+		// - horizontal midpoint of screen = right edge of output frame
+		// Source: left half of pixmap. Target: full frame width, proportional height.
+		fx, fy, fw, fh := c.verticalFrame()
+
+		c.dimOutsideFrame(painter, fx, fy, fw, fh)
+
+		// Left half of 16:9 screen is 8:9 aspect (half width, full height)
+		// Scaled to fill frame width: height = fw * 9/8
+		screenH := fw * 9 / 8
+		if screenH > fh {
+			screenH = fh
+		}
+
+		if hasScreen {
+			// Source: left half of the pixmap
+			pw := c.screenPixmap.Width()
+			ph := c.screenPixmap.Height()
+			sourceRect := qt.NewQRect4(0, 0, pw/2, ph)
+			targetRect := qt.NewQRect4(fx, fy, fw, screenH)
+			painter.DrawPixmap2(targetRect, c.screenPixmap, sourceRect)
+		} else {
+			c.drawScreenPlaceholder(painter, fx, fy, fw, screenH)
+		}
+
+		// White space below
+		belowY := fy + screenH
+		belowH := fh - screenH
+		if belowH > 0 {
+			painter.FillRect5(fx, belowY, fw, belowH, qt.NewQColor3(255, 255, 255))
+		}
+
+		c.drawFrameBorder(painter, fx, fy, fw, fh, "9:16 (Left Split)")
+
+	} else if c.leftSplit && c.splitSide == SplitRight {
+		// === MODE 4: Vertical Right Split ===
+		// Right half of screen scaled so:
+		// - top-center of screen = top-left of output frame
+		// - bottom-right of screen = right edge of output frame (proportionally)
+		fx, fy, fw, fh := c.verticalFrame()
+
+		c.dimOutsideFrame(painter, fx, fy, fw, fh)
+
+		// Right half of 16:9 screen is 8:9 aspect
+		screenH := fw * 9 / 8
+		if screenH > fh {
+			screenH = fh
+		}
+
+		if hasScreen {
+			// Source: right half of the pixmap
+			pw := c.screenPixmap.Width()
+			ph := c.screenPixmap.Height()
+			sourceRect := qt.NewQRect4(pw/2, 0, pw/2, ph)
+			targetRect := qt.NewQRect4(fx, fy, fw, screenH)
+			painter.DrawPixmap2(targetRect, c.screenPixmap, sourceRect)
+		} else {
+			c.drawScreenPlaceholder(painter, fx, fy, fw, screenH)
+		}
+
+		// White space below
+		belowY := fy + screenH
+		belowH := fh - screenH
+		if belowH > 0 {
+			painter.FillRect5(fx, belowY, fw, belowH, qt.NewQColor3(255, 255, 255))
+		}
+
+		c.drawFrameBorder(painter, fx, fy, fw, fh, "9:16 (Right Split)")
+	}
+
+	// Canvas border
+	borderPen := qt.NewQPen3(qt.NewQColor3(69, 71, 90))
+	painter.SetPenWithPen(borderPen)
+	painter.SetBrushWithStyle(qt.NoBrush)
+	painter.DrawRect2(0, 0, c.cw-1, c.ch-1)
+}
+
+// drawScreenPlaceholder draws a placeholder when no screenshot is available
+func (c *RecordingCanvas) drawScreenPlaceholder(painter *qt.QPainter, x, y, w, h int) {
+	painter.FillRect5(x, y, w, h, qt.NewQColor3(30, 30, 46))
+	pen := qt.NewQPen3(qt.NewQColor3(69, 71, 90))
+	painter.SetPenWithPen(pen)
+	painter.DrawRect2(x, y, w, h)
+	textPen := qt.NewQPen3(qt.NewQColor3(108, 112, 134))
+	painter.SetPenWithPen(textPen)
+	painter.DrawText2(qt.NewQPoint2(x+w/2-20, y+h/2), "Screen")
+}
+
+// dimOutsideFrame dims everything outside the vertical output frame
+func (c *RecordingCanvas) dimOutsideFrame(painter *qt.QPainter, fx, fy, fw, fh int) {
+	painter.SetOpacity(0.6)
+	dim := qt.NewQColor3(0, 0, 0)
+	painter.FillRect5(0, 0, fx, c.ch, dim)                      // left
+	painter.FillRect5(fx+fw, 0, c.cw-fx-fw, c.ch, dim)          // right
+	painter.FillRect5(fx, 0, fw, fy, dim)                        // above
+	painter.FillRect5(fx, fy+fh, fw, c.ch-fy-fh, dim)           // below
+	painter.SetOpacity(1.0)
+}
+
+// drawFrameBorder draws the output frame border and label
+func (c *RecordingCanvas) drawFrameBorder(painter *qt.QPainter, fx, fy, fw, fh int, label string) {
+	framePen := qt.NewQPen3(qt.NewQColor3(137, 180, 250))
+	painter.SetPenWithPen(framePen)
+	painter.SetBrushWithStyle(qt.NoBrush)
+	painter.DrawRect2(fx, fy, fw, fh)
+	painter.DrawText2(qt.NewQPoint2(fx+5, fy+fh+14), label)
+}
+
 // screenArea returns where the screen content should be drawn.
-// Screen always fills the full canvas width. In vertical + split modes,
-// a crop overlay is drawn to show which half will be used.
+// In all modes the screen fills the full canvas width, with height
+// calculated to maintain 16:9 aspect ratio.
 func (c *RecordingCanvas) screenArea() (x, y, w, h int) {
-	// Screen always fills the full canvas
-	return 0, 0, c.cw, c.ch
+	// Screen always fills full canvas width, height preserves 16:9
+	screenH := c.cw * 9 / 16
+	if screenH > c.ch {
+		screenH = c.ch
+	}
+	return 0, 0, c.cw, screenH
+}
+
+// verticalFrame returns the 9:16 output frame dimensions within the canvas
+func (c *RecordingCanvas) verticalFrame() (x, y, w, h int) {
+	frameH := c.ch - 20
+	frameW := frameH * 9 / 16
+	if frameW > c.cw-20 {
+		frameW = c.cw - 20
+		frameH = frameW * 16 / 9
+	}
+	frameX := (c.cw - frameW) / 2
+	frameY := (c.ch - frameH) / 2
+	return frameX, frameY, frameW, frameH
 }
 
 func (c *RecordingCanvas) startScreenRefresh() {
 	c.refreshTimer = qt.NewQTimer()
-	c.refreshTimer.SetInterval(2000)
+	c.refreshTimer.SetInterval(100) // 10Hz for smooth webcam frames + periodic screen refresh
 	c.refreshTimer.OnTimeout(func() {
-		go func() {
-			c.captureScreen()
-			// Schedule repaint on main thread
-			t := qt.NewQTimer()
-			t.SetSingleShot(true)
-			t.OnTimeout(func() { c.widget.Update() })
-			t.Start(0)
-		}()
+		// Check if background goroutine captured a new screenshot
+		c.mu.Lock()
+		path := c.pendingScreenPath
+		c.pendingScreenPath = ""
+		c.mu.Unlock()
+
+		if path != "" {
+			// Load pixmap on the main thread (safe for Qt)
+			pixmap := qt.NewQPixmap4(path)
+			_ = os.Remove(path)
+			if !pixmap.IsNull() {
+				c.screenPixmap = pixmap
+				c.widget.Update()
+			}
+		}
+
+		// Also repaint for webcam frame updates
+		hasNewWebcamFrame := false
+		c.mu.Lock()
+		for _, cap := range c.webcamCaptures {
+			if cap.newFrame {
+				hasNewWebcamFrame = true
+				break
+			}
+		}
+		c.mu.Unlock()
+		if hasNewWebcamFrame {
+			c.widget.Update()
+		}
+
+		// Capture screen every 20 ticks (~2 seconds)
+		c.refreshCount++
+		if c.refreshCount >= 20 {
+			c.refreshCount = 0
+			go c.captureScreen()
+		}
 	})
 	c.refreshTimer.Start2()
 }
@@ -611,14 +937,10 @@ func (c *RecordingCanvas) captureScreen() {
 		return
 	}
 
-	pixmap := qt.NewQPixmap4(tmpPath)
-	_ = os.Remove(tmpPath)
-
-	if !pixmap.IsNull() {
-		c.mu.Lock()
-		c.screenPixmap = pixmap
-		c.mu.Unlock()
-	}
+	// Store the path — the main thread timer will create the QPixmap
+	c.mu.Lock()
+	c.pendingScreenPath = tmpPath
+	c.mu.Unlock()
 }
 
 // Widget returns the underlying QWidget
@@ -631,11 +953,12 @@ func (c *RecordingCanvas) OnChange(cb func()) {
 	c.onChange = cb
 }
 
-// Stop stops the screen refresh timer
+// Stop stops the screen refresh timer and all webcam captures
 func (c *RecordingCanvas) Stop() {
 	if c.refreshTimer != nil {
 		c.refreshTimer.Stop()
 	}
+	c.stopAllWebcams()
 }
 
 // HasWebcams returns true if any webcam items are on the canvas
