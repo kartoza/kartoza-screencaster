@@ -14,11 +14,7 @@ import (
 )
 
 const (
-	canvasW      = 560
-	canvasH      = 315 // 16:9
-	vertCanvasW  = 200 // 9:16 vertical preview width
-	vertCanvasH  = 355
-	snapDist     = 15
+	snapDist       = 15
 	defaultBubbleR = 30 // radius in canvas coords
 )
 
@@ -27,10 +23,12 @@ type CanvasItemType int
 
 const (
 	ItemWebcam CanvasItemType = iota
-	ItemLogoLeft
-	ItemLogoRight
-	ItemLogoBanner
+	ItemLogo
 	ItemTitle
+	// Legacy — kept for backward compat with config
+	ItemLogoLeft   = 10
+	ItemLogoRight  = 11
+	ItemLogoBanner = 12
 )
 
 // SplitSide controls which side the screen goes on in vertical mode
@@ -41,15 +39,26 @@ const (
 	SplitRight SplitSide = 1
 )
 
+// WebcamShape controls how a webcam is drawn on the canvas
+type WebcamShape int
+
+const (
+	ShapeRound  WebcamShape = 0
+	ShapeSquare WebcamShape = 1
+	ShapeRect   WebcamShape = 2
+)
+
 // canvasItem is a draggable element on the canvas
 type canvasItem struct {
 	itemType CanvasItemType
 	label    string
-	x, y     int    // center position in canvas coords
-	w, h     int    // width/height in canvas coords
-	circular bool   // draw as circle or rectangle
+	x, y     int         // center position in canvas coords
+	w, h     int         // width/height in canvas coords
+	circular bool        // draw as circle
+	shape    WebcamShape // for webcam items
 	pixmap   *qt.QPixmap // logo thumbnail or nil
-	device   string // webcam device name (for webcam items)
+	device   string      // webcam device name (for webcam items)
+	logoPath string      // original logo file path
 	visible  bool
 }
 
@@ -89,13 +98,21 @@ func NewRecordingCanvas() *RecordingCanvas {
 	c := &RecordingCanvas{
 		widget:   qt.NewQWidget2(),
 		dragging: -1,
-		cw:       canvasW,
-		ch:       canvasH,
+		cw:       560,
+		ch:       315,
 	}
 
-	c.widget.SetMinimumSize2(canvasW, canvasH)
+	c.widget.SetMinimumSize2(400, 225)
 	c.widget.SetMouseTracking(true)
 	c.widget.SetStyleSheet("background: #11111b; border-radius: 8px;")
+
+	// Use the widget's actual size for all calculations
+	c.widget.OnResizeEvent(func(super func(event *qt.QResizeEvent), event *qt.QResizeEvent) {
+		super(event)
+		size := event.Size()
+		c.cw = size.Width()
+		c.ch = size.Height()
+	})
 
 	c.setupEvents()
 	c.startScreenRefresh()
@@ -115,17 +132,6 @@ func (c *RecordingCanvas) SetMonitor(mon *models.Monitor) {
 // SetVertical toggles between landscape and vertical preview
 func (c *RecordingCanvas) SetVertical(vertical bool) {
 	c.vertical = vertical
-	if vertical {
-		c.cw = vertCanvasW
-		c.ch = vertCanvasH
-		c.widget.SetMinimumSize2(vertCanvasW, vertCanvasH)
-		c.widget.SetFixedSize2(vertCanvasW, vertCanvasH)
-	} else {
-		c.cw = canvasW
-		c.ch = canvasH
-		c.widget.SetMinimumSize2(canvasW, canvasH)
-		c.widget.SetFixedSize2(canvasW, canvasH)
-	}
 	c.widget.Update()
 }
 
@@ -176,26 +182,47 @@ func (c *RecordingCanvas) SetTitleColor(color string) {
 
 // AddWebcam adds a draggable webcam bubble to the canvas
 func (c *RecordingCanvas) AddWebcam(device, name string, index int) {
+	c.AddWebcamWithShape(device, name, ShapeRound)
+}
+
+// AddWebcamWithShape adds a webcam with a specific shape
+func (c *RecordingCanvas) AddWebcamWithShape(device, name string, shape WebcamShape) {
 	r := defaultBubbleR
-	// Default position: bottom-right, stacked horizontally
-	x := c.cw - r - 15 - index*(r*2+10)
+	// Count existing webcams for positioning
+	count := 0
+	for _, item := range c.items {
+		if item.itemType == ItemWebcam {
+			count++
+		}
+	}
+	x := c.cw - r - 15 - count*(r*2+10)
 	y := c.ch - r - 15
+
+	w := r * 2
+	h := r * 2
+	circular := shape == ShapeRound
+	if shape == ShapeRect {
+		w = r * 3
+		h = r * 2
+	}
 
 	c.items = append(c.items, canvasItem{
 		itemType: ItemWebcam,
 		label:    name,
 		x:        x,
 		y:        y,
-		w:        r * 2,
-		h:        r * 2,
-		circular: true,
+		w:        w,
+		h:        h,
+		circular: circular,
+		shape:    shape,
 		device:   device,
 		visible:  true,
 	})
 	c.widget.Update()
 }
 
-// AddLogo adds a draggable logo to the canvas
+// AddLogo adds a draggable logo to the canvas. Can be called multiple times
+// for unlimited logos. Each new logo is placed with a slight offset.
 func (c *RecordingCanvas) AddLogo(itemType CanvasItemType, path string) {
 	if path == "" {
 		return
@@ -206,31 +233,36 @@ func (c *RecordingCanvas) AddLogo(itemType CanvasItemType, path string) {
 		return
 	}
 
-	// Scale logo to fit canvas proportionally
-	var x, y, w, h int
-	switch itemType {
-	case ItemLogoLeft:
-		w = c.cw / 8
-		h = w * pixmap.Height() / pixmap.Width()
-		x = w/2 + 5
-		y = h/2 + 5
-	case ItemLogoRight:
-		w = c.cw / 8
-		h = w * pixmap.Height() / pixmap.Width()
-		x = c.cw - w/2 - 5
-		y = h/2 + 5
-	case ItemLogoBanner:
-		w = c.cw / 2
-		h = w * pixmap.Height() / pixmap.Width()
-		if h < 20 {
-			h = 20
+	// Count existing logos for offset
+	logoCount := 0
+	for _, item := range c.items {
+		if item.itemType == ItemLogo || item.itemType == ItemLogoLeft ||
+			item.itemType == ItemLogoRight || item.itemType == ItemLogoBanner {
+			logoCount++
 		}
-		x = w/2 + 5
-		y = c.ch - h/2 - 5
+	}
+
+	// Scale to ~1/6 of canvas width
+	w := c.cw / 6
+	if w < 40 {
+		w = 40
+	}
+	h := w * pixmap.Height() / pixmap.Width()
+	if h < 15 {
+		h = 15
+	}
+
+	// Place at top-left with offset per logo
+	x := w/2 + 10 + logoCount*(w+10)
+	y := h/2 + 10
+	// Wrap to next row if too far right
+	if x+w/2 > c.cw {
+		x = w/2 + 10
+		y = h + 20 + h/2
 	}
 
 	c.items = append(c.items, canvasItem{
-		itemType: itemType,
+		itemType: ItemLogo,
 		label:    filepath.Base(path),
 		x:        x,
 		y:        y,
@@ -238,16 +270,18 @@ func (c *RecordingCanvas) AddLogo(itemType CanvasItemType, path string) {
 		h:        h,
 		circular: false,
 		pixmap:   pixmap,
+		logoPath: path,
 		visible:  true,
 	})
 	c.widget.Update()
 }
 
-// RemoveLogo removes a logo by type
+// RemoveLogo removes a logo by type (removes last match)
 func (c *RecordingCanvas) RemoveLogo(itemType CanvasItemType) {
 	for i := len(c.items) - 1; i >= 0; i-- {
-		if c.items[i].itemType == itemType {
+		if c.items[i].itemType == itemType || c.items[i].itemType == ItemLogo {
 			c.items = append(c.items[:i], c.items[i+1:]...)
+			break // remove only one
 		}
 	}
 	c.widget.Update()
@@ -407,6 +441,29 @@ func (c *RecordingCanvas) paint() {
 	painter.SetBrushWithStyle(qt.NoBrush)
 	painter.DrawRect2(0, 0, c.cw-1, c.ch-1)
 
+	// Split crop overlay — dim the side that won't be used in vertical video
+	if c.vertical && c.leftSplit {
+		dimBrush := qt.NewQColor3(0, 0, 0)
+		if c.splitSide == SplitLeft {
+			// Dim right half
+			painter.SetOpacity(0.5)
+			painter.FillRect5(c.cw/2, 0, c.cw/2, c.ch, dimBrush)
+			painter.SetOpacity(1.0)
+			// Draw crop guide line
+			guidePen := qt.NewQPen3(qt.NewQColor3(137, 180, 250))
+			painter.SetPenWithPen(guidePen)
+			painter.DrawLine2(c.cw/2, 0, c.cw/2, c.ch)
+		} else {
+			// Dim left half
+			painter.SetOpacity(0.5)
+			painter.FillRect5(0, 0, c.cw/2, c.ch, dimBrush)
+			painter.SetOpacity(1.0)
+			guidePen := qt.NewQPen3(qt.NewQColor3(137, 180, 250))
+			painter.SetPenWithPen(guidePen)
+			painter.DrawLine2(c.cw/2, 0, c.cw/2, c.ch)
+		}
+	}
+
 	// Draw items
 	for i, item := range c.items {
 		if !item.visible {
@@ -424,8 +481,8 @@ func (c *RecordingCanvas) paint() {
 				painter.SetBrushWithStyle(qt.NoBrush)
 				painter.DrawRect2(item.x-item.w/2, item.y-item.h/2, item.w, item.h)
 			}
-		} else if item.circular {
-			// Webcam bubble
+		} else if item.itemType == ItemWebcam {
+			// Webcam — shape depends on mode
 			if isDragging {
 				painter.SetBrush(qt.NewQBrush3(qt.NewQColor3(137, 180, 250)))
 			} else {
@@ -433,8 +490,17 @@ func (c *RecordingCanvas) paint() {
 			}
 			outlinePen := qt.NewQPen3(qt.NewQColor3(205, 214, 244))
 			painter.SetPenWithPen(outlinePen)
-			r := item.w / 2
-			painter.DrawEllipse2(item.x-r, item.y-r, item.w, item.h)
+
+			switch item.shape {
+			case ShapeRound:
+				r := item.w / 2
+				painter.DrawEllipse2(item.x-r, item.y-r, item.w, item.h)
+			case ShapeSquare:
+				r := item.w / 2
+				painter.DrawRect2(item.x-r, item.y-r, item.w, item.w)
+			case ShapeRect:
+				painter.DrawRect2(item.x-item.w/2, item.y-item.h/2, item.w, item.h)
+			}
 
 			// Label inside
 			labelPen := qt.NewQPen3(qt.NewQColor3(30, 30, 46))
@@ -443,7 +509,7 @@ func (c *RecordingCanvas) paint() {
 			if len(name) > 6 {
 				name = name[:6]
 			}
-			painter.DrawText2(qt.NewQPoint2(item.x-r/2, item.y+4), name)
+			painter.DrawText2(qt.NewQPoint2(item.x-item.w/4, item.y+4), name)
 		} else if item.itemType == ItemTitle {
 			// Title text — draw as styled text
 			titleFont := qt.NewQFont6("Sans", 10)
@@ -504,21 +570,11 @@ func (c *RecordingCanvas) paint() {
 	painter.DrawText2(qt.NewQPoint2(5, c.ch-5), mode)
 }
 
-// screenArea returns where the screen content should be drawn
+// screenArea returns where the screen content should be drawn.
+// Screen always fills the full canvas width. In vertical + split modes,
+// a crop overlay is drawn to show which half will be used.
 func (c *RecordingCanvas) screenArea() (x, y, w, h int) {
-	if c.vertical {
-		if c.leftSplit {
-			if c.splitSide == SplitRight {
-				// Right split: screen on right half, top 2/3
-				return c.cw / 2, 0, c.cw / 2, c.ch * 2 / 3
-			}
-			// Left split: screen on left half, top 2/3
-			return 0, 0, c.cw / 2, c.ch * 2 / 3
-		}
-		// Standard vertical: screen in top third
-		return 0, 0, c.cw, c.ch / 3
-	}
-	// Landscape: full canvas
+	// Screen always fills the full canvas
 	return 0, 0, c.cw, c.ch
 }
 
@@ -580,6 +636,54 @@ func (c *RecordingCanvas) Stop() {
 	if c.refreshTimer != nil {
 		c.refreshTimer.Stop()
 	}
+}
+
+// HasWebcams returns true if any webcam items are on the canvas
+func (c *RecordingCanvas) HasWebcams() bool {
+	for _, item := range c.items {
+		if item.itemType == ItemWebcam && item.visible {
+			return true
+		}
+	}
+	return false
+}
+
+// IsVertical returns whether the canvas is in vertical mode
+func (c *RecordingCanvas) IsVertical() bool {
+	return c.vertical
+}
+
+// GetLogoPaths returns a map of logo item types to file paths.
+// For unlimited logos, all are stored under ItemLogo key as a comma-separated list isn't ideal,
+// so this returns the first three logos mapped to legacy left/right/banner positions.
+func (c *RecordingCanvas) GetLogoPaths() map[CanvasItemType]string {
+	paths := make(map[CanvasItemType]string)
+	logoIdx := 0
+	legacyKeys := []CanvasItemType{ItemLogoLeft, ItemLogoRight, ItemLogoBanner}
+	for _, item := range c.items {
+		if (item.itemType == ItemLogo || item.itemType == ItemLogoLeft ||
+			item.itemType == ItemLogoRight || item.itemType == ItemLogoBanner) &&
+			item.logoPath != "" && item.visible {
+			if logoIdx < len(legacyKeys) {
+				paths[legacyKeys[logoIdx]] = item.logoPath
+			}
+			logoIdx++
+		}
+	}
+	return paths
+}
+
+// GetAllLogoPaths returns all logo file paths
+func (c *RecordingCanvas) GetAllLogoPaths() []string {
+	var paths []string
+	for _, item := range c.items {
+		if (item.itemType == ItemLogo || item.itemType == ItemLogoLeft ||
+			item.itemType == ItemLogoRight || item.itemType == ItemLogoBanner) &&
+			item.logoPath != "" && item.visible {
+			paths = append(paths, item.logoPath)
+		}
+	}
+	return paths
 }
 
 // GetWebcamPositions returns webcam positions scaled to video coordinates (1920x1080)
