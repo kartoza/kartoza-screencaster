@@ -232,13 +232,6 @@ func (p *RecordPage) setupUI() {
 	p.layerList.SetToolTip("Drag items to change draw order.\nPress Delete to remove.")
 	leftLayout.AddWidget(p.layerList.QListView.QAbstractItemView.QAbstractScrollArea.QFrame.QWidget)
 
-	// Sync layer list selection to canvas
-	p.layerList.OnCurrentRowChanged(func(row int) {
-		if p.canvas != nil {
-			p.canvas.SetSelectedItem(row)
-		}
-	})
-
 	// After drag-drop reorder, sync back to canvas
 	p.layerList.OnDropEvent(func(super func(event *qt.QDropEvent), event *qt.QDropEvent) {
 		super(event) // let Qt handle the visual reorder
@@ -256,6 +249,68 @@ func (p *RecordPage) setupUI() {
 			}
 		} else {
 			super(event)
+		}
+	})
+
+	// GIF loop controls (shown when a GIF is selected)
+	gifBox := qt.NewQWidget2()
+	gifLayout := qt.NewQHBoxLayout(gifBox)
+	gifLayout.SetContentsMargins(0, 0, 0, 0)
+	gifLayout.SetSpacing(4)
+
+	gifLabel := qt.NewQLabel3("GIF:")
+	gifLabel.SetStyleSheet("QLabel { color: #6c7086; font-size: 10px; }")
+	gifLayout.AddWidget(gifLabel.QFrame.QWidget)
+
+	gifCombo := qt.NewQComboBox2()
+	gifCombo.SetStyleSheet("QComboBox { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 3px; padding: 2px; font-size: 10px; } QComboBox QAbstractItemView { background: #313244; color: #cdd6f4; }")
+	gifCombo.AddItem("Disabled")
+	gifCombo.AddItem("Once")
+	gifCombo.AddItem("Continuous")
+	gifCombo.AddItem("Count...")
+	gifCombo.SetCurrentIndex(2) // default continuous
+	gifCombo.OnCurrentIndexChanged(func(index int) {
+		row := int(p.layerList.CurrentRow())
+		if row < 0 || !p.canvas.IsGifItem(row) {
+			return
+		}
+		switch index {
+		case 0:
+			p.canvas.SetGifLoopMode(row, widgets.GifLoopDisabled, 0)
+		case 1:
+			p.canvas.SetGifLoopMode(row, widgets.GifLoopOnce, 0)
+		case 2:
+			p.canvas.SetGifLoopMode(row, widgets.GifLoopContinuous, 0)
+		case 3:
+			p.canvas.SetGifLoopMode(row, widgets.GifLoopCount, 3) // default 3 loops
+		}
+	})
+	gifLayout.AddWidget(gifCombo.QWidget)
+
+	gifBox.SetVisible(false) // hidden until a GIF is selected
+	leftLayout.AddWidget(gifBox)
+
+	// Update GIF controls when layer selection changes
+	p.layerList.OnCurrentRowChanged(func(row int) {
+		if p.canvas != nil {
+			p.canvas.SetSelectedItem(row)
+		}
+		// Show/hide GIF controls
+		if row >= 0 && p.canvas.IsGifItem(row) {
+			gifBox.SetVisible(true)
+			mode, _ := p.canvas.GetGifLoopMode(row)
+			switch mode {
+			case widgets.GifLoopDisabled:
+				gifCombo.SetCurrentIndex(0)
+			case widgets.GifLoopOnce:
+				gifCombo.SetCurrentIndex(1)
+			case widgets.GifLoopContinuous:
+				gifCombo.SetCurrentIndex(2)
+			case widgets.GifLoopCount:
+				gifCombo.SetCurrentIndex(3)
+			}
+		} else {
+			gifBox.SetVisible(false)
 		}
 	})
 

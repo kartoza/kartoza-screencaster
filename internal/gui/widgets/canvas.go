@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	qt "github.com/mappu/miqt/qt6"
@@ -50,6 +51,16 @@ const (
 	ShapeRect   WebcamShape = 2
 )
 
+// GifLoopMode controls how animated GIFs play
+type GifLoopMode int
+
+const (
+	GifLoopDisabled    GifLoopMode = 0
+	GifLoopOnce        GifLoopMode = 1
+	GifLoopContinuous  GifLoopMode = 2
+	GifLoopCount       GifLoopMode = 3
+)
+
 // canvasItem is a draggable element on the canvas
 type canvasItem struct {
 	itemType CanvasItemType
@@ -58,10 +69,17 @@ type canvasItem struct {
 	w, h     int         // width/height in canvas coords
 	circular bool        // draw as circle
 	shape    WebcamShape // for webcam items
-	pixmap   *qt.QPixmap // logo thumbnail or nil
+	pixmap   *qt.QPixmap // logo thumbnail (static) or current GIF frame
 	device   string      // webcam device name (for webcam items)
 	logoPath string      // original logo file path
 	visible  bool
+
+	// GIF animation
+	isGif       bool
+	movie       *qt.QMovie
+	gifLoop     GifLoopMode
+	gifLoopMax  int // for GifLoopCount mode
+	gifLoopsDone int
 }
 
 // webcamCapture holds a live webcam frame reader
@@ -391,7 +409,7 @@ func (c *RecordingCanvas) AddLogo(itemType CanvasItemType, path string) {
 		y = h + 20 + h/2
 	}
 
-	c.items = append(c.items, canvasItem{
+	item := canvasItem{
 		itemType: ItemLogo,
 		label:    filepath.Base(path),
 		x:        x,
@@ -402,7 +420,48 @@ func (c *RecordingCanvas) AddLogo(itemType CanvasItemType, path string) {
 		pixmap:   pixmap,
 		logoPath: path,
 		visible:  true,
-	})
+		gifLoop:  GifLoopContinuous, // default for GIFs
+	}
+
+	// Detect animated GIF and start QMovie
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == ".gif" {
+		movie := qt.NewQMovie3(path)
+		if movie.FrameCount() > 1 {
+			item.isGif = true
+			item.movie = movie
+			itemIdx := len(c.items) // index this item will have
+			movie.OnFrameChanged(func(frameNumber int) {
+				// Update the pixmap with current frame
+				if itemIdx < len(c.items) {
+					c.items[itemIdx].pixmap = movie.CurrentPixmap()
+					c.widget.Update()
+				}
+				// Handle loop control
+				if frameNumber == movie.FrameCount()-1 {
+					c.items[itemIdx].gifLoopsDone++
+					switch c.items[itemIdx].gifLoop {
+					case GifLoopOnce:
+						if c.items[itemIdx].gifLoopsDone >= 1 {
+							movie.Stop()
+						}
+					case GifLoopCount:
+						if c.items[itemIdx].gifLoopsDone >= c.items[itemIdx].gifLoopMax {
+							movie.Stop()
+						}
+					case GifLoopDisabled:
+						movie.Stop()
+						// Show first frame only
+						movie.JumpToFrame(0)
+						c.items[itemIdx].pixmap = movie.CurrentPixmap()
+					}
+				}
+			})
+			movie.Start()
+		}
+	}
+
+	c.items = append(c.items, item)
 	c.widget.Update()
 }
 
@@ -1103,13 +1162,54 @@ func (c *RecordingCanvas) GetAllLogoPaths() []string {
 	return paths
 }
 
+// SetGifLoopMode sets the GIF loop mode for the item at the given index
+func (c *RecordingCanvas) SetGifLoopMode(index int, mode GifLoopMode, loopCount int) {
+	if index < 0 || index >= len(c.items) {
+		return
+	}
+	item := &c.items[index]
+	if !item.isGif || item.movie == nil {
+		return
+	}
+	item.gifLoop = mode
+	item.gifLoopMax = loopCount
+	item.gifLoopsDone = 0
+
+	// Reset playback
+	item.movie.Stop()
+	switch mode {
+	case GifLoopDisabled:
+		item.movie.JumpToFrame(0)
+		item.pixmap = item.movie.CurrentPixmap()
+	case GifLoopOnce, GifLoopContinuous, GifLoopCount:
+		item.movie.Start()
+	}
+	c.widget.Update()
+}
+
+// IsGifItem returns whether the item at the given index is an animated GIF
+func (c *RecordingCanvas) IsGifItem(index int) bool {
+	if index < 0 || index >= len(c.items) {
+		return false
+	}
+	return c.items[index].isGif
+}
+
+// GetGifLoopMode returns the current GIF loop mode for the item
+func (c *RecordingCanvas) GetGifLoopMode(index int) (GifLoopMode, int) {
+	if index < 0 || index >= len(c.items) {
+		return GifLoopContinuous, 0
+	}
+	return c.items[index].gifLoop, c.items[index].gifLoopMax
+}
+
 // SetSelectedItem highlights an item on the canvas (e.g., from layer list selection)
 func (c *RecordingCanvas) SetSelectedItem(index int) {
 	c.selectedItem = index
 	c.widget.Update()
 }
 
-// RemoveItem removes an item by index and stops its webcam capture if applicable
+// RemoveItem removes an item by index and cleans up resources
 func (c *RecordingCanvas) RemoveItem(index int) {
 	if index < 0 || index >= len(c.items) {
 		return
@@ -1118,7 +1218,13 @@ func (c *RecordingCanvas) RemoveItem(index int) {
 	if item.itemType == ItemWebcam {
 		c.stopWebcamCapture(item.device)
 	}
+	if item.movie != nil {
+		item.movie.Stop()
+	}
 	c.items = append(c.items[:index], c.items[index+1:]...)
+	if c.selectedItem >= len(c.items) {
+		c.selectedItem = -1
+	}
 	c.widget.Update()
 }
 
