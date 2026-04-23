@@ -62,6 +62,12 @@ type RecordPage struct {
 	startTime    time.Time
 	countdownVal int
 
+	// Pending results from goroutines (flag-based, no channels)
+	pendingStartDone bool
+	pendingStartErr  error
+	pendingStopDone  bool
+	pendingStopErr   error
+
 	// Track what's been added
 	hasScreen   bool
 	screenMonitor *models.Monitor
@@ -446,14 +452,51 @@ func (p *RecordPage) setupUI() {
 	}
 	p.canvas.SetTitleColor(titleColor)
 
-	// Drain cross-thread UI callback queue on every canvas tick (~100ms)
+	// Poll for goroutine results on every canvas tick (~100ms)
 	p.canvas.OnTick(func() {
-		for {
-			select {
-			case fn := <-UIQueue:
-				fn()
-			default:
-				return
+		// Check if recording start completed
+		if p.pendingStartDone {
+			p.pendingStartDone = false
+			if p.pendingStartErr != nil {
+				p.statusLabel.SetText(fmt.Sprintf("Error: %v", p.pendingStartErr))
+				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
+				p.resetToIdle()
+			} else {
+				p.state = StateRecording
+				p.startTime = time.Now()
+				p.statusLabel.SetText("Recording")
+				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
+				p.startBtn.SetVisible(false)
+				p.pauseBtn.SetVisible(true)
+				p.stopBtn.SetVisible(true)
+				p.elapsedTimer.Start(1000)
+				if p.onStatusChange != nil {
+					p.onStatusChange("Recording")
+				}
+				if p.onRecordingStart != nil {
+					p.onRecordingStart()
+				}
+			}
+		}
+
+		// Check if recording stop completed
+		if p.pendingStopDone {
+			p.pendingStopDone = false
+			if p.pendingStopErr != nil {
+				p.statusLabel.SetText(fmt.Sprintf("Error: %v", p.pendingStopErr))
+				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
+				p.resetToIdle()
+			} else {
+				p.resetToIdle()
+				if p.onStatusChange != nil {
+					p.onStatusChange("Processing")
+				}
+				if p.onRecordingStop != nil {
+					p.onRecordingStop()
+				}
+				if p.onNavigate != nil {
+					p.onNavigate(3) // PageProcessing
+				}
 			}
 		}
 	})
@@ -774,74 +817,45 @@ func (p *RecordPage) startRecording() {
 	p.statusLabel.SetText("Starting recorders...")
 	p.statusLabel.SetStyleSheet("QLabel { color: #fab387; font-size: 13px; font-weight: bold; }")
 
-	// Start recording in goroutine (StartWithOptions blocks for several seconds)
+	// Start recording in goroutine — sets flags that the canvas tick polls
+	p.pendingStartDone = false
+	p.pendingStartErr = nil
 	go func() {
 		err := p.rec.StartWithOptions(opts)
-		runOnUI(func() {
-			if err != nil {
-				p.statusLabel.SetText(fmt.Sprintf("Error: %v", err))
-				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
-				p.resetToIdle()
-				return
-			}
-
-			p.state = StateRecording
-			p.startTime = time.Now()
-			p.statusLabel.SetText("Recording")
-			p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
-			p.startBtn.SetVisible(false)
-			p.pauseBtn.SetVisible(true)
-			p.stopBtn.SetVisible(true)
-			p.elapsedTimer.Start(1000)
-			if p.onStatusChange != nil {
-				p.onStatusChange("Recording")
-			}
-			// Hide window when recording starts
-			if p.onRecordingStart != nil {
-				p.onRecordingStart()
-			}
-		})
+		p.pendingStartErr = err
+		p.pendingStartDone = true // flag checked by canvas tick
 	}()
 }
 
 func (p *RecordPage) onPauseClicked() {
 	switch p.state {
 	case StateRecording:
-		go func() {
-			err := p.rec.Pause()
-			runOnUI(func() {
-				if err != nil {
-					p.statusLabel.SetText(fmt.Sprintf("Error: %v", err))
-					return
-				}
-				p.state = StatePaused
-				p.elapsedTimer.Stop()
-				p.statusLabel.SetText("Paused")
-				p.statusLabel.SetStyleSheet("QLabel { color: #fab387; font-size: 13px; font-weight: bold; }")
-				p.pauseBtn.SetText("Resume")
-				if p.onStatusChange != nil {
-					p.onStatusChange("Paused")
-				}
-			})
-		}()
+		// Pause is fast — do it synchronously
+		if err := p.rec.Pause(); err != nil {
+			p.statusLabel.SetText(fmt.Sprintf("Error: %v", err))
+			return
+		}
+		p.state = StatePaused
+		p.elapsedTimer.Stop()
+		p.statusLabel.SetText("Paused")
+		p.statusLabel.SetStyleSheet("QLabel { color: #fab387; font-size: 13px; font-weight: bold; }")
+		p.pauseBtn.SetText("Resume")
+		if p.onStatusChange != nil {
+			p.onStatusChange("Paused")
+		}
 	case StatePaused:
-		go func() {
-			err := p.rec.Resume()
-			runOnUI(func() {
-				if err != nil {
-					p.statusLabel.SetText(fmt.Sprintf("Error: %v", err))
-					return
-				}
-				p.state = StateRecording
-				p.elapsedTimer.Start(1000)
-				p.statusLabel.SetText("Recording")
-				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
-				p.pauseBtn.SetText("Pause")
-				if p.onStatusChange != nil {
-					p.onStatusChange("Recording")
-				}
-			})
-		}()
+		if err := p.rec.Resume(); err != nil {
+			p.statusLabel.SetText(fmt.Sprintf("Error: %v", err))
+			return
+		}
+		p.state = StateRecording
+		p.elapsedTimer.Start(1000)
+		p.statusLabel.SetText("Recording")
+		p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
+		p.pauseBtn.SetText("Pause")
+		if p.onStatusChange != nil {
+			p.onStatusChange("Recording")
+		}
 	}
 }
 
@@ -854,31 +868,12 @@ func (p *RecordPage) onStopClicked() {
 	p.stopBtn.SetEnabled(false)
 	p.pauseBtn.SetEnabled(false)
 
+	p.pendingStopDone = false
+	p.pendingStopErr = nil
 	go func() {
-		// Stop recording WITHOUT processing (process=false)
 		err := p.rec.Stop()
-		runOnUI(func() {
-			if err != nil {
-				p.statusLabel.SetText(fmt.Sprintf("Error: %v", err))
-				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
-				p.resetToIdle()
-				return
-			}
-
-			p.resetToIdle()
-			if p.onStatusChange != nil {
-				p.onStatusChange("Processing")
-			}
-			// Show window when recording stops
-			if p.onRecordingStop != nil {
-				p.onRecordingStop()
-			}
-
-			// Navigate to processing page and start processing
-			if p.onNavigate != nil {
-				p.onNavigate(3) // PageProcessing
-			}
-		})
+		p.pendingStopErr = err
+		p.pendingStopDone = true // flag checked by canvas tick
 	}()
 }
 
