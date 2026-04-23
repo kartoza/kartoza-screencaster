@@ -79,6 +79,7 @@ func NewRecordPage() *RecordPage {
 		rec:    recorder.New(),
 		state:  StateIdle,
 	}
+	initUIQueue() // ensure the main-thread UI queue poller is running
 	p.detectDevices()
 	p.setupUI()
 	p.setupTimers()
