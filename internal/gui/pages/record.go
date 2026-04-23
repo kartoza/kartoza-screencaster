@@ -69,6 +69,7 @@ type RecordPage struct {
 
 	// Callbacks
 	onStatusChange func(string)
+	onNavigate     func(int) // navigate to a page (e.g., processing, player)
 }
 
 // NewRecordPage creates a new record page
@@ -92,6 +93,18 @@ func (p *RecordPage) detectDevices() {
 // SetStatusCallback sets a callback for status bar updates
 func (p *RecordPage) SetStatusCallback(cb func(string)) {
 	p.onStatusChange = cb
+}
+
+// SetNavigateCallback sets a callback for page navigation (used to switch to processing/player)
+func (p *RecordPage) SetNavigateCallback(cb func(int)) {
+	p.onNavigate = cb
+}
+
+// GetProgressChannel creates a progress channel and starts processing
+func (p *RecordPage) GetProgressChannel() <-chan recorder.ProgressUpdate {
+	ch := make(chan recorder.ProgressUpdate, 20)
+	go p.rec.ProcessWithProgress(ch)
+	return ch
 }
 
 func (p *RecordPage) setupUI() {
@@ -809,18 +822,24 @@ func (p *RecordPage) onStopClicked() {
 	p.pauseBtn.SetEnabled(false)
 
 	go func() {
-		err := p.rec.StopAndProcess(true)
+		// Stop recording WITHOUT processing (process=false)
+		err := p.rec.Stop()
 		runOnUI(func() {
 			if err != nil {
 				p.statusLabel.SetText(fmt.Sprintf("Error: %v", err))
 				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
-			} else {
-				p.statusLabel.SetText("Complete!")
-				p.statusLabel.SetStyleSheet("QLabel { color: #a6e3a1; font-size: 13px; font-weight: bold; }")
+				p.resetToIdle()
+				return
 			}
+
 			p.resetToIdle()
 			if p.onStatusChange != nil {
-				p.onStatusChange("Idle")
+				p.onStatusChange("Processing")
+			}
+
+			// Navigate to processing page and start processing
+			if p.onNavigate != nil {
+				p.onNavigate(3) // PageProcessing
 			}
 		})
 	}()

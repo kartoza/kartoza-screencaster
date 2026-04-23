@@ -182,6 +182,27 @@ func (mw *MainWindow) setupUI() {
 
 	mw.window.SetCentralWidget(central)
 
+	// Wire Record page navigation callback
+	mw.recordPage.SetNavigateCallback(func(page int) {
+		mw.navigateTo(page)
+		if page == PageProcessing {
+			// Start processing and pipe progress to the processing page
+			ch := mw.recordPage.GetProgressChannel()
+			mw.processingPage.StartProcessing(ch)
+		}
+	})
+
+	// Wire Processing page completion callback
+	mw.processingPage.OnComplete(func(success bool) {
+		if success {
+			mw.historyPage.Refresh()
+			mw.navigateTo(PageHistory)
+			mw.SetStatus("Processing complete")
+		} else {
+			mw.SetStatus("Processing failed")
+		}
+	})
+
 	// Start on Record page
 	mw.navigateTo(PageRecord)
 
