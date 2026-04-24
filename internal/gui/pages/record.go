@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	qt "github.com/mappu/miqt/qt6"
@@ -62,7 +63,8 @@ type RecordPage struct {
 	startTime    time.Time
 	countdownVal int
 
-	// Pending results from goroutines (flag-based, no channels)
+	// Pending results from goroutines (mutex-protected like webcam preview)
+	pendingMu        sync.Mutex
 	pendingStartDone bool
 	pendingStartErr  error
 	pendingStopDone  bool
@@ -689,11 +691,23 @@ func (p *RecordPage) setupTimers() {
 
 // pollPendingResults checks for completed goroutine operations and updates UI
 func (p *RecordPage) pollPendingResults() {
-	// Check if recording start completed
-	if p.pendingStartDone {
+	p.pendingMu.Lock()
+	startDone := p.pendingStartDone
+	startErr := p.pendingStartErr
+	stopDone := p.pendingStopDone
+	stopErr := p.pendingStopErr
+	if startDone {
 		p.pendingStartDone = false
-		if p.pendingStartErr != nil {
-			p.statusLabel.SetText(fmt.Sprintf("Error: %v", p.pendingStartErr))
+	}
+	if stopDone {
+		p.pendingStopDone = false
+	}
+	p.pendingMu.Unlock()
+
+	// Check if recording start completed
+	if startDone {
+		if startErr != nil {
+			p.statusLabel.SetText(fmt.Sprintf("Error: %v", startErr))
 			p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
 			p.resetToIdle()
 		} else {
@@ -714,10 +728,9 @@ func (p *RecordPage) pollPendingResults() {
 	}
 
 	// Check if recording stop completed
-	if p.pendingStopDone {
-		p.pendingStopDone = false
-		if p.pendingStopErr != nil {
-			p.statusLabel.SetText(fmt.Sprintf("Error: %v", p.pendingStopErr))
+	if stopDone {
+		if stopErr != nil {
+			p.statusLabel.SetText(fmt.Sprintf("Error: %v", stopErr))
 			p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
 			p.resetToIdle()
 		} else {
@@ -824,13 +837,17 @@ func (p *RecordPage) startRecording() {
 	p.statusLabel.SetText("Starting recorders...")
 	p.statusLabel.SetStyleSheet("QLabel { color: #fab387; font-size: 13px; font-weight: bold; }")
 
-	// Start recording in goroutine — sets flags that the canvas tick polls
+	// Start recording in goroutine — sets mutex-protected flags
+	p.pendingMu.Lock()
 	p.pendingStartDone = false
 	p.pendingStartErr = nil
+	p.pendingMu.Unlock()
 	go func() {
 		err := p.rec.StartWithOptions(opts)
+		p.pendingMu.Lock()
 		p.pendingStartErr = err
-		p.pendingStartDone = true // flag checked by canvas tick
+		p.pendingStartDone = true
+		p.pendingMu.Unlock()
 	}()
 }
 
@@ -875,12 +892,16 @@ func (p *RecordPage) onStopClicked() {
 	p.stopBtn.SetEnabled(false)
 	p.pauseBtn.SetEnabled(false)
 
+	p.pendingMu.Lock()
 	p.pendingStopDone = false
 	p.pendingStopErr = nil
+	p.pendingMu.Unlock()
 	go func() {
 		err := p.rec.Stop()
+		p.pendingMu.Lock()
 		p.pendingStopErr = err
-		p.pendingStopDone = true // flag checked by canvas tick
+		p.pendingStopDone = true
+		p.pendingMu.Unlock()
 	}()
 }
 
