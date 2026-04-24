@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QDateTime>
 #include <QThread>
+#include <signal.h>
 
 Recorder::Recorder(QObject *parent) : QObject(parent) {}
 
@@ -122,11 +123,18 @@ void Recorder::startWebcamRecorder(const RecordingOptions &opts) {
 void Recorder::stopProcess(QProcess *proc) {
     if (!proc || proc->state() == QProcess::NotRunning) return;
 
-    // Send SIGINT for graceful shutdown
-    proc->terminate();
-    if (!proc->waitForFinished(3000)) {
-        proc->kill();
-        proc->waitForFinished(1000);
+    // Send SIGINT for graceful shutdown (ffmpeg/wl-screenrec need this to finalize files)
+    qint64 pid = proc->processId();
+    if (pid > 0) {
+        ::kill(pid, SIGINT);
+    }
+    if (!proc->waitForFinished(5000)) {
+        // SIGINT didn't work, try SIGTERM
+        proc->terminate();
+        if (!proc->waitForFinished(3000)) {
+            proc->kill();
+            proc->waitForFinished(1000);
+        }
     }
 }
 
@@ -136,18 +144,26 @@ void Recorder::stop() {
     m_recording = false;
     m_paused = false;
 
-    // Stop all recorders simultaneously
+    qDebug() << "Stopping recorders...";
+
+    // Stop all recorders with SIGINT
     stopProcess(m_screenProc);
     stopProcess(m_audioProc);
     stopProcess(m_webcamProc);
 
-    // Wait for files to settle
-    QThread::msleep(1000);
+    // Clean up process objects
+    if (m_screenProc) { m_screenProc->deleteLater(); m_screenProc = nullptr; }
+    if (m_audioProc) { m_audioProc->deleteLater(); m_audioProc = nullptr; }
+    if (m_webcamProc) { m_webcamProc->deleteLater(); m_webcamProc = nullptr; }
+
+    qDebug() << "Recorders stopped, files at:" << m_outputDir;
 
     emit recordingStopped();
 
     // Start processing in a worker thread
     QThread *thread = QThread::create([this]() {
+        // Wait for files to be fully flushed to disk
+        QThread::msleep(2000);
         processRecordings();
     });
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);

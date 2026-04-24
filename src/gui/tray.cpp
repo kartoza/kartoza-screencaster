@@ -44,19 +44,20 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
 
     connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger) {
-            if (m_recording) {
-                m_recordPage->onPauseClicked();
-            } else {
+            if (!m_recording) {
+                // Toggle window when not recording
                 m_mainWindow->setVisible(!m_mainWindow->isVisible());
                 if (m_mainWindow->isVisible()) m_mainWindow->raise();
             }
+            // During recording, single click does nothing (use context menu)
         } else if (reason == QSystemTrayIcon::DoubleClick && m_recording) {
             m_recordPage->onStopClicked();
         }
     });
 
-    // Track recording state
+    // Track recording state via native Qt signals — guaranteed delivery
     connect(m_recordPage, &RecordPage::recordingStarted, this, [this]() {
+        qDebug() << "TRAY: recording started, updating menu";
         m_recording = true;
         m_startAction->setVisible(false);
         m_pauseAction->setVisible(true);
@@ -66,6 +67,7 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
         m_trayIcon->setToolTip("Kartoza Screencaster - Recording");
     });
     connect(m_recordPage, &RecordPage::recordingStopped, this, [this]() {
+        qDebug() << "TRAY: recording stopped, updating menu";
         m_recording = false;
         m_startAction->setVisible(true);
         m_pauseAction->setVisible(false);
