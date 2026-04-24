@@ -10,6 +10,7 @@
 #include <QJsonObject>
 #include <QMessageBox>
 #include <QUrl>
+#include <QTimer>
 #include <QProcess>
 #include <QPixmap>
 #include <algorithm>
@@ -80,15 +81,19 @@ void HistoryPage::setupUI() {
 
     // Render video frames to the QLabel
     connect(m_videoSink, &QVideoSink::videoFrameChanged, this, [this](const QVideoFrame &frame) {
-        QVideoFrame f = frame;
-        if (f.map(QVideoFrame::ReadOnly)) {
-            QImage img = f.toImage();
-            f.unmap();
-            if (!img.isNull()) {
-                m_videoLabel->setPixmap(QPixmap::fromImage(img).scaled(
-                    m_videoLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-            }
+        QImage img = frame.toImage();
+        if (!img.isNull()) {
+            m_videoLabel->setPixmap(QPixmap::fromImage(img).scaled(
+                m_videoLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
         }
+    });
+
+    // Debug: log media status changes
+    connect(m_player, &QMediaPlayer::mediaStatusChanged, this, [](QMediaPlayer::MediaStatus status) {
+        qDebug() << "Player media status:" << status;
+    });
+    connect(m_player, &QMediaPlayer::errorOccurred, this, [](QMediaPlayer::Error error, const QString &msg) {
+        qDebug() << "Player error:" << error << msg;
     });
 
     // Controls
@@ -160,6 +165,29 @@ void HistoryPage::setupUI() {
     rightLayout->addWidget(m_durationLabel);
     rightLayout->addWidget(m_filesLabel);
     rightLayout->addWidget(m_sizeLabel);
+
+    auto *openBtn = new QPushButton("Open in Player");
+    openBtn->setStyleSheet("QPushButton { background: #89b4fa; color: #1e1e2e; border: none; border-radius: 4px; padding: 5px 10px; font-weight: bold; } QPushButton:hover { background: #74c7ec; } QPushButton:disabled { background: #45475a; color: #6c7086; }");
+    openBtn->setEnabled(false);
+    openBtn->setToolTip("Open in your system's default video player.");
+    connect(openBtn, &QPushButton::clicked, this, [this]() {
+        int row = m_list->currentRow();
+        if (row < 0 || row >= m_recordings.size()) return;
+        QString video = findBestVideo(m_recordings[row]);
+        if (!video.isEmpty()) {
+            QProcess::startDetached("xdg-open", {video});
+        }
+    });
+    rightLayout->addWidget(openBtn);
+
+    // Store openBtn reference for enabling/disabling
+    connect(m_list, &QListWidget::currentRowChanged, openBtn, [this, openBtn](int row) {
+        if (row >= 0 && row < m_recordings.size()) {
+            openBtn->setEnabled(!findBestVideo(m_recordings[row]).isEmpty());
+        } else {
+            openBtn->setEnabled(false);
+        }
+    });
 
     m_deleteBtn = new QPushButton("Delete");
     m_deleteBtn->setFixedWidth(80);
@@ -314,12 +342,22 @@ void HistoryPage::onRecordingSelected(int row) {
     m_playBtn->setText("Play");
     m_deleteBtn->setEnabled(true);
 
-    // Load thumbnail into video widget by seeking to first frame
+    // Extract thumbnail using ffmpeg (reliable on all platforms)
     if (!video.isEmpty()) {
-        m_player->setSource(QUrl::fromLocalFile(video));
-        // Seek to 1 second to get a thumbnail frame
-        m_player->setPosition(1000);
-        m_player->pause();
+        QString thumbPath = rec.folder + "/.thumbnail.jpg";
+        if (!QFile::exists(thumbPath)) {
+            QProcess ffmpeg;
+            ffmpeg.start("ffmpeg", {"-y", "-i", video, "-vf", "thumbnail,scale=400:-1",
+                                    "-frames:v", "1", thumbPath});
+            ffmpeg.waitForFinished(5000);
+        }
+        if (QFile::exists(thumbPath)) {
+            QPixmap thumb(thumbPath);
+            if (!thumb.isNull()) {
+                m_videoLabel->setPixmap(thumb.scaled(m_videoLabel->size(),
+                    Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            }
+        }
     }
 }
 
