@@ -14,33 +14,7 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     if (icon.isNull()) icon = QIcon::fromTheme("camera-video");
     m_trayIcon->setIcon(icon);
 
-    m_menu = new QMenu;
-    m_startAction = m_menu->addAction("Start Recording");
-    m_pauseAction = m_menu->addAction("Pause");
-    m_stopAction = m_menu->addAction("Stop Recording");
-    m_menu->addSeparator();
-    auto *openAction = m_menu->addAction("Open Window");
-    m_menu->addSeparator();
-    auto *quitAction = m_menu->addAction("Quit");
-
-    m_pauseAction->setVisible(false);
-    m_stopAction->setVisible(false);
-
-    connect(m_startAction, &QAction::triggered, this, [this]() {
-        m_mainWindow->show();
-        m_mainWindow->raise();
-        m_mainWindow->navigateTo(MainWindow::PageRecord);
-    });
-    connect(openAction, &QAction::triggered, this, [this]() {
-        m_mainWindow->show();
-        m_mainWindow->raise();
-    });
-    connect(quitAction, &QAction::triggered, this, []() {
-        QApplication::quit();
-    });
-    connect(m_stopAction, &QAction::triggered, this, [this]() {
-        m_recordPage->onStopClicked();
-    });
+    rebuildMenu();
 
     connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger) {
@@ -55,28 +29,61 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
         }
     });
 
-    // Track recording state via native Qt signals — guaranteed delivery
+    // Track recording state — rebuild menu since Cosmic doesn't update visibility
     connect(m_recordPage, &RecordPage::recordingStarted, this, [this]() {
-        qDebug() << "TRAY: recording started, updating menu";
+        qDebug() << "TRAY: recording started, rebuilding menu";
         m_recording = true;
-        m_startAction->setVisible(false);
-        m_pauseAction->setVisible(true);
-        m_stopAction->setVisible(true);
+        rebuildMenu();
         QIcon recIcon("resources/icon_recording.png");
         if (!recIcon.isNull()) m_trayIcon->setIcon(recIcon);
         m_trayIcon->setToolTip("Kartoza Screencaster - Recording");
     });
     connect(m_recordPage, &RecordPage::recordingStopped, this, [this]() {
-        qDebug() << "TRAY: recording stopped, updating menu";
+        qDebug() << "TRAY: recording stopped, rebuilding menu";
         m_recording = false;
-        m_startAction->setVisible(true);
-        m_pauseAction->setVisible(false);
-        m_stopAction->setVisible(false);
+        rebuildMenu();
         QIcon icon("resources/icon_ready.png");
         if (!icon.isNull()) m_trayIcon->setIcon(icon);
         m_trayIcon->setToolTip("Kartoza Screencaster - Idle");
     });
 
-    m_trayIcon->setContextMenu(m_menu);
     m_trayIcon->show();
+}
+
+void Tray::rebuildMenu() {
+    // Delete old menu and create fresh one — Cosmic doesn't handle visibility changes
+    if (m_menu) {
+        m_trayIcon->setContextMenu(nullptr);
+        delete m_menu;
+    }
+
+    m_menu = new QMenu;
+
+    if (m_recording) {
+        auto *stopAction = m_menu->addAction("Stop Recording");
+        connect(stopAction, &QAction::triggered, this, [this]() {
+            m_recordPage->onStopClicked();
+        });
+    } else {
+        auto *startAction = m_menu->addAction("Start Recording");
+        connect(startAction, &QAction::triggered, this, [this]() {
+            m_mainWindow->show();
+            m_mainWindow->raise();
+            m_mainWindow->navigateTo(MainWindow::PageRecord);
+        });
+    }
+
+    m_menu->addSeparator();
+    auto *openAction = m_menu->addAction("Open Window");
+    connect(openAction, &QAction::triggered, this, [this]() {
+        m_mainWindow->show();
+        m_mainWindow->raise();
+    });
+    m_menu->addSeparator();
+    auto *quitAction = m_menu->addAction("Quit");
+    connect(quitAction, &QAction::triggered, this, []() {
+        QApplication::quit();
+    });
+
+    m_trayIcon->setContextMenu(m_menu);
 }
