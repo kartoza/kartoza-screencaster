@@ -74,4 +74,8 @@ private:
     QString m_webcamFile;
 
     RecordingOptions m_opts;
+    QDateTime m_startTime;
+    QString m_mergedFile;
+
+    void writeRecordingJson(const QString &status);
 };

@@ -2,14 +2,16 @@
 #include "config/config.h"
 #include <QHBoxLayout>
 #include <QVBoxLayout>
+#include <QSplitter>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QJsonArray>
 #include <QMessageBox>
 #include <QUrl>
+#include <QProcess>
+#include <QPixmap>
 #include <algorithm>
 
 HistoryPage::HistoryPage(QWidget *parent) : QWidget(parent) {
@@ -19,28 +21,29 @@ HistoryPage::HistoryPage(QWidget *parent) : QWidget(parent) {
 
 void HistoryPage::setupUI() {
     auto *layout = new QHBoxLayout(this);
-    layout->setSpacing(15);
-    layout->setContentsMargins(15, 15, 15, 15);
+    layout->setSpacing(10);
+    layout->setContentsMargins(10, 10, 10, 10);
 
-    // === Left: recording list ===
+    // === Left panel: recording list ===
     auto *leftPanel = new QWidget;
     auto *leftLayout = new QVBoxLayout(leftPanel);
-    leftLayout->setSpacing(8);
+    leftLayout->setSpacing(6);
+    leftLayout->setContentsMargins(0, 0, 0, 0);
 
     auto *title = new QLabel("Recording History");
-    title->setStyleSheet("QLabel { color: #cdd6f4; font-size: 18px; font-weight: bold; }");
+    title->setStyleSheet("QLabel { color: #cdd6f4; font-size: 16px; font-weight: bold; }");
     leftLayout->addWidget(title);
 
     m_searchInput = new QLineEdit;
-    m_searchInput->setPlaceholderText("Search recordings...");
-    m_searchInput->setStyleSheet("QLineEdit { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 6px; }");
+    m_searchInput->setPlaceholderText("Search...");
+    m_searchInput->setStyleSheet("QLineEdit { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px; }");
     connect(m_searchInput, &QLineEdit::textChanged, this, &HistoryPage::onSearchChanged);
     leftLayout->addWidget(m_searchInput);
 
     m_list = new QListWidget;
     m_list->setStyleSheet(R"(
-        QListWidget { background: #1e1e2e; color: #cdd6f4; border: 1px solid #313244; border-radius: 4px; font-size: 13px; }
-        QListWidget::item { padding: 8px 10px; border-bottom: 1px solid #313244; }
+        QListWidget { background: #1e1e2e; color: #cdd6f4; border: 1px solid #313244; border-radius: 4px; }
+        QListWidget::item { padding: 6px 8px; border-bottom: 1px solid #313244; }
         QListWidget::item:selected { background: #45475a; }
         QListWidget::item:hover { background: #313244; }
     )");
@@ -52,22 +55,19 @@ void HistoryPage::setupUI() {
     connect(refreshBtn, &QPushButton::clicked, this, &HistoryPage::refresh);
     leftLayout->addWidget(refreshBtn);
 
-    layout->addWidget(leftPanel);
+    layout->addWidget(leftPanel, 1);
 
-    // === Right: player + details ===
+    // === Right panel: details + player ===
     auto *rightPanel = new QWidget;
-    rightPanel->setFixedWidth(420);
+    rightPanel->setFixedWidth(400);
     auto *rightLayout = new QVBoxLayout(rightPanel);
-    rightLayout->setSpacing(8);
+    rightLayout->setSpacing(6);
+    rightLayout->setContentsMargins(0, 0, 0, 0);
 
-    auto *detailsTitle = new QLabel("Details");
-    detailsTitle->setStyleSheet("QLabel { color: #cdd6f4; font-size: 16px; font-weight: bold; }");
-    rightLayout->addWidget(detailsTitle);
-
-    // Inline video player
+    // Thumbnail / video player area
     m_videoWidget = new QVideoWidget;
-    m_videoWidget->setMinimumSize(400, 225);
-    m_videoWidget->setStyleSheet("background: #000000; border-radius: 8px;");
+    m_videoWidget->setFixedHeight(225);
+    m_videoWidget->setStyleSheet("background: #000; border-radius: 4px;");
     rightLayout->addWidget(m_videoWidget);
 
     m_player = new QMediaPlayer(this);
@@ -75,96 +75,82 @@ void HistoryPage::setupUI() {
     m_player->setAudioOutput(m_audioOutput);
     m_player->setVideoOutput(m_videoWidget);
 
-    // Playback controls
-    auto *controlsRow = new QHBoxLayout;
-    controlsRow->setSpacing(5);
+    // Controls
+    auto *ctrlRow = new QHBoxLayout;
+    ctrlRow->setSpacing(4);
 
     m_playBtn = new QPushButton("Play");
-    m_playBtn->setStyleSheet("QPushButton { background: #a6e3a1; color: #1e1e2e; border: none; border-radius: 4px; padding: 6px 16px; font-weight: bold; } QPushButton:hover { background: #94e2d5; } QPushButton:disabled { background: #45475a; color: #6c7086; }");
+    m_playBtn->setFixedWidth(70);
+    m_playBtn->setStyleSheet("QPushButton { background: #a6e3a1; color: #1e1e2e; border: none; border-radius: 4px; padding: 5px; font-weight: bold; } QPushButton:hover { background: #94e2d5; } QPushButton:disabled { background: #45475a; color: #6c7086; }");
     m_playBtn->setEnabled(false);
     connect(m_playBtn, &QPushButton::clicked, this, &HistoryPage::onPlayClicked);
-    controlsRow->addWidget(m_playBtn);
+    ctrlRow->addWidget(m_playBtn);
 
     m_stopBtn = new QPushButton("Stop");
-    m_stopBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 4px; padding: 6px 12px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }");
+    m_stopBtn->setFixedWidth(50);
+    m_stopBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 4px; padding: 5px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }");
     m_stopBtn->setEnabled(false);
     connect(m_stopBtn, &QPushButton::clicked, this, &HistoryPage::onStopPlayback);
-    controlsRow->addWidget(m_stopBtn);
+    ctrlRow->addWidget(m_stopBtn);
 
-    m_timeLabel = new QLabel("00:00 / 00:00");
+    m_timeLabel = new QLabel("0:00 / 0:00");
     m_timeLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 11px; }");
-    controlsRow->addWidget(m_timeLabel);
+    ctrlRow->addWidget(m_timeLabel);
+    ctrlRow->addStretch();
 
-    rightLayout->addLayout(controlsRow);
+    rightLayout->addLayout(ctrlRow);
 
-    // Seek slider
     m_seekSlider = new QSlider(Qt::Horizontal);
     m_seekSlider->setStyleSheet(R"(
-        QSlider::groove:horizontal { background: #313244; height: 6px; border-radius: 3px; }
-        QSlider::handle:horizontal { background: #89b4fa; width: 12px; height: 12px; margin: -3px 0; border-radius: 6px; }
-        QSlider::sub-page:horizontal { background: #89b4fa; border-radius: 3px; }
+        QSlider::groove:horizontal { background: #313244; height: 5px; border-radius: 2px; }
+        QSlider::handle:horizontal { background: #89b4fa; width: 10px; height: 10px; margin: -3px 0; border-radius: 5px; }
+        QSlider::sub-page:horizontal { background: #89b4fa; border-radius: 2px; }
     )");
-    connect(m_seekSlider, &QSlider::sliderMoved, this, [this](int pos) {
-        m_player->setPosition(pos);
-    });
+    connect(m_seekSlider, &QSlider::sliderMoved, m_player, &QMediaPlayer::setPosition);
     rightLayout->addWidget(m_seekSlider);
 
-    // Connect player signals
     connect(m_player, &QMediaPlayer::positionChanged, this, [this](qint64 pos) {
-        if (!m_seekSlider->isSliderDown()) {
-            m_seekSlider->setValue(pos);
-        }
-        qint64 dur = m_player->duration();
-        auto fmt = [](qint64 ms) -> QString {
-            int s = ms / 1000;
-            int m = s / 60; s %= 60;
-            int h = m / 60; m %= 60;
-            if (h > 0) return QString("%1:%2:%3").arg(h).arg(m,2,10,QChar('0')).arg(s,2,10,QChar('0'));
+        if (!m_seekSlider->isSliderDown()) m_seekSlider->setValue(pos);
+        auto fmt = [](qint64 ms) {
+            int s = ms/1000; int m = s/60; s %= 60;
             return QString("%1:%2").arg(m).arg(s,2,10,QChar('0'));
         };
-        m_timeLabel->setText(fmt(pos) + " / " + fmt(dur));
+        m_timeLabel->setText(fmt(pos) + " / " + fmt(m_player->duration()));
     });
-    connect(m_player, &QMediaPlayer::durationChanged, this, [this](qint64 dur) {
-        m_seekSlider->setMaximum(dur);
+    connect(m_player, &QMediaPlayer::durationChanged, this, [this](qint64 d) {
+        m_seekSlider->setMaximum(d);
+    });
+    connect(m_player, &QMediaPlayer::playbackStateChanged, this, [this](QMediaPlayer::PlaybackState state) {
+        if (state == QMediaPlayer::StoppedState && m_playing) {
+            // Playback finished naturally
+            m_playing = false;
+            m_playBtn->setText("Play");
+            m_stopBtn->setEnabled(false);
+        }
     });
 
     // Metadata
-    QString dimStyle = "QLabel { color: #6c7086; font-size: 12px; }";
-
     m_titleLabel = new QLabel("Select a recording");
-    m_titleLabel->setStyleSheet("QLabel { color: #cdd6f4; font-size: 14px; font-weight: bold; }");
+    m_titleLabel->setStyleSheet("QLabel { color: #cdd6f4; font-size: 13px; font-weight: bold; }");
     m_titleLabel->setWordWrap(true);
     rightLayout->addWidget(m_titleLabel);
 
-    m_statusLabel = new QLabel;
-    m_statusLabel->setStyleSheet(dimStyle);
+    QString dim = "QLabel { color: #6c7086; font-size: 11px; }";
+    m_statusLabel = new QLabel; m_statusLabel->setStyleSheet(dim);
+    m_durationLabel = new QLabel; m_durationLabel->setStyleSheet(dim);
+    m_filesLabel = new QLabel; m_filesLabel->setStyleSheet(dim); m_filesLabel->setWordWrap(true);
+    m_sizeLabel = new QLabel; m_sizeLabel->setStyleSheet(dim);
     rightLayout->addWidget(m_statusLabel);
-
-    m_durationLabel = new QLabel;
-    m_durationLabel->setStyleSheet(dimStyle);
     rightLayout->addWidget(m_durationLabel);
-
-    m_filesLabel = new QLabel;
-    m_filesLabel->setStyleSheet(dimStyle);
-    m_filesLabel->setWordWrap(true);
     rightLayout->addWidget(m_filesLabel);
-
-    m_sizeLabel = new QLabel;
-    m_sizeLabel->setStyleSheet(dimStyle);
     rightLayout->addWidget(m_sizeLabel);
 
-    // Action buttons
-    auto *actionRow = new QHBoxLayout;
-    actionRow->setSpacing(5);
-
     m_deleteBtn = new QPushButton("Delete");
-    m_deleteBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 4px; padding: 6px 12px; font-weight: bold; } QPushButton:hover { background: #eba0ac; } QPushButton:disabled { background: #313244; color: #6c7086; }");
+    m_deleteBtn->setFixedWidth(80);
+    m_deleteBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 4px; padding: 5px; font-weight: bold; } QPushButton:hover { background: #eba0ac; } QPushButton:disabled { background: #313244; color: #6c7086; }");
     m_deleteBtn->setEnabled(false);
     connect(m_deleteBtn, &QPushButton::clicked, this, &HistoryPage::onDeleteClicked);
-    actionRow->addWidget(m_deleteBtn);
-
-    actionRow->addStretch();
-    rightLayout->addLayout(actionRow);
+    rightLayout->addWidget(m_deleteBtn);
 
     rightLayout->addStretch();
     layout->addWidget(rightPanel);
@@ -176,27 +162,22 @@ void HistoryPage::loadRecordings() {
 
     auto &cfg = Config::instance();
     QString videosDir = cfg.outputDir;
-    if (videosDir.isEmpty()) {
-        videosDir = QDir::homePath() + "/Videos/Screencasts";
-    }
+    if (videosDir.isEmpty()) videosDir = QDir::homePath() + "/Videos/Screencasts";
 
     QDir dir(videosDir);
     if (!dir.exists()) return;
 
     for (const auto &entry : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
         QString folder = entry.absoluteFilePath();
-        QString jsonPath = folder + "/recording.json";
-
         RecordingEntry rec;
         rec.folder = folder;
         rec.dirName = entry.fileName();
 
-        // Try to load recording.json
-        QFile jsonFile(jsonPath);
+        // Load recording.json
+        QFile jsonFile(folder + "/recording.json");
         if (jsonFile.open(QIODevice::ReadOnly)) {
-            QJsonDocument doc = QJsonDocument::fromJson(jsonFile.readAll());
+            QJsonObject root = QJsonDocument::fromJson(jsonFile.readAll()).object();
             jsonFile.close();
-            QJsonObject root = doc.object();
 
             auto meta = root["metadata"].toObject();
             rec.title = meta["title"].toString();
@@ -210,42 +191,39 @@ void HistoryPage::loadRecordings() {
             rec.webcamFile = files["webcam_file"].toString();
             rec.totalSize = files["total_size"].toVariant().toLongLong();
 
-            QString startTime = root["start_time"].toString();
-            if (!startTime.isEmpty()) {
-                QDateTime dt = QDateTime::fromString(startTime, Qt::ISODate);
-                rec.date = dt.toString("yyyy-MM-dd HH:mm");
+            QString st = root["start_time"].toString();
+            if (!st.isEmpty()) {
+                rec.date = QDateTime::fromString(st, Qt::ISODate).toString("yyyy-MM-dd HH:mm");
             }
         }
 
-        // If no recording.json, scan for files directly
+        // Fallbacks
         if (rec.title.isEmpty()) rec.title = rec.dirName;
-        if (rec.date.isEmpty()) rec.date = entry.fileName().mid(4, 19).replace('_', ' ');
+        if (rec.date.isEmpty()) {
+            // Try to extract date from dir name (NNN-YYYY-MM-DD_HH-MM-SS)
+            QString d = rec.dirName;
+            if (d.length() > 4) d = d.mid(4);
+            d.replace('_', ' ').replace('-', '-');
+            rec.date = d;
+        }
 
-        // Find merged/screen files by scanning directory
+        // Find files by scanning if not in JSON
+        QDir recDir(folder);
         if (rec.mergedFile.isEmpty() || !QFile::exists(rec.mergedFile)) {
-            QDir recDir(folder);
             for (const auto &f : recDir.entryInfoList({"*.mp4"}, QDir::Files)) {
-                QString name = f.fileName();
-                if (!name.startsWith("screen_") && !name.startsWith("webcam_")) {
+                if (!f.fileName().startsWith("screen_") && !f.fileName().startsWith("webcam_")) {
                     rec.mergedFile = f.absoluteFilePath();
                     break;
                 }
             }
         }
         if (rec.screenFile.isEmpty() || !QFile::exists(rec.screenFile)) {
-            QDir recDir(folder);
-            for (const auto &f : recDir.entryInfoList({"screen_*.mp4"}, QDir::Files)) {
-                rec.screenFile = f.absoluteFilePath();
-                break;
-            }
+            for (const auto &f : recDir.entryInfoList({"screen_*.mp4"}, QDir::Files))
+                { rec.screenFile = f.absoluteFilePath(); break; }
         }
-
-        // Calculate total size if not in JSON
         if (rec.totalSize == 0) {
-            QDir recDir(folder);
-            for (const auto &f : recDir.entryInfoList(QDir::Files)) {
+            for (const auto &f : recDir.entryInfoList(QDir::Files))
                 rec.totalSize += f.size();
-            }
         }
 
         m_recordings.append(rec);
@@ -253,21 +231,17 @@ void HistoryPage::loadRecordings() {
 
     // Sort newest first
     std::sort(m_recordings.begin(), m_recordings.end(), [](const RecordingEntry &a, const RecordingEntry &b) {
-        return a.date > b.date;
+        return a.dirName > b.dirName;
     });
 
-    // Populate list
     for (const auto &rec : m_recordings) {
-        QString display = rec.title + "\n" + rec.date;
+        QString durStr;
         if (rec.duration > 0) {
             int secs = rec.duration / 1000000000;
-            int m = secs / 60, s = secs % 60;
-            display += QString(" | %1:%2").arg(m).arg(s, 2, 10, QChar('0'));
+            durStr = QString(" | %1:%2").arg(secs/60).arg(secs%60, 2, 10, QChar('0'));
         }
-        if (!rec.status.isEmpty()) {
-            display += " | " + rec.status;
-        }
-        m_list->addItem(display);
+        QString statusStr = rec.status.isEmpty() ? "" : " | " + rec.status;
+        m_list->addItem(rec.title + "\n" + rec.date + durStr + statusStr);
     }
 }
 
@@ -275,82 +249,72 @@ void HistoryPage::refresh() {
     if (m_playing) onStopPlayback();
     loadRecordings();
     m_titleLabel->setText("Select a recording");
-    m_statusLabel->clear();
-    m_durationLabel->clear();
-    m_filesLabel->clear();
-    m_sizeLabel->clear();
-    m_playBtn->setEnabled(false);
-    m_stopBtn->setEnabled(false);
+    m_statusLabel->clear(); m_durationLabel->clear();
+    m_filesLabel->clear(); m_sizeLabel->clear();
+    m_playBtn->setEnabled(false); m_stopBtn->setEnabled(false);
     m_deleteBtn->setEnabled(false);
 }
 
 void HistoryPage::onRecordingSelected(int row) {
     if (row < 0 || row >= m_recordings.size()) return;
-
     if (m_playing) onStopPlayback();
 
     const auto &rec = m_recordings[row];
-
     m_titleLabel->setText(rec.title);
 
-    // Status
-    if (rec.status == "completed") {
-        m_statusLabel->setText("Status: Completed");
-        m_statusLabel->setStyleSheet("QLabel { color: #a6e3a1; font-size: 12px; }");
-    } else if (rec.status == "failed") {
-        m_statusLabel->setText("Status: Failed");
-        m_statusLabel->setStyleSheet("QLabel { color: #f38ba8; font-size: 12px; }");
-    } else {
-        m_statusLabel->setText("Status: " + rec.status);
-        m_statusLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 12px; }");
-    }
+    if (rec.status == "completed")
+        m_statusLabel->setText("Status: Completed"),
+        m_statusLabel->setStyleSheet("QLabel { color: #a6e3a1; font-size: 11px; }");
+    else if (rec.status == "failed")
+        m_statusLabel->setText("Status: Failed"),
+        m_statusLabel->setStyleSheet("QLabel { color: #f38ba8; font-size: 11px; }");
+    else
+        m_statusLabel->setText("Status: " + (rec.status.isEmpty() ? "unknown" : rec.status)),
+        m_statusLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 11px; }");
 
-    // Duration
     if (rec.duration > 0) {
-        int secs = rec.duration / 1000000000;
-        int h = secs / 3600, m = (secs / 60) % 60, s = secs % 60;
-        if (h > 0)
-            m_durationLabel->setText(QString("Duration: %1:%2:%3").arg(h).arg(m,2,10,QChar('0')).arg(s,2,10,QChar('0')));
-        else
-            m_durationLabel->setText(QString("Duration: %1:%2").arg(m).arg(s,2,10,QChar('0')));
+        int s = rec.duration / 1000000000;
+        m_durationLabel->setText(QString("Duration: %1:%2").arg(s/60).arg(s%60,2,10,QChar('0')));
     } else {
         m_durationLabel->setText("Duration: unknown");
     }
 
-    // Files
-    QStringList files;
-    if (!rec.mergedFile.isEmpty() && QFile::exists(rec.mergedFile)) files << "Merged";
-    if (!rec.screenFile.isEmpty() && QFile::exists(rec.screenFile)) files << "Screen";
-    if (!rec.audioFile.isEmpty() && QFile::exists(rec.audioFile)) files << "Audio";
-    if (!rec.webcamFile.isEmpty() && QFile::exists(rec.webcamFile)) files << "Webcam";
-    m_filesLabel->setText("Files: " + files.join(", "));
+    QStringList fl;
+    if (!rec.mergedFile.isEmpty() && QFile::exists(rec.mergedFile)) fl << "Merged";
+    if (!rec.screenFile.isEmpty() && QFile::exists(rec.screenFile)) fl << "Screen";
+    if (!rec.audioFile.isEmpty() && QFile::exists(rec.audioFile)) fl << "Audio";
+    m_filesLabel->setText("Files: " + (fl.isEmpty() ? "none" : fl.join(", ")));
 
-    // Size
-    auto formatBytes = [](qint64 b) -> QString {
+    auto fmtBytes = [](qint64 b) {
         if (b < 1024) return QString("%1 B").arg(b);
-        if (b < 1024*1024) return QString("%1 KB").arg(b/1024);
-        if (b < 1024*1024*1024) return QString("%1 MB").arg(b/(1024*1024));
-        return QString("%1 GB").arg(b/(1024*1024*1024));
+        if (b < 1048576) return QString("%1 KB").arg(b/1024);
+        if (b < 1073741824) return QString("%1 MB").arg(b/1048576);
+        return QString("%1 GB").arg(b/1073741824);
     };
-    m_sizeLabel->setText("Size: " + formatBytes(rec.totalSize));
+    m_sizeLabel->setText("Size: " + fmtBytes(rec.totalSize));
 
-    // Enable buttons
-    QString bestVideo = findBestVideo(rec);
-    m_playBtn->setEnabled(!bestVideo.isEmpty());
+    QString video = findBestVideo(rec);
+    m_playBtn->setEnabled(!video.isEmpty());
     m_playBtn->setText("Play");
     m_deleteBtn->setEnabled(true);
+
+    // Load thumbnail into video widget by seeking to first frame
+    if (!video.isEmpty()) {
+        m_player->setSource(QUrl::fromLocalFile(video));
+        // Seek to 1 second to get a thumbnail frame
+        m_player->setPosition(1000);
+        m_player->pause();
+    }
 }
 
 QString HistoryPage::findBestVideo(const RecordingEntry &rec) {
     if (!rec.mergedFile.isEmpty() && QFile::exists(rec.mergedFile)) return rec.mergedFile;
     if (!rec.screenFile.isEmpty() && QFile::exists(rec.screenFile)) return rec.screenFile;
-    if (!rec.webcamFile.isEmpty() && QFile::exists(rec.webcamFile)) return rec.webcamFile;
     return {};
 }
 
 void HistoryPage::onPlayClicked() {
     if (m_playing) {
-        // Toggle pause
         if (m_player->playbackState() == QMediaPlayer::PlayingState) {
             m_player->pause();
             m_playBtn->setText("Play");
@@ -376,23 +340,22 @@ void HistoryPage::onPlayClicked() {
 
 void HistoryPage::onStopPlayback() {
     m_player->stop();
+    m_player->setSource(QUrl());
     m_playing = false;
     m_playBtn->setText("Play");
     m_stopBtn->setEnabled(false);
     m_seekSlider->setValue(0);
-    m_timeLabel->setText("00:00 / 00:00");
+    m_timeLabel->setText("0:00 / 0:00");
 }
 
 void HistoryPage::onDeleteClicked() {
     int row = m_list->currentRow();
     if (row < 0 || row >= m_recordings.size()) return;
-
     const auto &rec = m_recordings[row];
-    auto result = QMessageBox::question(this, "Delete Recording",
-        QString("Delete recording \"%1\"?\n\nThis will permanently remove all files in:\n%2")
-            .arg(rec.title, rec.folder));
 
-    if (result == QMessageBox::Yes) {
+    if (QMessageBox::question(this, "Delete Recording",
+            QString("Delete \"%1\"?\n\nAll files in:\n%2").arg(rec.title, rec.folder))
+            == QMessageBox::Yes) {
         if (m_playing) onStopPlayback();
         QDir(rec.folder).removeRecursively();
         refresh();
@@ -400,9 +363,7 @@ void HistoryPage::onDeleteClicked() {
 }
 
 void HistoryPage::onSearchChanged(const QString &text) {
-    QString query = text.toLower();
-    for (int i = 0; i < m_list->count(); i++) {
-        auto *item = m_list->item(i);
-        item->setHidden(!item->text().toLower().contains(query));
-    }
+    QString q = text.toLower();
+    for (int i = 0; i < m_list->count(); i++)
+        m_list->item(i)->setHidden(!m_list->item(i)->text().toLower().contains(q));
 }
