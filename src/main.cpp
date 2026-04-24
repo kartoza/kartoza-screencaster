@@ -11,8 +11,11 @@ int main(int argc, char *argv[]) {
 
     Config::instance().load();
 
+    qDebug() << "Creating MainWindow...";
     MainWindow window("0.9.0");
+    qDebug() << "Showing MainWindow...";
     window.show();
+    qDebug() << "Entering event loop...";
 
     return app.exec();
 }

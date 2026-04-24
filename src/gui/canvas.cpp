@@ -14,13 +14,14 @@
 #include <signal.h>
 
 Canvas::Canvas(QWidget *parent) : QWidget(parent) {
+    qDebug() << "Canvas::Canvas starting";
     setMinimumSize(400, 225);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
     setStyleSheet("background: #11111b; border-radius: 8px;");
 
     m_refreshTimer = new QTimer(this);
-    m_refreshTimer->setInterval(100); // 10Hz for smooth webcam + periodic screen
+    m_refreshTimer->setInterval(2000);
     connect(m_refreshTimer, &QTimer::timeout, this, [this]() {
         // Load pending screenshot
         m_mutex.lock();
@@ -34,33 +35,31 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
             if (!pix.isNull()) m_screenPixmap = pix;
         }
 
-        // Check webcam frames
-        for (auto &item : m_items) {
-            if (item.type == 1 && item.webcamNewFrame) {
+        // Check webcam frames — use index-based loop (safe for QList modification)
+        for (int i = 0; i < m_items.size(); i++) {
+            if (m_items[i].type == 1 && m_items[i].webcamNewFrame) {
                 m_mutex.lock();
-                QImage img((const uchar*)item.webcamBuf.constData(), WC_W, WC_H, WC_W*3, QImage::Format_RGB888);
-                item.webcamPixmap = QPixmap::fromImage(img);
-                item.webcamNewFrame = false;
+                if (m_items[i].webcamBuf.size() >= WC_FRAME_SIZE) {
+                    QImage img((const uchar*)m_items[i].webcamBuf.constData(), WC_W, WC_H, WC_W*3, QImage::Format_RGB888);
+                    m_items[i].webcamPixmap = QPixmap::fromImage(img);
+                }
+                m_items[i].webcamNewFrame = false;
                 m_mutex.unlock();
             }
         }
 
         update();
-    });
-    m_refreshTimer->start();
 
-    // Screen capture every 2 seconds
-    auto *captureTimer = new QTimer(this);
-    connect(captureTimer, &QTimer::timeout, this, [this]() {
+        // Capture screen in background
         QtConcurrent::run(QThreadPool::globalInstance(), [this]() { captureScreen(); });
     });
-    captureTimer->start(2000);
+    m_refreshTimer->start();
 }
 
 Canvas::~Canvas() {
-    for (auto &item : m_items) {
-        stopWebcamCapture(item);
-        if (item.movie) { item.movie->stop(); delete item.movie; }
+    for (int i = 0; i < m_items.size(); i++) {
+        stopWebcamCapture(i);
+        if (m_items[i].movie) { m_items[i].movie->stop(); delete m_items[i].movie; }
     }
 }
 
@@ -117,7 +116,8 @@ void Canvas::addWebcam(const QString &device, const QString &name, int shape) {
     item.webcamBuf.resize(WC_FRAME_SIZE);
 
     m_items.append(item);
-    startWebcamCapture(m_items.last());
+    int idx = m_items.size() - 1;
+    startWebcamCapture(idx);
     emit itemsChanged();
     update();
 }
@@ -169,9 +169,8 @@ void Canvas::addLogo(const QString &filePath) {
 
 void Canvas::removeItem(int index) {
     if (index < 0 || index >= m_items.size()) return;
-    auto &item = m_items[index];
-    stopWebcamCapture(item);
-    if (item.movie) { item.movie->stop(); delete item.movie; item.movie = nullptr; }
+    stopWebcamCapture(index);
+    if (m_items[index].movie) { m_items[index].movie->stop(); delete m_items[index].movie; m_items[index].movie = nullptr; }
     m_items.removeAt(index);
     if (m_selected >= m_items.size()) m_selected = -1;
     emit itemsChanged();
@@ -179,9 +178,9 @@ void Canvas::removeItem(int index) {
 }
 
 void Canvas::clearAll() {
-    for (auto &item : m_items) {
-        stopWebcamCapture(item);
-        if (item.movie) { item.movie->stop(); delete item.movie; }
+    for (int i = 0; i < m_items.size(); i++) {
+        stopWebcamCapture(i);
+        if (m_items[i].movie) { m_items[i].movie->stop(); delete m_items[i].movie; m_items[i].movie = nullptr; }
     }
     m_items.clear();
     m_selected = -1;
@@ -234,8 +233,11 @@ void Canvas::importItem(const ItemExport &e) {
     }
     case 1: { // webcam
         addWebcam(e.device, e.label, e.shape);
-        auto &last = m_items.last();
-        last.x = e.x; last.y = e.y; last.w = e.w; last.h = e.h;
+        if (!m_items.isEmpty()) {
+            int idx = m_items.size() - 1;
+            m_items[idx].x = e.x; m_items[idx].y = e.y;
+            m_items[idx].w = e.w; m_items[idx].h = e.h;
+        }
         break;
     }
     case 2: { // logo
@@ -268,28 +270,23 @@ QString Canvas::modeString() const {
 
 // === Webcam live capture ===
 
-void Canvas::startWebcamCapture(CanvasItem &item) {
-    if (item.webcamProc) return;
+void Canvas::startWebcamCapture(int itemIdx) {
+    if (itemIdx < 0 || itemIdx >= m_items.size()) return;
+    if (m_items[itemIdx].webcamProc) return;
 
-    item.webcamProc = new QProcess(this);
+    QString device = m_items[itemIdx].device;
+    m_items[itemIdx].webcamProc = new QProcess(this);
+
     QStringList args = {"-f", "v4l2", "-framerate", QString::number(WC_FPS),
-                        "-i", "/dev/" + item.device,
+                        "-i", "/dev/" + device,
                         "-vf", QString("scale=%1:%2").arg(WC_W).arg(WC_H),
                         "-f", "rawvideo", "-pix_fmt", "rgb24", "-an", "pipe:1"};
 
-    // Capture the device name and index for safe access in lambda
-    QString device = item.device;
-    int itemIndex = m_items.size() - 1; // will be appended after this call returns
-    // Actually, the item was already appended before startWebcamCapture is called
-    // Find the actual index
-    for (int i = 0; i < m_items.size(); i++) {
-        if (&m_items[i] == &item) { itemIndex = i; break; }
-    }
+    auto *accum = new QByteArray();
+    QProcess *proc = m_items[itemIdx].webcamProc;
 
-    auto *accum = new QByteArray(); // owned by this lambda's lifetime
-
-    connect(item.webcamProc, &QProcess::readyReadStandardOutput, this, [this, device, itemIndex, accum]() {
-        // Find the item by index (may have shifted if items were removed)
+    connect(proc, &QProcess::readyReadStandardOutput, this, [this, device, accum]() {
+        // Find item by device name (safe even if items reordered)
         int idx = -1;
         for (int i = 0; i < m_items.size(); i++) {
             if (m_items[i].device == device && m_items[i].type == 1) { idx = i; break; }
@@ -299,23 +296,27 @@ void Canvas::startWebcamCapture(CanvasItem &item) {
         accum->append(m_items[idx].webcamProc->readAllStandardOutput());
         while (accum->size() >= WC_FRAME_SIZE) {
             m_mutex.lock();
-            memcpy(m_items[idx].webcamBuf.data(), accum->constData(), WC_FRAME_SIZE);
-            m_items[idx].webcamNewFrame = true;
+            if (m_items[idx].webcamBuf.size() >= WC_FRAME_SIZE) {
+                memcpy(m_items[idx].webcamBuf.data(), accum->constData(), WC_FRAME_SIZE);
+                m_items[idx].webcamNewFrame = true;
+            }
             m_mutex.unlock();
             accum->remove(0, WC_FRAME_SIZE);
         }
     });
 
-    connect(item.webcamProc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, [accum]() { delete accum; });
 
-    item.webcamProc->start("ffmpeg", args);
+    proc->start("ffmpeg", args);
 }
 
-void Canvas::stopWebcamCapture(CanvasItem &item) {
+void Canvas::stopWebcamCapture(int idx) {
+    if (idx < 0 || idx >= m_items.size()) return;
+    auto &item = m_items[idx];
     if (!item.webcamProc) return;
     qint64 pid = item.webcamProc->processId();
-    if (pid > 0) kill(pid, SIGINT);
+    if (pid > 0) ::kill(pid, SIGINT);
     item.webcamProc->waitForFinished(2000);
     item.webcamProc->deleteLater();
     item.webcamProc = nullptr;

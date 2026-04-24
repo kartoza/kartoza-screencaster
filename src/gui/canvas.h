@@ -85,8 +85,8 @@ private:
     void captureScreen();
     void drawScreen(QPainter &painter);
     bool hitTest(const CanvasItem &item, int mx, int my) const;
-    void startWebcamCapture(CanvasItem &item);
-    void stopWebcamCapture(CanvasItem &item);
+    void startWebcamCapture(int itemIdx);
+    void stopWebcamCapture(int idx);
 
     QList<CanvasItem> m_items;
     QPixmap m_screenPixmap;
