@@ -7,8 +7,9 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QMediaPlayer>
-#include <QVideoWidget>
 #include <QAudioOutput>
+#include <QVideoSink>
+#include <QVideoFrame>
 
 struct RecordingEntry {
     QString folder;
@@ -48,7 +49,8 @@ private:
     QLineEdit *m_searchInput;
 
     // Player
-    QVideoWidget *m_videoWidget;
+    QLabel *m_videoLabel;
+    QVideoSink *m_videoSink;
     QMediaPlayer *m_player;
     QAudioOutput *m_audioOutput;
     QPushButton *m_playBtn;

@@ -64,16 +64,32 @@ void HistoryPage::setupUI() {
     rightLayout->setSpacing(6);
     rightLayout->setContentsMargins(0, 0, 0, 0);
 
-    // Thumbnail / video player area
-    m_videoWidget = new QVideoWidget;
-    m_videoWidget->setFixedHeight(225);
-    m_videoWidget->setStyleSheet("background: #000; border-radius: 4px;");
-    rightLayout->addWidget(m_videoWidget);
+    // Video display — using QLabel + QVideoSink to avoid QVideoWidget Wayland positioning issues
+    m_videoLabel = new QLabel;
+    m_videoLabel->setFixedSize(400, 225);
+    m_videoLabel->setAlignment(Qt::AlignCenter);
+    m_videoLabel->setScaledContents(true);
+    m_videoLabel->setStyleSheet("background: #000; border-radius: 4px;");
+    rightLayout->addWidget(m_videoLabel);
 
     m_player = new QMediaPlayer(this);
     m_audioOutput = new QAudioOutput(this);
+    m_videoSink = new QVideoSink(this);
     m_player->setAudioOutput(m_audioOutput);
-    m_player->setVideoOutput(m_videoWidget);
+    m_player->setVideoOutput(m_videoSink);
+
+    // Render video frames to the QLabel
+    connect(m_videoSink, &QVideoSink::videoFrameChanged, this, [this](const QVideoFrame &frame) {
+        QVideoFrame f = frame;
+        if (f.map(QVideoFrame::ReadOnly)) {
+            QImage img = f.toImage();
+            f.unmap();
+            if (!img.isNull()) {
+                m_videoLabel->setPixmap(QPixmap::fromImage(img).scaled(
+                    m_videoLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            }
+        }
+    });
 
     // Controls
     auto *ctrlRow = new QHBoxLayout;
