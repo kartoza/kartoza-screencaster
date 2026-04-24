@@ -82,11 +82,15 @@ void Recorder::startAudioRecorder(const RecordingOptions &opts) {
     QString device = opts.audioDevice;
     if (device.isEmpty()) device = "@DEFAULT_SOURCE@";
 
+    // Use ffmpeg with PulseAudio input (proven to work)
     QStringList args;
-    args << "--record" << device << "--target" << m_audioFile;
+    args << "-f" << "pulse"
+         << "-i" << device
+         << "-ac" << "2"
+         << "-y" << m_audioFile;
 
-    qDebug() << "Starting pw-record:" << args;
-    m_audioProc->start("pw-record", args);
+    qDebug() << "Starting audio ffmpeg:" << args;
+    m_audioProc->start("ffmpeg", args);
 
     if (!m_audioProc->waitForStarted(5000)) {
         // Audio failure is non-fatal
