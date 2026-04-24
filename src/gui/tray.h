@@ -11,8 +11,6 @@ public:
     Tray(MainWindow *mainWindow, RecordPage *recordPage);
 
 private:
-    void rebuildMenu();
-
     QSystemTrayIcon *m_trayIcon;
     QMenu *m_menu = nullptr;
     QAction *m_startAction;
