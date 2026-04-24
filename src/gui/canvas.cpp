@@ -146,10 +146,15 @@ void Canvas::addLogo(const QString &filePath) {
         if (movie->frameCount() > 1) {
             item.isGif = true;
             item.movie = movie;
-            connect(movie, &QMovie::frameChanged, this, [this, idx = m_items.size()](int) {
-                if (idx < m_items.size() && m_items[idx].movie)
-                    m_items[idx].pixmap = m_items[idx].movie->currentPixmap();
-                // Don't call update() here — the refresh timer handles it
+            QString logoFile = filePath; // capture for lambda
+            connect(movie, &QMovie::frameChanged, this, [this, logoFile](int) {
+                // Find item by filePath (index may have changed)
+                for (auto &it : m_items) {
+                    if (it.filePath == logoFile && it.movie) {
+                        it.pixmap = it.movie->currentPixmap();
+                        break;
+                    }
+                }
             });
             movie->start();
         } else {
@@ -272,20 +277,37 @@ void Canvas::startWebcamCapture(CanvasItem &item) {
                         "-vf", QString("scale=%1:%2").arg(WC_W).arg(WC_H),
                         "-f", "rawvideo", "-pix_fmt", "rgb24", "-an", "pipe:1"};
 
-    // Read frames from stdout
-    connect(item.webcamProc, &QProcess::readyReadStandardOutput, this, [this, &item]() {
-        QByteArray data = item.webcamProc->readAllStandardOutput();
-        // Accumulate until we have a full frame
-        static QMap<QString, QByteArray> accum;
-        accum[item.device].append(data);
-        while (accum[item.device].size() >= WC_FRAME_SIZE) {
+    // Capture the device name and index for safe access in lambda
+    QString device = item.device;
+    int itemIndex = m_items.size() - 1; // will be appended after this call returns
+    // Actually, the item was already appended before startWebcamCapture is called
+    // Find the actual index
+    for (int i = 0; i < m_items.size(); i++) {
+        if (&m_items[i] == &item) { itemIndex = i; break; }
+    }
+
+    auto *accum = new QByteArray(); // owned by this lambda's lifetime
+
+    connect(item.webcamProc, &QProcess::readyReadStandardOutput, this, [this, device, itemIndex, accum]() {
+        // Find the item by index (may have shifted if items were removed)
+        int idx = -1;
+        for (int i = 0; i < m_items.size(); i++) {
+            if (m_items[i].device == device && m_items[i].type == 1) { idx = i; break; }
+        }
+        if (idx < 0 || !m_items[idx].webcamProc) return;
+
+        accum->append(m_items[idx].webcamProc->readAllStandardOutput());
+        while (accum->size() >= WC_FRAME_SIZE) {
             m_mutex.lock();
-            memcpy(item.webcamBuf.data(), accum[item.device].constData(), WC_FRAME_SIZE);
-            item.webcamNewFrame = true;
+            memcpy(m_items[idx].webcamBuf.data(), accum->constData(), WC_FRAME_SIZE);
+            m_items[idx].webcamNewFrame = true;
             m_mutex.unlock();
-            accum[item.device].remove(0, WC_FRAME_SIZE);
+            accum->remove(0, WC_FRAME_SIZE);
         }
     });
+
+    connect(item.webcamProc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [accum]() { delete accum; });
 
     item.webcamProc->start("ffmpeg", args);
 }
