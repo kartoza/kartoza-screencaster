@@ -452,55 +452,6 @@ func (p *RecordPage) setupUI() {
 	}
 	p.canvas.SetTitleColor(titleColor)
 
-	// Poll for goroutine results on every canvas tick (~100ms)
-	p.canvas.OnTick(func() {
-		// Check if recording start completed
-		if p.pendingStartDone {
-			p.pendingStartDone = false
-			if p.pendingStartErr != nil {
-				p.statusLabel.SetText(fmt.Sprintf("Error: %v", p.pendingStartErr))
-				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
-				p.resetToIdle()
-			} else {
-				p.state = StateRecording
-				p.startTime = time.Now()
-				p.statusLabel.SetText("Recording")
-				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
-				p.startBtn.SetVisible(false)
-				p.pauseBtn.SetVisible(true)
-				p.stopBtn.SetVisible(true)
-				p.elapsedTimer.Start(1000)
-				if p.onStatusChange != nil {
-					p.onStatusChange("Recording")
-				}
-				if p.onRecordingStart != nil {
-					p.onRecordingStart()
-				}
-			}
-		}
-
-		// Check if recording stop completed
-		if p.pendingStopDone {
-			p.pendingStopDone = false
-			if p.pendingStopErr != nil {
-				p.statusLabel.SetText(fmt.Sprintf("Error: %v", p.pendingStopErr))
-				p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
-				p.resetToIdle()
-			} else {
-				p.resetToIdle()
-				if p.onStatusChange != nil {
-					p.onStatusChange("Processing")
-				}
-				if p.onRecordingStop != nil {
-					p.onRecordingStop()
-				}
-				if p.onNavigate != nil {
-					p.onNavigate(3) // PageProcessing
-				}
-			}
-		}
-	})
-
 	// Auto-save canvas state on any change
 	p.canvas.OnChange(func() {
 		p.saveCanvasState()
@@ -710,6 +661,7 @@ func (p *RecordPage) addFormRow(layout *qt.QVBoxLayout, label, placeholder, labe
 
 func (p *RecordPage) setupTimers() {
 	p.elapsedTimer = qt.NewQTimer()
+	p.elapsedTimer.SetInterval(500) // tick every 500ms
 	p.elapsedTimer.OnTimeout(func() {
 		switch p.state {
 		case StateRecording:
@@ -726,9 +678,61 @@ func (p *RecordPage) setupTimers() {
 				p.statusLabel.SetText(fmt.Sprintf("Starting in %d...", p.countdownVal))
 			}
 		}
+
+		// Poll for pending goroutine results (always, regardless of state)
+		p.pollPendingResults()
 	})
 
-	// Note: UI queue is drained by the canvas refresh tick callback (OnTick)
+	// Start the timer immediately and keep it running forever
+	p.elapsedTimer.Start2()
+}
+
+// pollPendingResults checks for completed goroutine operations and updates UI
+func (p *RecordPage) pollPendingResults() {
+	// Check if recording start completed
+	if p.pendingStartDone {
+		p.pendingStartDone = false
+		if p.pendingStartErr != nil {
+			p.statusLabel.SetText(fmt.Sprintf("Error: %v", p.pendingStartErr))
+			p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
+			p.resetToIdle()
+		} else {
+			p.state = StateRecording
+			p.startTime = time.Now()
+			p.statusLabel.SetText("Recording")
+			p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
+			p.startBtn.SetVisible(false)
+			p.pauseBtn.SetVisible(true)
+			p.stopBtn.SetVisible(true)
+			if p.onStatusChange != nil {
+				p.onStatusChange("Recording")
+			}
+			if p.onRecordingStart != nil {
+				p.onRecordingStart()
+			}
+		}
+	}
+
+	// Check if recording stop completed
+	if p.pendingStopDone {
+		p.pendingStopDone = false
+		if p.pendingStopErr != nil {
+			p.statusLabel.SetText(fmt.Sprintf("Error: %v", p.pendingStopErr))
+			p.statusLabel.SetStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }")
+			p.resetToIdle()
+		} else {
+			p.resetToIdle()
+			if p.onStatusChange != nil {
+				p.onStatusChange("Processing")
+			}
+			if p.onRecordingStop != nil {
+				p.onRecordingStop()
+			}
+			if p.onNavigate != nil {
+				p.onNavigate(3) // PageProcessing
+			}
+		}
+	}
 }
 
 func (p *RecordPage) onStartClicked() {
@@ -746,11 +750,14 @@ func (p *RecordPage) onStartClicked() {
 	p.statusLabel.SetText("Starting in 5...")
 	p.statusLabel.SetStyleSheet("QLabel { color: #fab387; font-size: 13px; font-weight: bold; }")
 	p.startBtn.SetEnabled(false)
-	p.elapsedTimer.Start(1000)
+	// Timer is already running (started in setupTimers), just update interval for countdown
+	p.elapsedTimer.SetInterval(1000)
 }
 
 func (p *RecordPage) startRecording() {
-	p.elapsedTimer.Stop()
+	// Change state immediately so the countdown case doesn't fire again.
+	// DON'T stop the timer — it polls pendingStartDone flags.
+	p.state = StateIdle
 
 	monitorName := ""
 	monitorRes := ""
@@ -879,7 +886,8 @@ func (p *RecordPage) onStopClicked() {
 
 func (p *RecordPage) resetToIdle() {
 	p.state = StateIdle
-	p.elapsedTimer.Stop()
+	// Don't stop the timer — it also polls pending goroutine results
+	p.elapsedTimer.SetInterval(500) // slow tick when idle
 	p.elapsedLabel.SetText("00:00:00")
 	p.startBtn.SetVisible(true)
 	p.startBtn.SetEnabled(true)
