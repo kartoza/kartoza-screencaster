@@ -70,3 +70,4 @@ build-dir/
 
 # MkDocs build output
 site/
+build/

@@ -1,0 +1,253 @@
+#include "recorder/recorder.h"
+#include <QDebug>
+#include <QDir>
+#include <QDateTime>
+#include <QThread>
+
+Recorder::Recorder(QObject *parent) : QObject(parent) {}
+
+Recorder::~Recorder() {
+    if (m_recording) stop();
+}
+
+qint64 Recorder::elapsedMs() const {
+    if (!m_recording) return 0;
+    return m_elapsed.elapsed();
+}
+
+void Recorder::start(const RecordingOptions &opts) {
+    if (m_recording) {
+        emit recordingError("Recording already in progress");
+        return;
+    }
+
+    m_opts = opts;
+
+    // Create output directory
+    m_outputDir = opts.outputDir;
+    if (m_outputDir.isEmpty()) {
+        QString home = QDir::homePath();
+        QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd_HH-mm-ss");
+        m_outputDir = QString("%1/Videos/Screencasts/%2-%3")
+            .arg(home)
+            .arg(opts.number, 3, 10, QChar('0'))
+            .arg(timestamp);
+    }
+    QDir().mkpath(m_outputDir);
+
+    m_screenFile = m_outputDir + "/screen_part000.mp4";
+    m_audioFile = m_outputDir + "/audio_part000.wav";
+    m_webcamFile = m_outputDir + "/webcam_part000.mp4";
+
+    // Start recorders
+    if (!opts.noScreen && !opts.monitor.isEmpty()) {
+        startScreenRecorder(opts);
+    }
+    if (!opts.noAudio) {
+        startAudioRecorder(opts);
+    }
+    if (!opts.noWebcam && !opts.webcamDevice.isEmpty()) {
+        startWebcamRecorder(opts);
+    }
+
+    m_recording = true;
+    m_paused = false;
+    m_elapsed.start();
+
+    emit recordingStarted();
+}
+
+void Recorder::startScreenRecorder(const RecordingOptions &opts) {
+    m_screenProc = new QProcess(this);
+
+    QStringList args;
+    if (!opts.hwAccel) {
+        args << "--no-hw";
+    }
+    args << QString("--output=%1").arg(opts.monitor)
+         << QString("--filename=%1").arg(m_screenFile);
+
+    qDebug() << "Starting wl-screenrec:" << args;
+    m_screenProc->start("wl-screenrec", args);
+
+    if (!m_screenProc->waitForStarted(5000)) {
+        emit recordingError("Failed to start screen recorder: " + m_screenProc->errorString());
+    }
+}
+
+void Recorder::startAudioRecorder(const RecordingOptions &opts) {
+    m_audioProc = new QProcess(this);
+
+    QString device = opts.audioDevice;
+    if (device.isEmpty()) device = "@DEFAULT_SOURCE@";
+
+    QStringList args;
+    args << "--record" << device << "--target" << m_audioFile;
+
+    qDebug() << "Starting pw-record:" << args;
+    m_audioProc->start("pw-record", args);
+
+    if (!m_audioProc->waitForStarted(5000)) {
+        // Audio failure is non-fatal
+        qWarning() << "Failed to start audio recorder:" << m_audioProc->errorString();
+        delete m_audioProc;
+        m_audioProc = nullptr;
+    }
+}
+
+void Recorder::startWebcamRecorder(const RecordingOptions &opts) {
+    m_webcamProc = new QProcess(this);
+
+    QStringList args;
+    args << "-f" << "v4l2"
+         << "-framerate" << QString::number(opts.webcamFPS > 0 ? opts.webcamFPS : 60)
+         << "-i" << ("/dev/" + opts.webcamDevice)
+         << "-c:v" << "libx264"
+         << "-preset" << "ultrafast"
+         << "-tune" << "zerolatency"
+         << "-crf" << "18"
+         << "-pix_fmt" << "yuv420p"
+         << "-y" << m_webcamFile;
+
+    qDebug() << "Starting webcam ffmpeg:" << args;
+    m_webcamProc->start("ffmpeg", args);
+
+    if (!m_webcamProc->waitForStarted(5000)) {
+        qWarning() << "Failed to start webcam recorder:" << m_webcamProc->errorString();
+        delete m_webcamProc;
+        m_webcamProc = nullptr;
+    }
+}
+
+void Recorder::stopProcess(QProcess *proc) {
+    if (!proc || proc->state() == QProcess::NotRunning) return;
+
+    // Send SIGINT for graceful shutdown
+    proc->terminate();
+    if (!proc->waitForFinished(3000)) {
+        proc->kill();
+        proc->waitForFinished(1000);
+    }
+}
+
+void Recorder::stop() {
+    if (!m_recording) return;
+
+    m_recording = false;
+    m_paused = false;
+
+    // Stop all recorders simultaneously
+    stopProcess(m_screenProc);
+    stopProcess(m_audioProc);
+    stopProcess(m_webcamProc);
+
+    // Wait for files to settle
+    QThread::msleep(1000);
+
+    emit recordingStopped();
+
+    // Start processing in a worker thread
+    QThread *thread = QThread::create([this]() {
+        processRecordings();
+    });
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
+    thread->start();
+}
+
+void Recorder::pause() {
+    if (!m_recording || m_paused) return;
+
+    // Send SIGSTOP to pause processes
+    if (m_screenProc) m_screenProc->terminate(); // TODO: proper pause
+    if (m_audioProc) m_audioProc->terminate();
+    if (m_webcamProc) m_webcamProc->terminate();
+
+    m_paused = true;
+    emit recordingPaused();
+}
+
+void Recorder::resume() {
+    if (!m_paused) return;
+    m_paused = false;
+    // TODO: restart recorders with new part files
+    emit recordingResumed();
+}
+
+void Recorder::processRecordings() {
+    emit processingStarted();
+
+    bool hasScreen = QFile::exists(m_screenFile);
+    bool hasAudio = QFile::exists(m_audioFile);
+    bool hasWebcam = QFile::exists(m_webcamFile);
+
+    if (!hasScreen && !hasAudio && !hasWebcam) {
+        emit processingStepError(0, "Merge", "No input files found");
+        emit processingFinished(false);
+        return;
+    }
+
+    // Step 1: Analyze audio
+    emit processingProgress(0, 0, "Analyzing audio");
+    if (hasAudio) {
+        emit processingProgress(0, 100, "Analyzing audio");
+        emit processingStepDone(0, "Analyzing audio", false);
+    } else {
+        emit processingStepDone(0, "Analyzing audio", true);
+    }
+
+    // Step 2: Normalize audio
+    emit processingProgress(1, 0, "Normalizing audio");
+    if (hasAudio) {
+        // TODO: actual audio processing with jivetalking
+        emit processingProgress(1, 100, "Normalizing audio");
+        emit processingStepDone(1, "Normalizing audio", false);
+    } else {
+        emit processingStepDone(1, "Normalizing audio", true);
+    }
+
+    // Step 3: Merge video + audio
+    emit processingProgress(2, 0, "Merging video & audio");
+    if (hasScreen) {
+        QString mergedFile = m_outputDir + "/" +
+            QString("%1-%2.mp4")
+                .arg(m_opts.number, 3, 10, QChar('0'))
+                .arg(m_opts.title.isEmpty() ? "recording" : m_opts.title.toLower().replace(" ", "_"));
+
+        QProcess ffmpeg;
+        QStringList args;
+        args << "-y" << "-i" << m_screenFile;
+        if (hasAudio) {
+            args << "-i" << m_audioFile;
+        }
+        args << "-c:v" << "libx264"
+             << "-preset" << "medium"
+             << "-crf" << "18"
+             << "-r" << "30";
+        if (hasAudio) {
+            args << "-c:a" << "aac"
+                 << "-b:a" << "320k"
+                 << "-shortest";
+        } else {
+            args << "-an";
+        }
+        args << mergedFile;
+
+        ffmpeg.start("ffmpeg", args);
+        ffmpeg.waitForFinished(-1);
+
+        if (ffmpeg.exitCode() == 0) {
+            emit processingProgress(2, 100, "Merging video & audio");
+            emit processingStepDone(2, "Merging video & audio", false);
+        } else {
+            emit processingStepError(2, "Merging", ffmpeg.readAllStandardError());
+        }
+    } else {
+        emit processingStepDone(2, "Merging video & audio", true);
+    }
+
+    // Step 4: Create vertical video (placeholder)
+    emit processingProgress(3, 0, "Creating vertical video");
+    emit processingStepDone(3, "Creating vertical video", true); // TODO
+
+    emit processingFinished(true);
+}

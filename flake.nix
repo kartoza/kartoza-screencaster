@@ -301,6 +301,15 @@
             xorg.libXxf86vm
             libGL
 
+            # Qt6 for native C++ GUI
+            qt6.qtbase
+            qt6.qtmultimedia
+            qt6.qtsvg
+            qt6.qtwayland
+            qt6.wrapQtAppsHook
+            cmake
+            ninja
+
             # CLI utilities
             ripgrep
             fd
