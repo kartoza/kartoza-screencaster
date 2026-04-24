@@ -139,6 +139,49 @@ void RecordPage::setupUI() {
         m_canvas->setMode(id);
     });
 
+    // Layer list
+    auto *layerLabel = new QLabel("Layers");
+    layerLabel->setStyleSheet("QLabel { color: #89b4fa; font-size: 12px; font-weight: bold; padding-top: 6px; }");
+    layerLabel->setToolTip("Canvas elements in draw order.\nArrow keys to nudge. Delete to remove.");
+    leftLayout->addWidget(layerLabel);
+
+    m_layerList = new QListWidget;
+    m_layerList->setMaximumHeight(120);
+    m_layerList->setStyleSheet("QListWidget { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #45475a; }");
+    connect(m_layerList, &QListWidget::currentRowChanged, m_canvas, &Canvas::setSelectedItem);
+    leftLayout->addWidget(m_layerList);
+
+    auto *layerBtnRow = new QHBoxLayout;
+    layerBtnRow->setSpacing(4);
+
+    auto *upBtn = new QPushButton("Up");
+    upBtn->setFixedHeight(22);
+    upBtn->setStyleSheet("QPushButton { background: #45475a; color: #cdd6f4; border: none; border-radius: 3px; font-size: 10px; } QPushButton:hover { background: #585b70; }");
+    connect(upBtn, &QPushButton::clicked, this, [this]() {
+        int r = m_layerList->currentRow();
+        if (r > 0) { m_canvas->swapItems(r, r-1); refreshLayerList(); m_layerList->setCurrentRow(r-1); }
+    });
+    layerBtnRow->addWidget(upBtn);
+
+    auto *downBtn = new QPushButton("Down");
+    downBtn->setFixedHeight(22);
+    downBtn->setStyleSheet("QPushButton { background: #45475a; color: #cdd6f4; border: none; border-radius: 3px; font-size: 10px; } QPushButton:hover { background: #585b70; }");
+    connect(downBtn, &QPushButton::clicked, this, [this]() {
+        int r = m_layerList->currentRow();
+        if (r >= 0 && r < m_layerList->count()-1) { m_canvas->swapItems(r, r+1); refreshLayerList(); m_layerList->setCurrentRow(r+1); }
+    });
+    layerBtnRow->addWidget(downBtn);
+
+    auto *delBtn = new QPushButton("Del");
+    delBtn->setFixedHeight(22);
+    delBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 3px; font-size: 10px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }");
+    connect(delBtn, &QPushButton::clicked, this, [this]() {
+        int r = m_layerList->currentRow();
+        if (r >= 0) { m_canvas->removeItem(r); refreshLayerList(); }
+    });
+    layerBtnRow->addWidget(delBtn);
+    leftLayout->addLayout(layerBtnRow);
+
     leftLayout->addStretch();
     layout->addWidget(leftCol);
 
@@ -149,8 +192,19 @@ void RecordPage::setupUI() {
     centerLayout->setContentsMargins(0, 0, 0, 0);
 
     m_canvas = new Canvas(this);
-    m_canvas->setToolTip("WYSIWYG preview.\nAdd elements with + button.\nDrag to move, scroll to resize.");
+    m_canvas->setToolTip("WYSIWYG preview.\nAdd elements with + button.\nDrag to move, scroll to resize.\nArrow keys to nudge.");
     centerLayout->addWidget(m_canvas, 1);
+
+    // Sync canvas selection → layer list
+    connect(m_canvas, &Canvas::selectionChanged, this, [this](int index) {
+        if (index >= 0 && index < m_layerList->count())
+            m_layerList->setCurrentRow(index);
+        else
+            m_layerList->setCurrentRow(-1);
+    });
+
+    // Refresh layer list when items change
+    connect(m_canvas, &Canvas::itemsChanged, this, &RecordPage::refreshLayerList);
 
     // Add element + controls
     auto *addRow = new QHBoxLayout;
@@ -327,6 +381,13 @@ void RecordPage::onRecorderError(const QString &error) {
     m_startBtn->setEnabled(true);
     m_pauseBtn->hide();
     m_stopBtn->hide();
+}
+
+void RecordPage::refreshLayerList() {
+    m_layerList->clear();
+    for (int i = 0; i < m_canvas->itemCount(); i++) {
+        m_layerList->addItem(m_canvas->itemLabel(i));
+    }
 }
 
 void RecordPage::onPauseClicked() {
