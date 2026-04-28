@@ -72,3 +72,10 @@ build-dir/
 site/
 build/
 @DEFAULT_SOURCE@
+
+# C++ build artifacts
+kartoza-screencaster
+*.o
+*.moc
+moc_*.cpp
+*_autogen/
