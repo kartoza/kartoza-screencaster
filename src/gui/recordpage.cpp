@@ -6,6 +6,8 @@
 #include <QMenu>
 #include <QFileDialog>
 #include <QDateTime>
+#include <QFile>
+#include <QSet>
 
 RecordPage::RecordPage(QWidget *parent) : QWidget(parent) {
     m_recorder = new Recorder(this);
@@ -203,8 +205,14 @@ void RecordPage::setupUI() {
             m_layerList->setCurrentRow(-1);
     });
 
-    // Refresh layer list when items change
-    connect(m_canvas, &Canvas::itemsChanged, this, &RecordPage::refreshLayerList);
+    // Refresh layer list and auto-save when items change
+    connect(m_canvas, &Canvas::itemsChanged, this, [this]() {
+        refreshLayerList();
+        saveCanvasState();
+    });
+
+    // Restore saved canvas state
+    restoreCanvasState();
 
     // Add element + controls
     auto *addRow = new QHBoxLayout;
@@ -381,6 +389,93 @@ void RecordPage::onRecorderError(const QString &error) {
     m_startBtn->setEnabled(true);
     m_pauseBtn->hide();
     m_stopBtn->hide();
+}
+
+void RecordPage::saveCanvasState() {
+    auto &cfg = Config::instance();
+    cfg.canvasState.mode = m_canvas->modeString();
+    cfg.canvasState.audioEnabled = m_audioCheck->isChecked();
+    cfg.canvasState.presenter = m_presenterInput->text();
+    cfg.canvasState.titleColor = cfg.titleColor;
+
+    cfg.canvasState.items.clear();
+    for (const auto &e : m_canvas->exportItems()) {
+        CanvasItemState s;
+        switch (e.type) {
+        case 0: s.type = "screen"; break;
+        case 1: s.type = "webcam"; break;
+        case 2: s.type = "logo"; break;
+        case 3: s.type = "title"; break;
+        default: s.type = "unknown"; break;
+        }
+        s.label = e.label;
+        s.x = e.x; s.y = e.y; s.w = e.w; s.h = e.h;
+        s.device = e.device; s.filePath = e.filePath;
+        s.shape = e.shape; s.gifLoop = e.gifLoop; s.gifLoopMax = e.gifLoopMax;
+        cfg.canvasState.items.append(s);
+    }
+    cfg.save();
+}
+
+void RecordPage::restoreCanvasState() {
+    auto &cfg = Config::instance();
+    if (cfg.canvasState.items.isEmpty()) return;
+
+    // Restore mode
+    QString mode = cfg.canvasState.mode;
+    int modeId = 0;
+    if (mode == "vertical") modeId = 1;
+    else if (mode == "left_split") modeId = 2;
+    else if (mode == "right_split") modeId = 3;
+    m_canvas->setMode(modeId);
+    if (m_modeGroup->button(modeId))
+        m_modeGroup->button(modeId)->setChecked(true);
+
+    // Build sets of available devices
+    QSet<QString> availableWebcams;
+    for (const auto &dev : m_webcams) availableWebcams.insert(dev.device);
+    QSet<QString> availableMonitors;
+    for (const auto &mon : m_monitors) availableMonitors.insert(mon.name);
+
+    for (const auto &s : cfg.canvasState.items) {
+        if (s.type == "screen") {
+            // Find matching monitor
+            for (const auto &mon : m_monitors) {
+                QString desc = mon.description.isEmpty() ? mon.name : mon.description;
+                if (s.label == "Screen: " + desc || availableMonitors.contains(mon.name)) {
+                    addScreen(mon);
+                    break;
+                }
+            }
+        } else if (s.type == "webcam") {
+            if (!availableWebcams.contains(s.device)) continue; // disconnected
+            Canvas::ItemExport e;
+            e.type = 1; e.label = s.label;
+            e.x = s.x; e.y = s.y; e.w = s.w; e.h = s.h;
+            e.device = s.device; e.shape = s.shape;
+            m_canvas->importItem(e);
+        } else if (s.type == "logo") {
+            if (s.filePath.isEmpty() || !QFile::exists(s.filePath)) continue; // deleted
+            Canvas::ItemExport e;
+            e.type = 2; e.label = s.label;
+            e.x = s.x; e.y = s.y; e.w = s.w; e.h = s.h;
+            e.filePath = s.filePath;
+            e.gifLoop = s.gifLoop; e.gifLoopMax = s.gifLoopMax;
+            m_canvas->importItem(e);
+        } else if (s.type == "title") {
+            Canvas::ItemExport e;
+            e.type = 3; e.label = s.label;
+            e.x = s.x; e.y = s.y; e.w = s.w; e.h = s.h;
+            m_canvas->importItem(e);
+        }
+    }
+
+    // Restore audio and presenter
+    m_audioCheck->setChecked(cfg.canvasState.audioEnabled);
+    if (!cfg.canvasState.presenter.isEmpty())
+        m_presenterInput->setText(cfg.canvasState.presenter);
+
+    refreshLayerList();
 }
 
 void RecordPage::refreshLayerList() {

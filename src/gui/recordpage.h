@@ -68,6 +68,8 @@ private:
     // Layer list
     QListWidget *m_layerList;
     void refreshLayerList();
+    void saveCanvasState();
+    void restoreCanvasState();
 
     // Data
     Recorder *m_recorder;
