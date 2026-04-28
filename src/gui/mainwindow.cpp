@@ -78,13 +78,17 @@ void MainWindow::setupUI() {
         m_processingPage->startMonitoring(m_recordPage->recorder());
     });
     connect(m_processingPage, &ProcessingPage::processingDone, this, [this](bool success) {
+        m_historyPage->refresh();
         if (success) {
-            m_historyPage->refresh();
-            navigateTo(PageHistory);
             QMainWindow::statusBar()->showMessage("Processing complete");
         } else {
-            QMainWindow::statusBar()->showMessage("Processing failed");
+            QMainWindow::statusBar()->showMessage("Processing finished with errors");
         }
+        // Don't auto-navigate — user can click "Back to History" button
+    });
+    connect(m_processingPage, &ProcessingPage::backToHistory, this, [this]() {
+        m_historyPage->refresh();
+        navigateTo(PageHistory);
     });
 
     // Reprocess from history

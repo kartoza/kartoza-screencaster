@@ -1,6 +1,7 @@
 #include "gui/processingpage.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QProcess>
 
 static const QStringList stepNames = {
     "Analyzing audio",
@@ -12,13 +13,14 @@ static const QStringList stepNames = {
 ProcessingPage::ProcessingPage(QWidget *parent) : QWidget(parent) {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(30, 20, 30, 20);
-    layout->setSpacing(10);
+    layout->setSpacing(8);
 
     auto *title = new QLabel("Processing Recording...");
     title->setStyleSheet("QLabel { color: #cdd6f4; font-size: 18px; font-weight: bold; }");
     layout->addWidget(title);
 
     QString barStyle = "QProgressBar { background: #313244; border: none; border-radius: 4px; height: 18px; color: #cdd6f4; text-align: center; } QProgressBar::chunk { background: #89b4fa; border-radius: 4px; }";
+    QString failedBarStyle = "QProgressBar { background: #313244; border: none; border-radius: 4px; height: 18px; color: #cdd6f4; text-align: center; } QProgressBar::chunk { background: #f38ba8; border-radius: 4px; }";
 
     for (int i = 0; i < stepNames.size(); i++) {
         auto *row = new QHBoxLayout;
@@ -35,16 +37,54 @@ ProcessingPage::ProcessingPage(QWidget *parent) : QWidget(parent) {
 
         auto *status = new QLabel("Pending");
         status->setStyleSheet("QLabel { color: #6c7086; font-size: 11px; }");
-        status->setFixedWidth(60);
+        status->setFixedWidth(70);
         m_statusLabels.append(status);
         row->addWidget(status);
 
         layout->addLayout(row);
+
+        // Error detail label (hidden by default)
+        auto *errLabel = new QLabel;
+        errLabel->setStyleSheet("QLabel { color: #f38ba8; font-size: 11px; padding-left: 230px; }");
+        errLabel->setWordWrap(true);
+        errLabel->hide();
+        m_errorLabels.append(errLabel);
+        layout->addWidget(errLabel);
     }
 
     m_elapsedLabel = new QLabel("Elapsed: 00:00");
     m_elapsedLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 12px; padding-top: 10px; }");
     layout->addWidget(m_elapsedLabel);
+
+    // Summary (hidden until processing completes)
+    m_summaryLabel = new QLabel;
+    m_summaryLabel->setStyleSheet("QLabel { font-size: 14px; font-weight: bold; padding-top: 10px; }");
+    m_summaryLabel->hide();
+    layout->addWidget(m_summaryLabel);
+
+    auto *btnRow = new QHBoxLayout;
+    btnRow->setSpacing(8);
+
+    m_openFolderBtn = new QPushButton("Open Folder");
+    m_openFolderBtn->setStyleSheet("QPushButton { background: #89b4fa; color: #1e1e2e; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; } QPushButton:hover { background: #74c7ec; }");
+    m_openFolderBtn->hide();
+    connect(m_openFolderBtn, &QPushButton::clicked, this, [this]() {
+        if (m_recorder && !m_recorder->outputDir().isEmpty()) {
+            QProcess::startDetached("xdg-open", {m_recorder->outputDir()});
+        }
+    });
+    btnRow->addWidget(m_openFolderBtn);
+
+    m_backBtn = new QPushButton("Back to History");
+    m_backBtn->setStyleSheet("QPushButton { background: #a6e3a1; color: #1e1e2e; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; } QPushButton:hover { background: #94e2d5; }");
+    m_backBtn->hide();
+    connect(m_backBtn, &QPushButton::clicked, this, [this]() {
+        emit backToHistory();
+    });
+    btnRow->addWidget(m_backBtn);
+
+    btnRow->addStretch();
+    layout->addLayout(btnRow);
 
     layout->addStretch();
 
@@ -58,11 +98,25 @@ ProcessingPage::ProcessingPage(QWidget *parent) : QWidget(parent) {
 }
 
 void ProcessingPage::startMonitoring(Recorder *recorder) {
+    // Disconnect previous recorder if any
+    if (m_recorder) {
+        disconnect(m_recorder, nullptr, this, nullptr);
+    }
+    m_recorder = recorder;
+
+    // Reset UI
     for (auto *bar : m_bars) bar->setValue(0);
     for (auto *lbl : m_statusLabels) {
         lbl->setText("Pending");
         lbl->setStyleSheet("QLabel { color: #6c7086; font-size: 11px; }");
     }
+    for (auto *lbl : m_errorLabels) {
+        lbl->clear();
+        lbl->hide();
+    }
+    m_summaryLabel->hide();
+    m_backBtn->hide();
+    m_openFolderBtn->hide();
 
     m_elapsed.start();
     m_elapsedTimer->start(1000);
@@ -77,10 +131,10 @@ void ProcessingPage::startMonitoring(Recorder *recorder) {
     });
     connect(recorder, &Recorder::roomNoiseFinished, this, [this]() {
         m_elapsedLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 12px; padding-top: 10px; }");
-        m_elapsed.start(); // restart elapsed for processing phase
+        m_elapsed.start();
     });
 
-    // Processing signals
+    // Processing progress
     connect(recorder, &Recorder::processingProgress, this, [this](int step, int percent, const QString &) {
         if (step >= 0 && step < m_bars.size()) {
             m_bars[step]->setValue(percent);
@@ -88,6 +142,8 @@ void ProcessingPage::startMonitoring(Recorder *recorder) {
             m_statusLabels[step]->setStyleSheet("QLabel { color: #89b4fa; font-size: 11px; }");
         }
     });
+
+    // Step completed
     connect(recorder, &Recorder::processingStepDone, this, [this](int step, const QString &, bool skipped) {
         if (step >= 0 && step < m_bars.size()) {
             m_bars[step]->setValue(100);
@@ -100,8 +156,35 @@ void ProcessingPage::startMonitoring(Recorder *recorder) {
             }
         }
     });
+
+    // Step error
+    connect(recorder, &Recorder::processingStepError, this, [this](int step, const QString &, const QString &error) {
+        if (step >= 0 && step < m_bars.size()) {
+            m_bars[step]->setStyleSheet("QProgressBar { background: #313244; border: none; border-radius: 4px; height: 18px; color: #cdd6f4; text-align: center; } QProgressBar::chunk { background: #f38ba8; border-radius: 4px; }");
+            m_statusLabels[step]->setText("Failed");
+            m_statusLabels[step]->setStyleSheet("QLabel { color: #f38ba8; font-size: 11px; font-weight: bold; }");
+        }
+        if (step >= 0 && step < m_errorLabels.size() && !error.isEmpty()) {
+            m_errorLabels[step]->setText(error);
+            m_errorLabels[step]->show();
+        }
+    });
+
+    // Processing finished
     connect(recorder, &Recorder::processingFinished, this, [this](bool success) {
         m_elapsedTimer->stop();
+
+        if (success) {
+            m_summaryLabel->setText("Processing complete!");
+            m_summaryLabel->setStyleSheet("QLabel { color: #a6e3a1; font-size: 14px; font-weight: bold; padding-top: 10px; }");
+        } else {
+            m_summaryLabel->setText("Processing finished with errors");
+            m_summaryLabel->setStyleSheet("QLabel { color: #f38ba8; font-size: 14px; font-weight: bold; padding-top: 10px; }");
+        }
+        m_summaryLabel->show();
+        m_backBtn->show();
+        m_openFolderBtn->show();
+
         emit processingDone(success);
     });
 }
