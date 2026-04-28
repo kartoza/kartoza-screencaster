@@ -9,7 +9,6 @@
 #include <QTimer>
 #include <QRadioButton>
 #include <QButtonGroup>
-#include <QElapsedTimer>
 #include <QListWidget>
 #include "gui/canvas.h"
 #include "recorder/recorder.h"
@@ -62,7 +61,6 @@ private:
     QTimer *m_countdownTimer;
     QTimer *m_elapsedTimer;
     int m_countdownVal = 0;
-    QElapsedTimer m_elapsed;
     bool m_isRecording = false;
 
     // Layer list

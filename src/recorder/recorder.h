@@ -63,19 +63,30 @@ private:
     bool m_recording = false;
     bool m_paused = false;
     QElapsedTimer m_elapsed;
+    qint64 m_elapsedAccumulated = 0; // ms accumulated before current segment
 
     QProcess *m_screenProc = nullptr;
     QProcess *m_audioProc = nullptr;
     QProcess *m_webcamProc = nullptr;
 
     QString m_outputDir;
-    QString m_screenFile;
-    QString m_audioFile;
-    QString m_webcamFile;
+    QString m_screenFile;  // current part file
+    QString m_audioFile;   // current part file
+    QString m_webcamFile;  // current part file
+
+    // Part tracking
+    int m_currentPart = 0;
+    QStringList m_screenParts;
+    QStringList m_audioParts;
+    QStringList m_webcamParts;
 
     RecordingOptions m_opts;
     QDateTime m_startTime;
     QString m_mergedFile;
+
+    void stopAllProcesses();
+    void startRecordersForPart();
+    QString concatenateParts(const QStringList &parts, const QString &outputFile);
 
     void writeRecordingJson(const QString &status);
     void createVerticalVideo(const QString &audioFile, bool hasAudio);

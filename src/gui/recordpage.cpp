@@ -25,10 +25,10 @@ RecordPage::RecordPage(QWidget *parent) : QWidget(parent) {
     m_countdownTimer = new QTimer(this);
     connect(m_countdownTimer, &QTimer::timeout, this, &RecordPage::onCountdownTick);
 
-    // Elapsed timer
+    // Elapsed timer - uses recorder's elapsed which handles pause/resume
     m_elapsedTimer = new QTimer(this);
     connect(m_elapsedTimer, &QTimer::timeout, this, [this]() {
-        qint64 ms = m_elapsed.elapsed();
+        qint64 ms = m_recorder->elapsedMs();
         int h = ms / 3600000;
         int m = (ms / 60000) % 60;
         int s = (ms / 1000) % 60;
@@ -352,10 +352,10 @@ void RecordPage::onRecorderStarted() {
     m_statusLabel->setText("Recording");
     m_statusLabel->setStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }");
     m_startBtn->hide();
+    m_pauseBtn->setText("Pause");
     m_pauseBtn->show();
     m_stopBtn->show();
-    m_elapsed.start();
-    m_elapsedTimer->start(1000);
+    m_elapsedTimer->start(200); // update more frequently for smooth display
 
     emit recordingStarted(); // MainWindow hides
 }

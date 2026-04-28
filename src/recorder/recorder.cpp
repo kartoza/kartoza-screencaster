@@ -19,8 +19,9 @@ Recorder::~Recorder() {
 }
 
 qint64 Recorder::elapsedMs() const {
-    if (!m_recording) return 0;
-    return m_elapsed.elapsed();
+    if (!m_recording && !m_paused) return 0;
+    if (m_paused) return m_elapsedAccumulated;
+    return m_elapsedAccumulated + m_elapsed.elapsed();
 }
 
 void Recorder::start(const RecordingOptions &opts) {
@@ -31,6 +32,11 @@ void Recorder::start(const RecordingOptions &opts) {
 
     m_opts = opts;
     m_startTime = QDateTime::currentDateTime();
+    m_currentPart = 0;
+    m_elapsedAccumulated = 0;
+    m_screenParts.clear();
+    m_audioParts.clear();
+    m_webcamParts.clear();
 
     // Create output directory
     m_outputDir = opts.outputDir;
@@ -44,20 +50,8 @@ void Recorder::start(const RecordingOptions &opts) {
     }
     QDir().mkpath(m_outputDir);
 
-    m_screenFile = m_outputDir + "/screen_part000.mp4";
-    m_audioFile = m_outputDir + "/audio_part000.wav";
-    m_webcamFile = m_outputDir + "/webcam_part000.mp4";
-
-    // Start recorders
-    if (!opts.noScreen && !opts.monitor.isEmpty()) {
-        startScreenRecorder(opts);
-    }
-    if (!opts.noAudio) {
-        startAudioRecorder(opts);
-    }
-    if (!opts.noWebcam && !opts.webcamDevice.isEmpty()) {
-        startWebcamRecorder(opts);
-    }
+    // Set part filenames and start recorders
+    startRecordersForPart();
 
     m_recording = true;
     m_paused = false;
@@ -67,6 +61,36 @@ void Recorder::start(const RecordingOptions &opts) {
     writeRecordingJson("recording");
 
     emit recordingStarted();
+}
+
+void Recorder::startRecordersForPart() {
+    QString partSuffix = QString("_part%1").arg(m_currentPart, 3, 10, QChar('0'));
+
+    if (!m_opts.noScreen && !m_opts.monitor.isEmpty()) {
+        m_screenFile = m_outputDir + "/screen" + partSuffix + ".mp4";
+        m_screenParts.append(m_screenFile);
+        startScreenRecorder(m_opts);
+    }
+    if (!m_opts.noAudio) {
+        m_audioFile = m_outputDir + "/audio" + partSuffix + ".wav";
+        m_audioParts.append(m_audioFile);
+        startAudioRecorder(m_opts);
+    }
+    if (!m_opts.noWebcam && !m_opts.webcamDevice.isEmpty()) {
+        m_webcamFile = m_outputDir + "/webcam" + partSuffix + ".mp4";
+        m_webcamParts.append(m_webcamFile);
+        startWebcamRecorder(m_opts);
+    }
+}
+
+void Recorder::stopAllProcesses() {
+    stopProcess(m_screenProc);
+    stopProcess(m_audioProc);
+    stopProcess(m_webcamProc);
+
+    if (m_screenProc) { m_screenProc->deleteLater(); m_screenProc = nullptr; }
+    if (m_audioProc) { m_audioProc->deleteLater(); m_audioProc = nullptr; }
+    if (m_webcamProc) { m_webcamProc->deleteLater(); m_webcamProc = nullptr; }
 }
 
 void Recorder::writeRecordingJson(const QString &status) {
@@ -79,8 +103,8 @@ void Recorder::writeRecordingJson(const QString &status) {
 
     if (status == "completed" || status == "processing") {
         root["end_time"] = QDateTime::currentDateTime().toString(Qt::ISODate);
-        qint64 durationNs = m_elapsed.elapsed() * 1000000LL; // ms to ns
-        root["duration"] = durationNs;
+        qint64 totalMs = elapsedMs();
+        root["duration"] = totalMs * 1000000LL; // ms to ns
     }
 
     // Metadata
@@ -101,6 +125,18 @@ void Recorder::writeRecordingJson(const QString &status) {
     // Files
     QJsonObject files;
     files["folder_path"] = m_outputDir;
+    files["current_part"] = m_currentPart;
+
+    // Part lists
+    auto toJsonArray = [](const QStringList &list) {
+        QJsonArray arr;
+        for (const auto &s : list) arr.append(s);
+        return arr;
+    };
+    if (!m_screenParts.isEmpty()) files["video_parts"] = toJsonArray(m_screenParts);
+    if (!m_audioParts.isEmpty()) files["audio_parts"] = toJsonArray(m_audioParts);
+    if (!m_webcamParts.isEmpty()) files["webcam_parts"] = toJsonArray(m_webcamParts);
+
     if (QFile::exists(m_screenFile)) {
         files["video_file"] = m_screenFile;
         files["video_size"] = QFileInfo(m_screenFile).size();
@@ -224,22 +260,26 @@ void Recorder::stopProcess(QProcess *proc) {
 }
 
 void Recorder::stop() {
-    if (!m_recording) return;
+    if (!m_recording && !m_paused) return;
+
+    bool wasPaused = m_paused;
+
+    if (!wasPaused) {
+        // Accumulate final segment time
+        m_elapsedAccumulated += m_elapsed.elapsed();
+    }
 
     m_recording = false;
     m_paused = false;
 
-    qDebug() << "Stopping recorders...";
+    qDebug() << "Stopping recorders..." << (wasPaused ? "(from paused)" : "");
 
-    stopProcess(m_screenProc);
-    stopProcess(m_audioProc);
-    stopProcess(m_webcamProc);
+    if (!wasPaused) {
+        stopAllProcesses();
+    }
 
-    if (m_screenProc) { m_screenProc->deleteLater(); m_screenProc = nullptr; }
-    if (m_audioProc) { m_audioProc->deleteLater(); m_audioProc = nullptr; }
-    if (m_webcamProc) { m_webcamProc->deleteLater(); m_webcamProc = nullptr; }
-
-    qDebug() << "Recorders stopped, files at:" << m_outputDir;
+    qDebug() << "Recorders stopped, files at:" << m_outputDir
+             << "parts:" << m_currentPart + 1;
 
     // Update recording.json with processing status
     writeRecordingJson("processing");
@@ -247,8 +287,9 @@ void Recorder::stop() {
     emit recordingStopped();
 
     // Start processing in a worker thread
-    QThread *thread = QThread::create([this]() {
-        QThread::msleep(2000); // wait for files to flush
+    int waitMs = wasPaused ? 500 : 2000;
+    QThread *thread = QThread::create([this, waitMs]() {
+        QThread::msleep(waitMs);
         processRecordings();
     });
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
@@ -257,13 +298,36 @@ void Recorder::stop() {
 
 void Recorder::pause() {
     if (!m_recording || m_paused) return;
+
+    qDebug() << "Pausing recording, stopping processes for part" << m_currentPart;
+
+    // Accumulate elapsed time for this segment
+    m_elapsedAccumulated += m_elapsed.elapsed();
+
+    // Stop all recorder processes
+    stopAllProcesses();
+
     m_paused = true;
+    m_recording = false; // processes are stopped
+
+    writeRecordingJson("paused");
     emit recordingPaused();
 }
 
 void Recorder::resume() {
     if (!m_paused) return;
+
+    m_currentPart++;
+    qDebug() << "Resuming recording, starting part" << m_currentPart;
+
+    // Start new recorder processes with incremented part number
+    startRecordersForPart();
+
     m_paused = false;
+    m_recording = true;
+    m_elapsed.start(); // restart elapsed for this segment
+
+    writeRecordingJson("recording");
     emit recordingResumed();
 }
 
@@ -306,8 +370,68 @@ int Recorder::runFFmpegWithProgress(const QStringList &args, int step, const QSt
     return proc.exitCode();
 }
 
+QString Recorder::concatenateParts(const QStringList &parts, const QString &outputFile) {
+    if (parts.isEmpty()) return {};
+    if (parts.size() == 1) return parts.first(); // no concat needed
+
+    // Filter to only existing files
+    QStringList existing;
+    for (const auto &p : parts) {
+        if (QFile::exists(p)) existing.append(p);
+    }
+    if (existing.isEmpty()) return {};
+    if (existing.size() == 1) return existing.first();
+
+    // Write concat list file
+    QString listFile = m_outputDir + "/concat_list.txt";
+    QFile list(listFile);
+    if (!list.open(QIODevice::WriteOnly | QIODevice::Text)) return {};
+    for (const auto &p : existing) {
+        list.write(QString("file '%1'\n").arg(p).toUtf8());
+    }
+    list.close();
+
+    // Run ffmpeg concat
+    QProcess ffmpeg;
+    QStringList args;
+    args << "-y" << "-f" << "concat" << "-safe" << "0"
+         << "-i" << listFile << "-c" << "copy" << outputFile;
+
+    qDebug() << "Concatenating" << existing.size() << "parts to" << outputFile;
+    ffmpeg.start("ffmpeg", args);
+    ffmpeg.waitForFinished(-1);
+
+    QFile::remove(listFile);
+
+    if (ffmpeg.exitCode() == 0 && QFile::exists(outputFile)) {
+        return outputFile;
+    }
+    qWarning() << "Concat failed:" << ffmpeg.readAllStandardError().left(200);
+    return existing.first(); // fallback to first part
+}
+
 void Recorder::processRecordings() {
     emit processingStarted();
+
+    // Concatenate parts if we had pause/resume cycles
+    if (m_screenParts.size() > 1) {
+        QString concat = concatenateParts(m_screenParts, m_outputDir + "/screen_combined.mp4");
+        if (!concat.isEmpty()) m_screenFile = concat;
+    } else if (!m_screenParts.isEmpty()) {
+        m_screenFile = m_screenParts.first();
+    }
+    if (m_audioParts.size() > 1) {
+        QString concat = concatenateParts(m_audioParts, m_outputDir + "/audio_combined.wav");
+        if (!concat.isEmpty()) m_audioFile = concat;
+    } else if (!m_audioParts.isEmpty()) {
+        m_audioFile = m_audioParts.first();
+    }
+    if (m_webcamParts.size() > 1) {
+        QString concat = concatenateParts(m_webcamParts, m_outputDir + "/webcam_combined.mp4");
+        if (!concat.isEmpty()) m_webcamFile = concat;
+    } else if (!m_webcamParts.isEmpty()) {
+        m_webcamFile = m_webcamParts.first();
+    }
 
     bool hasScreen = QFile::exists(m_screenFile);
     bool hasAudio = QFile::exists(m_audioFile);
