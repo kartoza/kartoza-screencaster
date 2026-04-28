@@ -53,11 +53,14 @@ public:
     bool isPaused() const { return m_paused; }
     qint64 elapsedMs() const;
 
+    QString outputDir() const { return m_outputDir; }
+
 public slots:
     void start(const RecordingOptions &opts);
     void stop();
     void pause();
     void resume();
+    void reprocess(const QString &folder);
 
 signals:
     void recordingStarted();

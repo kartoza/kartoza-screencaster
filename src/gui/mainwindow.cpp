@@ -87,6 +87,15 @@ void MainWindow::setupUI() {
         }
     });
 
+    // Reprocess from history
+    connect(m_historyPage, &HistoryPage::reprocessRequested, this, [this](const QString &folder) {
+        auto *recorder = m_recordPage->recorder();
+        navigateTo(PageProcessing);
+        m_processingPage->startMonitoring(recorder);
+        recorder->reprocess(folder);
+        QMainWindow::statusBar()->showMessage("Reprocessing...");
+    });
+
     // Tray
     m_tray = new Tray(this, m_recordPage);
 

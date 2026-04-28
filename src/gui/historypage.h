@@ -33,6 +33,9 @@ public:
     explicit HistoryPage(QWidget *parent = nullptr);
     void refresh();
 
+signals:
+    void reprocessRequested(const QString &folder);
+
 private slots:
     void onRecordingSelected(int row);
     void onPlayClicked();

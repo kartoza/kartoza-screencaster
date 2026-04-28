@@ -383,6 +383,83 @@ void Recorder::resume() {
     emit recordingResumed();
 }
 
+void Recorder::reprocess(const QString &folder) {
+    if (m_recording) {
+        emit recordingError("Cannot reprocess while recording");
+        return;
+    }
+
+    m_outputDir = folder;
+
+    // Load recording.json to restore options
+    QFile file(folder + "/recording.json");
+    if (!file.open(QIODevice::ReadOnly)) {
+        emit recordingError("No recording.json in " + folder);
+        return;
+    }
+    QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    file.close();
+
+    auto meta = root["metadata"].toObject();
+    m_opts.title = meta["title"].toString();
+    m_opts.number = meta["number"].toInt(1);
+    m_opts.presenter = meta["presenter"].toString();
+    m_opts.description = meta["description"].toString();
+
+    auto settings = root["settings"].toObject();
+    m_opts.noScreen = !settings["screen_enabled"].toBool(true);
+    m_opts.noAudio = !settings["audio_enabled"].toBool(true);
+    m_opts.noWebcam = !settings["webcam_enabled"].toBool(true);
+    m_opts.titleColor = settings["title_color"].toString("#62A4C7");
+
+    if (settings.contains("left_logo")) {
+        m_opts.leftLogo.path = settings["left_logo"].toString();
+    }
+    if (settings.contains("right_logo")) {
+        m_opts.rightLogo.path = settings["right_logo"].toString();
+    }
+    if (settings.contains("banner_logo")) {
+        m_opts.bannerLogo.path = settings["banner_logo"].toString();
+        m_opts.bannerLogo.gifLoop = settings["banner_gif_loop"].toInt(2);
+        m_opts.bannerLogo.gifLoopMax = settings["banner_gif_loop_max"].toInt(3);
+    }
+
+    // Find source files in folder
+    QDir dir(folder);
+    m_screenParts.clear(); m_audioParts.clear(); m_webcamParts.clear();
+
+    for (const auto &f : dir.entryInfoList({"screen_part*.mp4"}, QDir::Files, QDir::Name))
+        m_screenParts.append(f.absoluteFilePath());
+    for (const auto &f : dir.entryInfoList({"audio_part*.wav"}, QDir::Files, QDir::Name))
+        m_audioParts.append(f.absoluteFilePath());
+    for (const auto &f : dir.entryInfoList({"webcam_part*.mp4"}, QDir::Files, QDir::Name))
+        m_webcamParts.append(f.absoluteFilePath());
+
+    // Also check for combined files
+    if (m_screenParts.isEmpty() && QFile::exists(folder + "/screen_combined.mp4"))
+        m_screenParts.append(folder + "/screen_combined.mp4");
+    if (m_audioParts.isEmpty() && QFile::exists(folder + "/audio_combined.wav"))
+        m_audioParts.append(folder + "/audio_combined.wav");
+    if (m_webcamParts.isEmpty() && QFile::exists(folder + "/webcam_combined.mp4"))
+        m_webcamParts.append(folder + "/webcam_combined.mp4");
+
+    m_screenFile = m_screenParts.isEmpty() ? QString() : m_screenParts.first();
+    m_audioFile = m_audioParts.isEmpty() ? QString() : m_audioParts.first();
+    m_webcamFile = m_webcamParts.isEmpty() ? QString() : m_webcamParts.first();
+    m_currentPart = 0;
+    m_mergedFile.clear();
+
+    // Update status
+    writeRecordingJson("processing");
+    emit recordingStopped(); // triggers UI navigation to processing page
+
+    QThread *thread = QThread::create([this]() {
+        processRecordings();
+    });
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
+    thread->start();
+}
+
 qint64 Recorder::getVideoDurationUs(const QString &filePath) {
     QProcess probe;
     probe.start("ffprobe", {"-v", "error", "-show_entries", "format=duration",

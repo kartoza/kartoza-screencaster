@@ -189,12 +189,34 @@ void HistoryPage::setupUI() {
         }
     });
 
+    auto *btnRow = new QHBoxLayout;
+
+    auto *reprocessBtn = new QPushButton("Reprocess");
+    reprocessBtn->setStyleSheet("QPushButton { background: #fab387; color: #1e1e2e; border: none; border-radius: 4px; padding: 5px 10px; font-weight: bold; } QPushButton:hover { background: #f9e2af; } QPushButton:disabled { background: #313244; color: #6c7086; }");
+    reprocessBtn->setEnabled(false);
+    reprocessBtn->setToolTip("Re-render merged and vertical video from source files.");
+    connect(reprocessBtn, &QPushButton::clicked, this, [this]() {
+        int row = m_list->currentRow();
+        if (row < 0 || row >= m_recordings.size()) return;
+        if (QMessageBox::question(this, "Reprocess Recording",
+                QString("Reprocess \"%1\"?\n\nThis will re-render the merged and vertical video.")
+                .arg(m_recordings[row].title)) == QMessageBox::Yes) {
+            if (m_playing) onStopPlayback();
+            emit reprocessRequested(m_recordings[row].folder);
+        }
+    });
+    connect(m_list, &QListWidget::currentRowChanged, reprocessBtn, [this, reprocessBtn](int row) {
+        reprocessBtn->setEnabled(row >= 0 && row < m_recordings.size());
+    });
+    btnRow->addWidget(reprocessBtn);
+
     m_deleteBtn = new QPushButton("Delete");
-    m_deleteBtn->setFixedWidth(80);
-    m_deleteBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 4px; padding: 5px; font-weight: bold; } QPushButton:hover { background: #eba0ac; } QPushButton:disabled { background: #313244; color: #6c7086; }");
+    m_deleteBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 4px; padding: 5px 10px; font-weight: bold; } QPushButton:hover { background: #eba0ac; } QPushButton:disabled { background: #313244; color: #6c7086; }");
     m_deleteBtn->setEnabled(false);
     connect(m_deleteBtn, &QPushButton::clicked, this, &HistoryPage::onDeleteClicked);
-    rightLayout->addWidget(m_deleteBtn);
+    btnRow->addWidget(m_deleteBtn);
+
+    rightLayout->addLayout(btnRow);
 
     rightLayout->addStretch();
     layout->addWidget(rightPanel);
