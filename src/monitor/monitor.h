@@ -16,10 +16,10 @@ struct MonitorInfo {
 class Monitor {
 public:
     static QList<MonitorInfo> listMonitors();
+    static QString stripAnsi(const QString &s);
 
 private:
     static QList<MonitorInfo> listMonitorsCosmic();
     static QList<MonitorInfo> listMonitorsHyprland();
     static QList<MonitorInfo> listMonitorsSway();
-    static QString stripAnsi(const QString &s);
 };
