@@ -71,3 +71,4 @@ build-dir/
 # MkDocs build output
 site/
 build/
+@DEFAULT_SOURCE@
