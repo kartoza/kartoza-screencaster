@@ -116,3 +116,19 @@ if(Qt6Test_FOUND)
     add_unit_test(test_monitor tests/test_monitor.cpp)
     add_unit_test(test_pipeline tests/test_pipeline.cpp)
 endif()
+
+# Doxygen documentation
+find_package(Doxygen QUIET)
+if(DOXYGEN_FOUND)
+    add_custom_target(docs
+        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_SOURCE_DIR}/Doxyfile
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Generating Doxygen API documentation"
+        VERBATIM
+    )
+    add_custom_target(docs-open
+        COMMAND xdg-open ${CMAKE_SOURCE_DIR}/docs/doxygen/html/index.html
+        DEPENDS docs
+        COMMENT "Opening Doxygen docs in browser"
+    )
+endif()
