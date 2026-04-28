@@ -44,6 +44,8 @@ public slots:
     void navigateTo(Page page);
 
 protected:
+    /** @brief Hide to systray instead of quitting. */
+    void closeEvent(QCloseEvent *event) override;
     /** @brief Suspend live previews when window is hidden. */
     void hideEvent(QHideEvent *event) override;
     /** @brief Resume live previews when window is shown. */

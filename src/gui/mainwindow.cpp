@@ -5,6 +5,7 @@
 #include <QTimer>
 #include <QCursor>
 #include <QFrame>
+#include <QCloseEvent>
 #include <QHideEvent>
 #include <QShowEvent>
 #include "gui/canvas.h"
@@ -205,6 +206,11 @@ QWidget *MainWindow::createFooter() {
     layout->addWidget(label);
 
     return footer;
+}
+
+void MainWindow::closeEvent(QCloseEvent *event) {
+    event->ignore();
+    hide();
 }
 
 void MainWindow::hideEvent(QHideEvent *event) {
