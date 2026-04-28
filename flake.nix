@@ -33,7 +33,8 @@
           inherit system;
           config.allowUnfree = true;  # Required for Claude Code
         };
-        version = "0.9.0";
+        # Version extracted from CMakeLists.txt (single source of truth)
+        version = builtins.head (builtins.match ".*project\\(kartoza-screencaster VERSION ([0-9.]+).*" (builtins.readFile ./CMakeLists.txt));
 
         # Initialize jail.nix for sandboxing AI agents
         jail = jail-nix.lib.init pkgs;

@@ -2,115 +2,66 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, feature/*]
   pull_request:
     branches: [main, develop]
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
+  build-and-test:
+    name: Build & Test (Linux)
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-          cache: true
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build ccache \
+            qt6-base-dev qt6-multimedia-dev \
+            libqt6svg6-dev qt6-wayland-dev \
+            libgl1-mesa-dev \
+            ffmpeg \
+            clang-format cppcheck
 
-      - name: Download dependencies
-        run: go mod download
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: cd build && ctest --output-on-failure
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.out
-          fail_ci_if_error: false
-          verbose: true
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-          cache: true
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          args: --timeout=5m
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    needs: [test, lint]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-          cache: true
-
-      - name: Build
-        run: go build -v ./...
-
-  build-multi-platform:
-    name: Build (${{ matrix.os }}-${{ matrix.arch }})
-    runs-on: ubuntu-latest
-    needs: [test, lint]
-    strategy:
-      matrix:
-        include:
-          - os: linux
-            arch: amd64
-          - os: linux
-            arch: arm64
-          - os: darwin
-            arch: amd64
-          - os: darwin
-            arch: arm64
-          - os: windows
-            arch: amd64
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-          cache: true
-
-      - name: Build
-        env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
-          CGO_ENABLED: 0
+      - name: Check formatting
         run: |
-          if [ "${{ matrix.os }}" = "windows" ]; then
-            go build -o kartoza-screencaster.exe .
-          else
-            go build -o kartoza-screencaster .
-          fi
+          find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror 2>&1 || true
+
+  build-release:
+    name: Build Release (Linux x86_64)
+    runs-on: ubuntu-24.04
+    needs: build-and-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build \
+            qt6-base-dev qt6-multimedia-dev \
+            libqt6svg6-dev qt6-wayland-dev \
+            libgl1-mesa-dev
+
+      - name: Build Release
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(nproc)
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kartoza-screencaster-${{ matrix.os }}-${{ matrix.arch }}
-          path: kartoza-screencaster*
+          name: kartoza-screencaster-linux-x86_64
+          path: build/kartoza-screencaster
