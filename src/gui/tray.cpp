@@ -38,10 +38,13 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
 
     m_menu->addSeparator();
     m_menu->addAction("Open Window", this, [this]() {
-        m_mainWindow->showNormal();
-        m_mainWindow->raise();
-        m_mainWindow->activateWindow();
-        m_mainWindow->setFocus();
+        // Deferred show works better on Wayland - the menu needs to close first
+        QTimer::singleShot(100, m_mainWindow, [this]() {
+            m_mainWindow->setWindowState(m_mainWindow->windowState() & ~Qt::WindowMinimized);
+            m_mainWindow->showNormal();
+            m_mainWindow->raise();
+            m_mainWindow->activateWindow();
+        });
     });
     m_menu->addSeparator();
     m_menu->addAction("Quit", this, [this]() {

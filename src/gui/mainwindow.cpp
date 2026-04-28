@@ -210,7 +210,7 @@ QWidget *MainWindow::createFooter() {
 
 void MainWindow::closeEvent(QCloseEvent *event) {
     event->ignore();
-    hide();
+    setVisible(false);
 }
 
 void MainWindow::hideEvent(QHideEvent *event) {
