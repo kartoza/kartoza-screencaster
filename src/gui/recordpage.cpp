@@ -102,6 +102,17 @@ void RecordPage::setupUI() {
     presRow->addWidget(m_presenterInput);
     leftLayout->addLayout(presRow);
 
+    // Description
+    auto *descLbl = new QLabel("Description:");
+    descLbl->setStyleSheet("QLabel { color: #89b4fa; font-size: 12px; font-weight: bold; padding-top: 4px; }");
+    leftLayout->addWidget(descLbl);
+    m_descInput = new QTextEdit;
+    m_descInput->setPlaceholderText("Optional description...");
+    m_descInput->setStyleSheet("QTextEdit { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 4px; font-size: 12px; }");
+    m_descInput->setMaximumHeight(60);
+    m_descInput->setToolTip("Optional description for the recording.");
+    leftLayout->addWidget(m_descInput);
+
     m_audioCheck = new QCheckBox("Record Audio");
     m_audioCheck->setChecked(true);
     m_audioCheck->setStyleSheet("QCheckBox { color: #cdd6f4; font-size: 12px; }");
@@ -332,6 +343,7 @@ void RecordPage::onCountdownTick() {
         opts.webcamDevice = m_canvas->firstWebcamDevice();
         opts.noWebcam = opts.webcamDevice.isEmpty();
         opts.title = m_titleInput->text();
+        opts.description = m_descInput->toPlainText();
         opts.number = m_numberInput->text().toInt();
         opts.presenter = m_presenterInput->text();
 

@@ -18,6 +18,7 @@ struct RecordingOptions {
     int webcamFPS = 60;
     QString audioDevice = "@DEFAULT_SOURCE@";
     QString title;
+    QString description;
     QString presenter;
     int number = 1;
 };
@@ -86,6 +87,7 @@ private:
 
     void stopAllProcesses();
     void startRecordersForPart();
+    void renameOutputFolder();
     QString concatenateParts(const QStringList &parts, const QString &outputFile);
 
     void writeRecordingJson(const QString &status);

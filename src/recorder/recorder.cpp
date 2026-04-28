@@ -112,7 +112,7 @@ void Recorder::writeRecordingJson(const QString &status) {
     meta["title"] = m_opts.title;
     meta["number"] = m_opts.number;
     meta["presenter"] = m_opts.presenter;
-    meta["description"] = "";
+    meta["description"] = m_opts.description;
     root["metadata"] = meta;
 
     // Environment
@@ -243,6 +243,47 @@ void Recorder::startWebcamRecorder(const RecordingOptions &opts) {
     }
 }
 
+void Recorder::renameOutputFolder() {
+    QString titleSlug = m_opts.title.toLower()
+        .replace(QRegularExpression("[^a-z0-9]+"), "_")
+        .replace(QRegularExpression("^_+|_+$"), ""); // trim leading/trailing underscores
+    if (titleSlug.isEmpty()) return; // keep timestamp name
+
+    QString parentDir = QFileInfo(m_outputDir).absolutePath();
+    QString newName = QString("%1-%2")
+        .arg(m_opts.number, 3, 10, QChar('0'))
+        .arg(titleSlug);
+    QString newDir = parentDir + "/" + newName;
+
+    if (newDir == m_outputDir) return; // already correct
+    if (QDir(newDir).exists()) return; // avoid collision
+
+    QString oldDir = m_outputDir;
+    if (!QDir().rename(oldDir, newDir)) {
+        qWarning() << "Failed to rename" << oldDir << "to" << newDir;
+        return;
+    }
+
+    qDebug() << "Renamed output folder:" << oldDir << "->" << newDir;
+
+    // Update all tracked paths
+    auto updatePath = [&oldDir, &newDir](QString &path) {
+        if (path.startsWith(oldDir)) {
+            path = newDir + path.mid(oldDir.length());
+        }
+    };
+
+    updatePath(m_outputDir);
+    updatePath(m_screenFile);
+    updatePath(m_audioFile);
+    updatePath(m_webcamFile);
+    updatePath(m_mergedFile);
+
+    for (auto &p : m_screenParts) updatePath(p);
+    for (auto &p : m_audioParts) updatePath(p);
+    for (auto &p : m_webcamParts) updatePath(p);
+}
+
 void Recorder::stopProcess(QProcess *proc) {
     if (!proc || proc->state() == QProcess::NotRunning) return;
 
@@ -280,6 +321,9 @@ void Recorder::stop() {
 
     qDebug() << "Recorders stopped, files at:" << m_outputDir
              << "parts:" << m_currentPart + 1;
+
+    // Rename folder from timestamp to NNN-title format
+    renameOutputFolder();
 
     // Update recording.json with processing status
     writeRecordingJson("processing");
