@@ -42,6 +42,10 @@ public slots:
      * @param page The page to display.
      */
     void navigateTo(Page page);
+    /** @brief Show the window from systray (works on Wayland). */
+    void showFromTray();
+    /** @brief Hide the window to systray (works on Wayland). */
+    void hideToTray();
 
 protected:
     /** @brief Hide to systray instead of quitting. */
@@ -50,6 +54,8 @@ protected:
     void hideEvent(QHideEvent *event) override;
     /** @brief Resume live previews when window is shown. */
     void showEvent(QShowEvent *event) override;
+    /** @brief Whether the window is conceptually hidden to systray. */
+    bool isHiddenToTray() const { return m_hiddenToTray; }
 
 private:
     /** @brief Build the complete UI layout. */
@@ -88,4 +94,9 @@ private:
 
     /** @brief Timer that polls for help-text updates. */
     QTimer *m_helpPoller;
+
+    /** @brief True when window is conceptually hidden to systray. */
+    bool m_hiddenToTray = false;
+    /** @brief Saved geometry before hiding to tray. */
+    QRect m_savedGeometry;
 };

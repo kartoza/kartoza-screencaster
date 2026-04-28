@@ -38,12 +38,8 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
 
     m_menu->addSeparator();
     m_menu->addAction("Open Window", this, [this]() {
-        // Deferred show works better on Wayland - the menu needs to close first
-        QTimer::singleShot(100, m_mainWindow, [this]() {
-            m_mainWindow->setWindowState(m_mainWindow->windowState() & ~Qt::WindowMinimized);
-            m_mainWindow->showNormal();
-            m_mainWindow->raise();
-            m_mainWindow->activateWindow();
+        QTimer::singleShot(50, m_mainWindow, [this]() {
+            m_mainWindow->showFromTray();
         });
     });
     m_menu->addSeparator();
@@ -76,9 +72,7 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
             // Blocked during room noise capture
             break;
         case Processing:
-            m_mainWindow->showNormal();
-            m_mainWindow->raise();
-            m_mainWindow->activateWindow();
+            m_mainWindow->showFromTray();
             break;
         }
     });

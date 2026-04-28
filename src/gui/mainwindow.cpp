@@ -72,12 +72,11 @@ void MainWindow::setupUI() {
 
     // Connect recorder signals — this is native Qt signals/slots, works across threads!
     connect(m_recordPage, &RecordPage::recordingStarted, this, [this]() {
-        hide();
+        hideToTray();
         QMainWindow::statusBar()->showMessage("Recording...");
     });
     connect(m_recordPage, &RecordPage::recordingStopped, this, [this]() {
-        showNormal();
-        raise();
+        showFromTray();
         navigateTo(PageProcessing);
         m_processingPage->startMonitoring(m_recordPage->recorder());
     });
@@ -208,27 +207,53 @@ QWidget *MainWindow::createFooter() {
     return footer;
 }
 
-void MainWindow::closeEvent(QCloseEvent *event) {
-    event->ignore();
-    setVisible(false);
-}
+void MainWindow::hideToTray() {
+    if (m_hiddenToTray) return;
+    m_hiddenToTray = true;
+    m_savedGeometry = geometry();
 
-void MainWindow::hideEvent(QHideEvent *event) {
-    // Suspend canvas previews when window is not visible
-    m_recordPage->recorder(); // ensure recorder exists
+    // Suspend canvas previews
     auto *canvas = m_recordPage->findChild<Canvas *>();
     if (canvas && !m_recordPage->recorder()->isRecording()) {
         canvas->suspendPreviews();
     }
-    QMainWindow::hideEvent(event);
+
+    // On Wayland, hiding destroys the surface and you can't get it back.
+    // Instead, minimize — compositor keeps the surface alive.
+    showMinimized();
 }
 
-void MainWindow::showEvent(QShowEvent *event) {
-    // Resume canvas previews when window becomes visible
+void MainWindow::showFromTray() {
+    m_hiddenToTray = false;
+
+    // Restore window state and geometry
+    setWindowState(windowState() & ~Qt::WindowMinimized);
+    showNormal();
+
+    if (m_savedGeometry.isValid()) {
+        setGeometry(m_savedGeometry);
+    }
+
+    raise();
+    activateWindow();
+
+    // Resume canvas previews
     auto *canvas = m_recordPage->findChild<Canvas *>();
     if (canvas && !m_recordPage->recorder()->isRecording()) {
         canvas->resumePreviews();
     }
+}
+
+void MainWindow::closeEvent(QCloseEvent *event) {
+    event->ignore();
+    hideToTray();
+}
+
+void MainWindow::hideEvent(QHideEvent *event) {
+    QMainWindow::hideEvent(event);
+}
+
+void MainWindow::showEvent(QShowEvent *event) {
     QMainWindow::showEvent(event);
 }
 
