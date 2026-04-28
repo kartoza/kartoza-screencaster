@@ -212,6 +212,15 @@ QString Canvas::firstWebcamDevice() const {
     return {};
 }
 
+QStringList Canvas::logoFilePaths() const {
+    QStringList paths;
+    for (const auto &item : m_items) {
+        if (item.type == 2 && item.visible && !item.filePath.isEmpty())
+            paths.append(item.filePath);
+    }
+    return paths;
+}
+
 QString Canvas::itemLabel(int index) const {
     if (index < 0 || index >= m_items.size()) return {};
     return m_items[index].label;

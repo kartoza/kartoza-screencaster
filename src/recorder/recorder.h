@@ -21,6 +21,12 @@ struct RecordingOptions {
     QString description;
     QString presenter;
     int number = 1;
+
+    // Logos: up to 3 paths (left, right, banner)
+    QString leftLogo;
+    QString rightLogo;
+    QString bannerLogo;
+    QString titleColor = "#62A4C7";
 };
 
 class Recorder : public QObject {

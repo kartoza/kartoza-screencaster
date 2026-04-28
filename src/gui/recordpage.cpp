@@ -346,6 +346,13 @@ void RecordPage::onCountdownTick() {
         opts.description = m_descInput->toPlainText();
         opts.number = m_numberInput->text().toInt();
         opts.presenter = m_presenterInput->text();
+        opts.titleColor = Config::instance().titleColor;
+
+        // Map canvas logos: first=left, second=right, third=banner
+        QStringList logos = m_canvas->logoFilePaths();
+        if (logos.size() > 0) opts.leftLogo = logos[0];
+        if (logos.size() > 1) opts.rightLogo = logos[1];
+        if (logos.size() > 2) opts.bannerLogo = logos[2];
 
         // Save presenter for next session
         auto &cfg = Config::instance();

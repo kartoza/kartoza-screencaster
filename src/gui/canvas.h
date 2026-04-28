@@ -29,6 +29,7 @@ public:
     QString selectedMonitor() const { return m_monitorName; }
     bool hasWebcams() const;
     QString firstWebcamDevice() const;
+    QStringList logoFilePaths() const;
     bool isVertical() const { return m_mode >= 1; }
     int itemCount() const { return m_items.size(); }
     QString itemLabel(int index) const;

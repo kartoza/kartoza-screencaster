@@ -169,6 +169,10 @@ void Recorder::writeRecordingJson(const QString &status) {
     settings["screen_enabled"] = !m_opts.noScreen;
     settings["audio_enabled"] = !m_opts.noAudio;
     settings["webcam_enabled"] = !m_opts.noWebcam;
+    if (!m_opts.leftLogo.isEmpty()) settings["left_logo"] = m_opts.leftLogo;
+    if (!m_opts.rightLogo.isEmpty()) settings["right_logo"] = m_opts.rightLogo;
+    if (!m_opts.bannerLogo.isEmpty()) settings["banner_logo"] = m_opts.bannerLogo;
+    settings["title_color"] = m_opts.titleColor;
     root["settings"] = settings;
 
     // Write
@@ -572,9 +576,54 @@ void Recorder::processRecordings() {
 
         qint64 durationUs = getVideoDurationUs(m_screenFile);
 
+        // Collect logo inputs
+        bool hasLeftLogo = !m_opts.leftLogo.isEmpty() && QFile::exists(m_opts.leftLogo);
+        bool hasRightLogo = !m_opts.rightLogo.isEmpty() && QFile::exists(m_opts.rightLogo);
+        bool hasBannerLogo = !m_opts.bannerLogo.isEmpty() && QFile::exists(m_opts.bannerLogo);
+        bool hasLogos = hasLeftLogo || hasRightLogo || hasBannerLogo;
+
         QStringList args;
         args << "-y" << "-i" << m_screenFile;
-        if (hasAudio) args << "-i" << audioToUse;
+        int nextInput = 1;
+        int audioInput = -1;
+        if (hasAudio) { audioInput = nextInput++; args << "-i" << audioToUse; }
+        int leftLogoInput = -1, rightLogoInput = -1, bannerLogoInput = -1;
+        if (hasLeftLogo) { leftLogoInput = nextInput++; args << "-i" << m_opts.leftLogo; }
+        if (hasRightLogo) { rightLogoInput = nextInput++; args << "-i" << m_opts.rightLogo; }
+        if (hasBannerLogo) { bannerLogoInput = nextInput++; args << "-i" << m_opts.bannerLogo; }
+
+        if (hasLogos) {
+            // Build filter_complex for logo overlays (visible first 15 seconds)
+            QString filter;
+            QString current = "[0:v]";
+            QString enable = "enable='between(t,0,15)'";
+
+            if (hasLeftLogo) {
+                // Scale to 1/8 width, overlay top-left
+                filter += QString("[%1:v]scale=iw*1/8:-1[ll];").arg(leftLogoInput);
+                filter += QString("%1[ll]overlay=10:10:%2[v1];").arg(current, enable);
+                current = "[v1]";
+            }
+            if (hasRightLogo) {
+                filter += QString("[%1:v]scale=iw*1/8:-1[rl];").arg(rightLogoInput);
+                filter += QString("%1[rl]overlay=W-w-10:10:%2[v2];").arg(current, enable);
+                current = "[v2]";
+            }
+            if (hasBannerLogo) {
+                filter += QString("[%1:v]scale=iw*1/2:-1[bl];").arg(bannerLogoInput);
+                filter += QString("%1[bl]overlay=10:H-h-10:%2[v3];").arg(current, enable);
+                current = "[v3]";
+            }
+            // Remove trailing semicolon from last filter and rename to [outv]
+            filter.chop(1); // remove ';' or tag
+            // Replace last tag with [outv]
+            int lastBracket = filter.lastIndexOf('[');
+            filter = filter.left(lastBracket) + "[outv]";
+
+            args << "-filter_complex" << filter << "-map" << "[outv]";
+            if (hasAudio) args << "-map" << QString("%1:a").arg(audioInput);
+        }
+
         args << "-c:v" << "libx264" << "-preset" << "medium" << "-crf" << "18" << "-r" << "30";
         if (hasAudio) {
             args << "-c:a" << "aac" << "-b:a" << "320k" << "-shortest";
@@ -617,61 +666,82 @@ void Recorder::createVerticalVideo(const QString &audioFile, bool hasAudio) {
         QString("%1-%2-vertical.mp4").arg(m_opts.number, 3, 10, QChar('0')).arg(titleSlug);
 
     bool hasWebcam = QFile::exists(m_webcamFile);
+    bool hasLeftLogo = !m_opts.leftLogo.isEmpty() && QFile::exists(m_opts.leftLogo);
+    bool hasRightLogo = !m_opts.rightLogo.isEmpty() && QFile::exists(m_opts.rightLogo);
+    bool hasBannerLogo = !m_opts.bannerLogo.isEmpty() && QFile::exists(m_opts.bannerLogo);
 
-    // Build filter_complex for 1080x1920 (9:16) vertical video
-    // Layout: screen at top, webcam below (if present), title at bottom
-    QString filter;
-    int inputIdx = 0;
-    int screenIdx = inputIdx++;
-    int webcamIdx = hasWebcam ? inputIdx++ : -1;
-    int audioIdx = hasAudio ? inputIdx++ : -1;
-    Q_UNUSED(audioIdx);
+    QString titleColor = m_opts.titleColor.isEmpty() ? "white" : m_opts.titleColor;
+    QString escapedTitle = m_opts.title;
+    escapedTitle.replace("'", "\\'");
+    escapedTitle.replace(":", "\\:");
 
-    // Scale screen to fit 1080 width, maintaining aspect ratio
-    filter += QString("[%1:v]scale=1080:-2,setsar=1[screen];").arg(screenIdx);
+    // Build input list and track indices
+    QStringList args;
+    args << "-y" << "-i" << m_screenFile;
+    int nextInput = 1;
+    int webcamInput = -1, audioInput = -1;
+    int leftLogoIn = -1, rightLogoIn = -1, bannerLogoIn = -1;
 
+    if (hasWebcam) { webcamInput = nextInput++; args << "-i" << m_webcamFile; }
+    if (hasAudio) { audioInput = nextInput++; args << "-i" << audioFile; }
+    if (hasLeftLogo) { leftLogoIn = nextInput++; args << "-i" << m_opts.leftLogo; }
+    if (hasRightLogo) { rightLogoIn = nextInput++; args << "-i" << m_opts.rightLogo; }
+    if (hasBannerLogo) { bannerLogoIn = nextInput++; args << "-i" << m_opts.bannerLogo; }
+
+    // Build filter_complex for 1080x1920 (9:16)
+    // Layout: screen at top, white lower third at y=1280, logos in lower third, title at bottom
+    QString f;
+
+    // Scale screen to 1080 width
+    f += "[0:v]scale=1080:-2,setsar=1[screen];";
+
+    // Create canvas with white lower third
+    f += "[screen]pad=1080:1920:(ow-iw)/2:0:black[padded];";
+    f += "[padded]drawbox=y=1280:w=1080:h=640:c=white:t=fill[canvas];";
+
+    QString current = "[canvas]";
+
+    // Webcam circle overlay (bottom-right of screen area)
     if (hasWebcam) {
-        // Scale webcam to 250x250 circle overlay
-        filter += QString("[%1:v]scale=250:250,setsar=1[wcam];").arg(webcamIdx);
-
-        // Stack screen on black 1080x1920 canvas
-        filter += "[screen]pad=1080:1920:(ow-iw)/2:0:black[canvas];";
-
-        // Create circular mask for webcam
-        filter += "color=black:250x250[cmask];";
-        filter += "[cmask]drawbox=x=0:y=0:w=250:h=250:c=white@1:t=fill[mask_bg];";
-        filter += "color=white:250x250[circle_fg];";
-        filter += "[circle_fg]geq=lum='if(lt(hypot(X-125,Y-125),125),255,0)':cb=128:cr=128[circle_mask];";
-        filter += "[mask_bg][circle_mask]overlay=0:0[alpha_mask];";
-
-        // Apply mask to webcam
-        filter += "[wcam][alpha_mask]alphamerge[wcam_circle];";
-
-        // Overlay webcam on canvas (bottom-right with margin)
-        filter += "[canvas][wcam_circle]overlay=W-w-20:H-w-200[comp];";
-
-        // Add title text
-        filter += QString("[comp]drawtext=text='%1':fontsize=36:fontcolor=white:"
-            "x=(w-text_w)/2:y=h-100:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf[outv]")
-            .arg(m_opts.title.replace("'", "\\'"));
-    } else {
-        // No webcam: just screen on canvas with title
-        filter += "[screen]pad=1080:1920:(ow-iw)/2:0:black[canvas];";
-        filter += QString("[canvas]drawtext=text='%1':fontsize=36:fontcolor=white:"
-            "x=(w-text_w)/2:y=h-100:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf[outv]")
-            .arg(m_opts.title.replace("'", "\\'"));
+        f += QString("[%1:v]scale=250:250,setsar=1[wcam];").arg(webcamInput);
+        f += "color=black:250x250,geq=lum='if(lt(hypot(X-125,Y-125),125),255,0)':cb=128:cr=128[cmask];";
+        f += "[wcam][cmask]alphamerge[wcam_c];";
+        f += QString("%1[wcam_c]overlay=W-w-20:1020[wc_out];").arg(current);
+        current = "[wc_out]";
     }
+
+    // Left logo in lower third (top-left of bottom area)
+    if (hasLeftLogo) {
+        f += QString("[%1:v]scale=360:-1[ll];").arg(leftLogoIn);
+        f += QString("%1[ll]overlay=10:1290[ll_out];").arg(current);
+        current = "[ll_out]";
+    }
+
+    // Right logo in lower third (top-right of bottom area)
+    if (hasRightLogo) {
+        f += QString("[%1:v]scale=360:-1[rl];").arg(rightLogoIn);
+        f += QString("%1[rl]overlay=W-w-10:1290[rl_out];").arg(current);
+        current = "[rl_out]";
+    }
+
+    // Banner logo (full width, centered above title)
+    if (hasBannerLogo) {
+        f += QString("[%1:v]scale=1080:-1[bl];").arg(bannerLogoIn);
+        f += QString("%1[bl]overlay=(W-w)/2:1650[bl_out];").arg(current);
+        current = "[bl_out]";
+    }
+
+    // Title text centered near bottom
+    f += QString("%1drawtext=text='%2':fontsize=36:fontcolor=%3:"
+        "x=(w-text_w)/2:y=1850[outv]")
+        .arg(current, escapedTitle, titleColor);
 
     qint64 durationUs = getVideoDurationUs(m_screenFile);
 
-    QStringList args;
-    args << "-y" << "-i" << m_screenFile;
-    if (hasWebcam) args << "-i" << m_webcamFile;
-    if (hasAudio) args << "-i" << audioFile;
-    args << "-filter_complex" << filter
+    args << "-filter_complex" << f
          << "-map" << "[outv]";
     if (hasAudio) {
-        args << "-map" << QString("%1:a").arg(hasWebcam ? 2 : 1);
+        args << "-map" << QString("%1:a").arg(audioInput);
         args << "-c:a" << "aac" << "-b:a" << "320k" << "-shortest";
     } else {
         args << "-an";
