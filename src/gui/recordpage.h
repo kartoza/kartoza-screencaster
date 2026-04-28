@@ -44,6 +44,9 @@ public:
      */
     Recorder *recorder() { return m_recorder; }
 
+    /** @brief Load a preset by name (used by systray). */
+    void loadPreset(const QString &name);
+
 protected:
     /** @brief Refresh layer list when page becomes visible. */
     void showEvent(QShowEvent *event) override;
@@ -53,6 +56,8 @@ signals:
     void recordingStarted();
     /** @brief Emitted when a recording session ends. */
     void recordingStopped();
+    /** @brief Emitted when the active preset changes. */
+    void presetChanged();
 
 public slots:
     /** @brief Handle the Start button click, initiating the countdown. */

@@ -31,6 +31,12 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
         }
     });
     m_menu->addSeparator();
+
+    // Preset submenu
+    m_presetMenu = m_menu->addMenu("Presets");
+    refreshPresetMenu();
+
+    m_menu->addSeparator();
     m_menu->addAction("Open Window", this, [this]() {
         m_mainWindow->show();
         m_mainWindow->raise();
@@ -99,6 +105,11 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     });
     connect(m_recordPage->recorder(), &Recorder::processingFinished, this, [this](bool) {
         setState(Idle);
+    });
+
+    // Sync preset menu when canvas preset changes
+    connect(m_recordPage, &RecordPage::presetChanged, this, [this]() {
+        refreshPresetMenu();
     });
 
     setState(Idle);
@@ -176,11 +187,26 @@ void Tray::onCountdownTick() {
     m_countdownVal--;
     if (m_countdownVal <= 0) {
         m_countdownTimer->stop();
-        // Skip the record page's own countdown — start recording directly
-        // First ensure the record page has a title set
-        m_recordPage->onStartClicked(); // this sets default title if empty, then starts its own countdown
-        // The record page guard (isRecording || countdownActive) prevents double-start
+        m_recordPage->onStartClicked();
     } else {
         m_trayIcon->setToolTip(QString("Starting in %1...").arg(m_countdownVal));
+    }
+}
+
+void Tray::refreshPresetMenu() {
+    m_presetMenu->clear();
+    auto &cfg = Config::instance();
+
+    if (cfg.presets.isEmpty()) {
+        m_presetMenu->addAction("(no presets)")->setEnabled(false);
+        return;
+    }
+
+    for (const auto &name : cfg.presets.keys()) {
+        bool isActive = (name == cfg.activePreset);
+        QString display = isActive ? QString::fromUtf8("\u2713 ") + name : "   " + name;
+        m_presetMenu->addAction(display, this, [this, name]() {
+            m_recordPage->loadPreset(name);
+        });
     }
 }

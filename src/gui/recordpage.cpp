@@ -251,6 +251,7 @@ void RecordPage::setupUI() {
         m_restoring = false;
         refreshPresetList();
         m_presetNameRow->hide();
+        emit presetChanged();
     });
 
     // New: show name input and clear canvas
@@ -273,6 +274,7 @@ void RecordPage::setupUI() {
         m_presetNameRow->hide();
         refreshPresetList();
         refreshLayerList();
+        emit presetChanged();
     };
     connect(createBtn, &QPushButton::clicked, this, doCreate);
     connect(m_presetNameInput, &QLineEdit::returnPressed, this, doCreate);
@@ -287,6 +289,7 @@ void RecordPage::setupUI() {
         cfg.activePreset.clear();
         cfg.save();
         refreshPresetList();
+        emit presetChanged();
     });
 
     leftLayout->addStretch();
@@ -408,6 +411,19 @@ void RecordPage::setupUI() {
 
 void RecordPage::addScreen(const MonitorInfo &mon) {
     m_canvas->setMonitor(mon);
+}
+
+void RecordPage::loadPreset(const QString &name) {
+    auto &cfg = Config::instance();
+    if (!cfg.presets.contains(name)) return;
+    cfg.activePreset = name;
+    cfg.canvasState = cfg.presets[name];
+    cfg.save();
+    m_restoring = true;
+    applyState(cfg.canvasState);
+    m_restoring = false;
+    refreshPresetList();
+    emit presetChanged();
 }
 
 void RecordPage::showEvent(QShowEvent *event) {

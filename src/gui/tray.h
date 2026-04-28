@@ -64,4 +64,9 @@ private:
     QTimer *m_countdownTimer = nullptr;
     /** @brief Current countdown value in seconds. */
     int m_countdownVal = 0;
+
+    /** @brief Rebuild the preset submenu from config. */
+    void refreshPresetMenu();
+    /** @brief Submenu listing available presets. */
+    QMenu *m_presetMenu = nullptr;
 };
