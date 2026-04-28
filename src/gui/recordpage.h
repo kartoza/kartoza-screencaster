@@ -13,7 +13,6 @@
 #include <QLabel>
 #include <QTimer>
 #include <QRadioButton>
-#include <QComboBox>
 #include <QButtonGroup>
 #include <QListWidget>
 #include "gui/canvas.h"
@@ -141,8 +140,12 @@ private:
     /** @brief Apply a CanvasState to the canvas (clear + reimport). */
     void applyState(const CanvasState &state);
 
-    /** @brief Preset selector combobox. */
-    QComboBox *m_presetCombo;
+    /** @brief Preset list widget showing saved presets. */
+    QListWidget *m_presetList;
+    /** @brief Name input for creating new presets (hidden when not creating). */
+    QLineEdit *m_presetNameInput;
+    /** @brief Row widget holding the preset name input (for show/hide). */
+    QWidget *m_presetNameRow;
 
     // -- Data --
     /** @brief Recorder instance managing the capture pipeline. */

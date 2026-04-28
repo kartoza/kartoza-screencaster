@@ -9,7 +9,6 @@
 #include <QFile>
 #include <QSet>
 #include <QShowEvent>
-#include <QInputDialog>
 #include <QMessageBox>
 
 RecordPage::RecordPage(QWidget *parent) : QWidget(parent) {
@@ -201,88 +200,91 @@ void RecordPage::setupUI() {
     // Preset management
     auto *presetLabel = new QLabel("Presets");
     presetLabel->setStyleSheet("QLabel { color: #89b4fa; font-size: 12px; font-weight: bold; padding-top: 6px; }");
-    presetLabel->setToolTip("Save and load canvas layout presets.");
     leftLayout->addWidget(presetLabel);
 
-    m_presetCombo = new QComboBox;
-    m_presetCombo->setEditable(true);
-    m_presetCombo->setStyleSheet("QComboBox { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 4px; font-size: 12px; } QComboBox::drop-down { border: none; } QComboBox QAbstractItemView { background: #313244; color: #cdd6f4; selection-background-color: #45475a; } QComboBox QLineEdit { background: #313244; color: #cdd6f4; border: none; }");
-    m_presetCombo->setToolTip("Type a name or select an existing preset.");
-    m_presetCombo->lineEdit()->setPlaceholderText("Preset name...");
-    leftLayout->addWidget(m_presetCombo);
+    m_presetList = new QListWidget;
+    m_presetList->setMaximumHeight(80);
+    m_presetList->setStyleSheet("QListWidget { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #45475a; }");
+    leftLayout->addWidget(m_presetList);
+
+    // Name input row (hidden until "New" is clicked)
+    m_presetNameRow = new QWidget;
+    auto *nameRowLayout = new QHBoxLayout(m_presetNameRow);
+    nameRowLayout->setContentsMargins(0, 0, 0, 0);
+    nameRowLayout->setSpacing(4);
+    m_presetNameInput = new QLineEdit;
+    m_presetNameInput->setPlaceholderText("New preset name...");
+    m_presetNameInput->setStyleSheet(inputStyle);
+    nameRowLayout->addWidget(m_presetNameInput);
+    auto *createBtn = new QPushButton("Create");
+    createBtn->setFixedHeight(24);
+    createBtn->setStyleSheet("QPushButton { background: #a6e3a1; color: #1e1e2e; border: none; border-radius: 3px; font-size: 10px; font-weight: bold; } QPushButton:hover { background: #94e2d5; }");
+    nameRowLayout->addWidget(createBtn);
+    m_presetNameRow->hide();
+    leftLayout->addWidget(m_presetNameRow);
 
     auto *presetBtnRow = new QHBoxLayout;
     presetBtnRow->setSpacing(4);
-
-    auto *loadPresetBtn = new QPushButton("Load");
-    loadPresetBtn->setFixedHeight(22);
-    loadPresetBtn->setStyleSheet("QPushButton { background: #89b4fa; color: #1e1e2e; border: none; border-radius: 3px; font-size: 10px; font-weight: bold; } QPushButton:hover { background: #74c7ec; }");
-    loadPresetBtn->setToolTip("Load the selected preset.");
-    presetBtnRow->addWidget(loadPresetBtn);
-
-    auto *savePresetBtn = new QPushButton("Save");
-    savePresetBtn->setFixedHeight(22);
-    savePresetBtn->setStyleSheet("QPushButton { background: #a6e3a1; color: #1e1e2e; border: none; border-radius: 3px; font-size: 10px; font-weight: bold; } QPushButton:hover { background: #94e2d5; }");
-    savePresetBtn->setToolTip("Save current canvas as this preset.");
-    presetBtnRow->addWidget(savePresetBtn);
-
     auto *newPresetBtn = new QPushButton("New");
     newPresetBtn->setFixedHeight(22);
     newPresetBtn->setStyleSheet("QPushButton { background: #45475a; color: #cdd6f4; border: none; border-radius: 3px; font-size: 10px; } QPushButton:hover { background: #585b70; }");
-    newPresetBtn->setToolTip("Clear canvas for a new preset.");
     presetBtnRow->addWidget(newPresetBtn);
-
-    auto *delPresetBtn = new QPushButton("Del");
+    auto *delPresetBtn = new QPushButton("Delete");
     delPresetBtn->setFixedHeight(22);
     delPresetBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 3px; font-size: 10px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }");
-    delPresetBtn->setToolTip("Delete the selected preset.");
     presetBtnRow->addWidget(delPresetBtn);
     leftLayout->addLayout(presetBtnRow);
 
-    // Preset: load
-    connect(loadPresetBtn, &QPushButton::clicked, this, [this]() {
+    // Click preset in list -> load it
+    connect(m_presetList, &QListWidget::currentRowChanged, this, [this](int row) {
+        if (m_restoring || row < 0) return;
         auto &cfg = Config::instance();
-        QString name = m_presetCombo->currentText().trimmed();
-        if (name.isEmpty() || !cfg.presets.contains(name)) return;
-        cfg.activePreset = name;
-        cfg.canvasState = cfg.presets[name];
+        // Strip the active marker to get the name
+        QString text = m_presetList->item(row)->text();
+        if (text.startsWith("* ")) text = text.mid(2);
+        if (!cfg.presets.contains(text)) return;
+        cfg.activePreset = text;
+        cfg.canvasState = cfg.presets[text];
         cfg.save();
         m_restoring = true;
         applyState(cfg.canvasState);
         m_restoring = false;
+        refreshPresetList();
+        m_presetNameRow->hide();
     });
 
-    // Preset: save (uses typed/selected name)
-    connect(savePresetBtn, &QPushButton::clicked, this, [this]() {
-        auto &cfg = Config::instance();
-        QString name = m_presetCombo->currentText().trimmed();
+    // New: show name input and clear canvas
+    connect(newPresetBtn, &QPushButton::clicked, this, [this]() {
+        m_presetNameRow->show();
+        m_presetNameInput->clear();
+        m_presetNameInput->setFocus();
+    });
+
+    // Create: save new preset with typed name
+    auto doCreate = [this]() {
+        QString name = m_presetNameInput->text().trimmed();
         if (name.isEmpty()) return;
-        cfg.presets[name] = captureCurrentState();
+        auto &cfg = Config::instance();
+        m_canvas->clearAll();
+        cfg.canvasState = CanvasState();
+        cfg.presets[name] = cfg.canvasState;
         cfg.activePreset = name;
         cfg.save();
+        m_presetNameRow->hide();
         refreshPresetList();
-    });
-
-    // Preset: new (clear canvas)
-    connect(newPresetBtn, &QPushButton::clicked, this, [this]() {
-        m_canvas->clearAll();
-        m_presetCombo->setCurrentText("");
-        auto &cfg = Config::instance();
-        cfg.activePreset.clear();
-        cfg.canvasState = CanvasState();
-        cfg.save();
         refreshLayerList();
-    });
+    };
+    connect(createBtn, &QPushButton::clicked, this, doCreate);
+    connect(m_presetNameInput, &QLineEdit::returnPressed, this, doCreate);
 
-    // Preset: delete
+    // Delete selected preset
     connect(delPresetBtn, &QPushButton::clicked, this, [this]() {
         auto &cfg = Config::instance();
-        QString name = m_presetCombo->currentText().trimmed();
-        if (name.isEmpty() || !cfg.presets.contains(name)) return;
+        if (cfg.activePreset.isEmpty()) return;
         if (QMessageBox::question(this, "Delete Preset",
-                QString("Delete preset \"%1\"?").arg(name)) != QMessageBox::Yes) return;
-        cfg.presets.remove(name);
-        if (cfg.activePreset == name) cfg.activePreset.clear();
+                QString("Delete preset \"%1\"?").arg(cfg.activePreset)) != QMessageBox::Yes) return;
+        cfg.presets.remove(cfg.activePreset);
+        cfg.activePreset.clear();
         cfg.save();
         refreshPresetList();
     });
@@ -550,6 +552,10 @@ void RecordPage::onRecorderError(const QString &error) {
 void RecordPage::saveCanvasState() {
     auto &cfg = Config::instance();
     cfg.canvasState = captureCurrentState();
+    // Auto-save to active preset
+    if (!cfg.activePreset.isEmpty()) {
+        cfg.presets[cfg.activePreset] = cfg.canvasState;
+    }
     cfg.save();
 }
 
@@ -639,16 +645,17 @@ void RecordPage::restoreCanvasState() {
 void RecordPage::refreshPresetList() {
     auto &cfg = Config::instance();
     m_restoring = true;
-    m_presetCombo->clear();
-    m_presetCombo->addItem("(new)");
+    m_presetList->clear();
+    int activeRow = -1;
+    int row = 0;
     for (const auto &name : cfg.presets.keys()) {
-        m_presetCombo->addItem(name);
+        bool isActive = (name == cfg.activePreset);
+        QString display = isActive ? ("* " + name) : name;
+        m_presetList->addItem(display);
+        if (isActive) activeRow = row;
+        row++;
     }
-    // Select the active preset
-    if (!cfg.activePreset.isEmpty()) {
-        int idx = m_presetCombo->findText(cfg.activePreset);
-        if (idx >= 0) m_presetCombo->setCurrentIndex(idx);
-    }
+    if (activeRow >= 0) m_presetList->setCurrentRow(activeRow);
     m_restoring = false;
 }
 
