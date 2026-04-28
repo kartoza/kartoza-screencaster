@@ -67,7 +67,20 @@ void ProcessingPage::startMonitoring(Recorder *recorder) {
     m_elapsed.start();
     m_elapsedTimer->start(1000);
 
-    // Native Qt signals/slots — JUST WORKS across threads!
+    // Room noise capture status
+    connect(recorder, &Recorder::roomNoiseStarted, this, [this]() {
+        m_elapsedLabel->setText("Capturing room noise - Please keep quiet!");
+        m_elapsedLabel->setStyleSheet("QLabel { color: #fab387; font-size: 12px; font-weight: bold; padding-top: 10px; }");
+    });
+    connect(recorder, &Recorder::roomNoiseProgress, this, [this](int secs) {
+        m_elapsedLabel->setText(QString("Room noise capture: %1s remaining").arg(secs));
+    });
+    connect(recorder, &Recorder::roomNoiseFinished, this, [this]() {
+        m_elapsedLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 12px; padding-top: 10px; }");
+        m_elapsed.start(); // restart elapsed for processing phase
+    });
+
+    // Processing signals
     connect(recorder, &Recorder::processingProgress, this, [this](int step, int percent, const QString &) {
         if (step >= 0 && step < m_bars.size()) {
             m_bars[step]->setValue(percent);

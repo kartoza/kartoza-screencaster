@@ -63,6 +63,9 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
         case Paused:
             m_recordPage->onPauseClicked();
             break;
+        case RoomNoise:
+            // Blocked during room noise capture
+            break;
         case Processing:
             // Show window during processing
             m_mainWindow->show();
@@ -86,6 +89,15 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     });
     connect(m_recordPage->recorder(), &Recorder::recordingResumed, this, [this]() {
         setState(Recording);
+    });
+    connect(m_recordPage->recorder(), &Recorder::roomNoiseStarted, this, [this]() {
+        setState(RoomNoise);
+    });
+    connect(m_recordPage->recorder(), &Recorder::roomNoiseProgress, this, [this](int secs) {
+        m_trayIcon->setToolTip(QString("Recording room noise - %1s remaining\nPlease keep quiet!").arg(secs));
+    });
+    connect(m_recordPage->recorder(), &Recorder::roomNoiseFinished, this, [this]() {
+        setState(Processing);
     });
     connect(m_recordPage->recorder(), &Recorder::processingFinished, this, [this](bool) {
         setState(Idle);
@@ -132,6 +144,13 @@ void Tray::setState(State s) {
         m_pauseAction->setEnabled(true);
         m_pauseAction->setText("Resume");
         m_stopAction->setEnabled(true);
+        break;
+    case RoomNoise:
+        iconPath = "resources/icon_recording.png";
+        tooltip = "Recording room noise - Please keep quiet!";
+        m_startAction->setEnabled(false);
+        m_pauseAction->setEnabled(false);
+        m_stopAction->setEnabled(false);
         break;
     case Processing:
         iconPath = "resources/icon_ready.png";

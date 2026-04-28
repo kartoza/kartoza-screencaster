@@ -12,7 +12,7 @@ public:
     Tray(MainWindow *mainWindow, RecordPage *recordPage);
 
 private:
-    enum State { Idle, Countdown, Recording, Paused, Processing };
+    enum State { Idle, Countdown, Recording, Paused, RoomNoise, Processing };
 
     void setState(State s);
     void startCountdown();

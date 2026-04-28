@@ -292,6 +292,42 @@ void Recorder::renameOutputFolder() {
     for (auto &p : m_webcamParts) updatePath(p);
 }
 
+void Recorder::captureRoomNoise() {
+    static const int DURATION_SECS = 30;
+    QString roomNoiseFile = m_outputDir + "/room_noise.wav";
+
+    qDebug() << "Capturing room noise for" << DURATION_SECS << "seconds...";
+    emit roomNoiseStarted();
+
+    QString device = m_opts.audioDevice;
+    if (device.isEmpty()) device = "@DEFAULT_SOURCE@";
+
+    QProcess proc;
+    QStringList args;
+    args << "-f" << "pulse" << "-i" << device
+         << "-ac" << "2" << "-t" << QString::number(DURATION_SECS)
+         << "-y" << roomNoiseFile;
+
+    proc.start("ffmpeg", args);
+    if (!proc.waitForStarted(5000)) {
+        qWarning() << "Failed to start room noise capture";
+        emit roomNoiseFinished();
+        return;
+    }
+
+    // Emit countdown progress
+    for (int i = DURATION_SECS; i > 0; i--) {
+        emit roomNoiseProgress(i);
+        QThread::msleep(1000);
+    }
+
+    proc.waitForFinished(5000);
+
+    qDebug() << "Room noise captured:" << roomNoiseFile
+             << "exists:" << QFile::exists(roomNoiseFile);
+    emit roomNoiseFinished();
+}
+
 void Recorder::stopProcess(QProcess *proc) {
     if (!proc || proc->state() == QProcess::NotRunning) return;
 
@@ -333,15 +369,22 @@ void Recorder::stop() {
     // Rename folder from timestamp to NNN-title format
     renameOutputFolder();
 
-    // Update recording.json with processing status
+    // Update recording.json
     writeRecordingJson("processing");
 
     emit recordingStopped();
 
-    // Start processing in a worker thread
+    // Start room noise capture + processing in a worker thread
+    bool hasAudioEnabled = !m_opts.noAudio;
     int waitMs = wasPaused ? 500 : 2000;
-    QThread *thread = QThread::create([this, waitMs]() {
+    QThread *thread = QThread::create([this, waitMs, hasAudioEnabled]() {
         QThread::msleep(waitMs);
+
+        // Room noise capture (only if audio was recorded)
+        if (hasAudioEnabled) {
+            captureRoomNoise();
+        }
+
         processRecordings();
     });
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);

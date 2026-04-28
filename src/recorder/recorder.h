@@ -68,6 +68,9 @@ signals:
     void recordingPaused();
     void recordingResumed();
     void recordingError(const QString &error);
+    void roomNoiseStarted();
+    void roomNoiseProgress(int secondsRemaining);
+    void roomNoiseFinished();
 
     // Processing signals
     void processingStarted();
@@ -108,6 +111,7 @@ private:
     QString m_mergedFile;
 
     void stopAllProcesses();
+    void captureRoomNoise();
     void startRecordersForPart();
     void renameOutputFolder();
     QString concatenateParts(const QStringList &parts, const QString &outputFile);
