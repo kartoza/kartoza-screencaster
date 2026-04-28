@@ -13,9 +13,11 @@
 #include <QLabel>
 #include <QTimer>
 #include <QRadioButton>
+#include <QComboBox>
 #include <QButtonGroup>
 #include <QListWidget>
 #include "gui/canvas.h"
+#include "config/config.h"
 #include "recorder/recorder.h"
 #include "monitor/monitor.h"
 #include "webcam/webcam.h"
@@ -132,6 +134,15 @@ private:
     void saveCanvasState();
     /** @brief Restore canvas item layout from persisted settings. */
     void restoreCanvasState();
+    /** @brief Populate the preset combobox from config. */
+    void refreshPresetList();
+    /** @brief Capture current canvas state into a CanvasState struct. */
+    CanvasState captureCurrentState();
+    /** @brief Apply a CanvasState to the canvas (clear + reimport). */
+    void applyState(const CanvasState &state);
+
+    /** @brief Preset selector combobox. */
+    QComboBox *m_presetCombo;
 
     // -- Data --
     /** @brief Recorder instance managing the capture pipeline. */

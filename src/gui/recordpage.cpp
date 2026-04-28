@@ -9,6 +9,8 @@
 #include <QFile>
 #include <QSet>
 #include <QShowEvent>
+#include <QInputDialog>
+#include <QMessageBox>
 
 RecordPage::RecordPage(QWidget *parent) : QWidget(parent) {
     m_recorder = new Recorder(this);
@@ -56,6 +58,84 @@ void RecordPage::setupUI() {
     leftCol->setFixedWidth(220);
     auto *leftLayout = new QVBoxLayout(leftCol);
     leftLayout->setSpacing(6);
+
+    // Preset selector
+    auto *presetLabel = new QLabel("Preset");
+    presetLabel->setStyleSheet("QLabel { color: #89b4fa; font-size: 12px; font-weight: bold; }");
+    leftLayout->addWidget(presetLabel);
+
+    auto *presetRow = new QHBoxLayout;
+    m_presetCombo = new QComboBox;
+    m_presetCombo->setStyleSheet("QComboBox { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 4px; font-size: 12px; } QComboBox::drop-down { border: none; } QComboBox QAbstractItemView { background: #313244; color: #cdd6f4; selection-background-color: #45475a; }");
+    m_presetCombo->setToolTip("Select a saved canvas preset.");
+    presetRow->addWidget(m_presetCombo, 1);
+
+    auto btnStyle = QString("QPushButton { background: #45475a; color: #cdd6f4; border: none; border-radius: 3px; padding: 4px 8px; font-size: 11px; } QPushButton:hover { background: #585b70; }");
+
+    auto *savePresetBtn = new QPushButton("Save");
+    savePresetBtn->setStyleSheet(btnStyle);
+    savePresetBtn->setToolTip("Save current canvas layout as a preset.");
+    presetRow->addWidget(savePresetBtn);
+
+    auto *delPresetBtn = new QPushButton("Del");
+    delPresetBtn->setStyleSheet("QPushButton { background: #45475a; color: #f38ba8; border: none; border-radius: 3px; padding: 4px 6px; font-size: 11px; } QPushButton:hover { background: #585b70; }");
+    delPresetBtn->setToolTip("Delete the selected preset.");
+    presetRow->addWidget(delPresetBtn);
+    leftLayout->addLayout(presetRow);
+
+    // Preset: load on selection change
+    connect(m_presetCombo, &QComboBox::currentIndexChanged, this, [this](int idx) {
+        if (m_restoring || idx < 0) return;
+        auto &cfg = Config::instance();
+        QString name = m_presetCombo->currentText();
+        if (name == "(new)") {
+            m_canvas->clearAll();
+            cfg.activePreset.clear();
+            cfg.canvasState = CanvasState();
+            cfg.save();
+            refreshLayerList();
+        } else if (cfg.presets.contains(name)) {
+            cfg.activePreset = name;
+            cfg.canvasState = cfg.presets[name];
+            cfg.save();
+            m_restoring = true;
+            applyState(cfg.canvasState);
+            m_restoring = false;
+        }
+    });
+
+    // Preset: save
+    connect(savePresetBtn, &QPushButton::clicked, this, [this]() {
+        auto &cfg = Config::instance();
+        QString current = m_presetCombo->currentText();
+        QString name;
+        if (current == "(new)" || current.isEmpty()) {
+            // Prompt for name
+            bool ok = false;
+            name = QInputDialog::getText(this, "Save Preset", "Preset name:", QLineEdit::Normal, "", &ok);
+            if (!ok || name.trimmed().isEmpty()) return;
+            name = name.trimmed();
+        } else {
+            name = current; // overwrite existing
+        }
+        cfg.presets[name] = captureCurrentState();
+        cfg.activePreset = name;
+        cfg.save();
+        refreshPresetList();
+    });
+
+    // Preset: delete
+    connect(delPresetBtn, &QPushButton::clicked, this, [this]() {
+        auto &cfg = Config::instance();
+        QString name = m_presetCombo->currentText();
+        if (name == "(new)" || name.isEmpty()) return;
+        if (QMessageBox::question(this, "Delete Preset",
+                QString("Delete preset \"%1\"?").arg(name)) != QMessageBox::Yes) return;
+        cfg.presets.remove(name);
+        if (cfg.activePreset == name) cfg.activePreset.clear();
+        cfg.save();
+        refreshPresetList();
+    });
 
     auto *metaLabel = new QLabel("Recording");
     metaLabel->setStyleSheet("QLabel { color: #89b4fa; font-size: 14px; font-weight: bold; }");
@@ -223,8 +303,9 @@ void RecordPage::setupUI() {
         if (!m_restoring) saveCanvasState();
     });
 
-    // Restore saved canvas state
+    // Restore saved canvas state and populate preset list
     restoreCanvasState();
+    refreshPresetList();
 
     // Add element + controls
     auto *addRow = new QHBoxLayout;
@@ -457,27 +538,7 @@ void RecordPage::onRecorderError(const QString &error) {
 
 void RecordPage::saveCanvasState() {
     auto &cfg = Config::instance();
-    cfg.canvasState.mode = m_canvas->modeString();
-    cfg.canvasState.audioEnabled = m_audioCheck->isChecked();
-    cfg.canvasState.presenter = m_presenterInput->text();
-    cfg.canvasState.titleColor = cfg.titleColor;
-
-    cfg.canvasState.items.clear();
-    for (const auto &e : m_canvas->exportItems()) {
-        CanvasItemState s;
-        switch (e.type) {
-        case 0: s.type = "screen"; break;
-        case 1: s.type = "webcam"; break;
-        case 2: s.type = "logo"; break;
-        case 3: s.type = "title"; break;
-        default: s.type = "unknown"; break;
-        }
-        s.label = e.label;
-        s.x = e.x; s.y = e.y; s.w = e.w; s.h = e.h;
-        s.device = e.device; s.filePath = e.filePath;
-        s.shape = e.shape; s.gifLoop = e.gifLoop; s.gifLoopMax = e.gifLoopMax;
-        cfg.canvasState.items.append(s);
-    }
+    cfg.canvasState = captureCurrentState();
     cfg.save();
 }
 
@@ -561,6 +622,108 @@ void RecordPage::restoreCanvasState() {
     }
 
     m_restoring = false;
+    refreshLayerList();
+}
+
+void RecordPage::refreshPresetList() {
+    auto &cfg = Config::instance();
+    m_restoring = true;
+    m_presetCombo->clear();
+    m_presetCombo->addItem("(new)");
+    for (const auto &name : cfg.presets.keys()) {
+        m_presetCombo->addItem(name);
+    }
+    // Select the active preset
+    if (!cfg.activePreset.isEmpty()) {
+        int idx = m_presetCombo->findText(cfg.activePreset);
+        if (idx >= 0) m_presetCombo->setCurrentIndex(idx);
+    }
+    m_restoring = false;
+}
+
+CanvasState RecordPage::captureCurrentState() {
+    CanvasState state;
+    state.mode = m_canvas->modeString();
+    state.audioEnabled = m_audioCheck->isChecked();
+    state.presenter = m_presenterInput->text();
+    state.titleColor = Config::instance().titleColor;
+
+    for (const auto &e : m_canvas->exportItems()) {
+        CanvasItemState s;
+        switch (e.type) {
+        case 0: s.type = "screen"; break;
+        case 1: s.type = "webcam"; break;
+        case 2: s.type = "logo"; break;
+        case 3: s.type = "title"; break;
+        default: s.type = "unknown"; break;
+        }
+        s.label = e.label;
+        s.x = e.x; s.y = e.y; s.w = e.w; s.h = e.h;
+        s.device = e.device; s.filePath = e.filePath;
+        s.shape = e.shape; s.gifLoop = e.gifLoop; s.gifLoopMax = e.gifLoopMax;
+        state.items.append(s);
+    }
+    return state;
+}
+
+void RecordPage::applyState(const CanvasState &state) {
+    m_canvas->clearAll();
+
+    // Restore mode
+    int modeId = 0;
+    if (state.mode == "vertical") modeId = 1;
+    else if (state.mode == "left_split") modeId = 2;
+    else if (state.mode == "right_split") modeId = 3;
+    m_canvas->setMode(modeId);
+    if (m_modeGroup->button(modeId))
+        m_modeGroup->button(modeId)->setChecked(true);
+
+    QSet<QString> availableWebcams;
+    for (const auto &dev : m_webcams) availableWebcams.insert(dev.device);
+
+    for (const auto &s : state.items) {
+        if (s.type == "screen") {
+            bool matched = false;
+            for (const auto &mon : m_monitors) {
+                QString desc = mon.description.isEmpty() ? mon.name : mon.description;
+                if (s.label == "Screen: " + desc) { addScreen(mon); matched = true; break; }
+            }
+            if (!matched && !m_monitors.isEmpty()) addScreen(m_monitors.first());
+        } else if (s.type == "webcam") {
+            if (!availableWebcams.contains(s.device)) continue;
+            Canvas::ItemExport e;
+            e.type = 1; e.label = s.label;
+            e.x = s.x; e.y = s.y; e.w = s.w; e.h = s.h;
+            e.device = s.device; e.shape = s.shape;
+            m_canvas->importItem(e);
+        } else if (s.type == "logo") {
+            if (s.filePath.isEmpty() || !QFile::exists(s.filePath)) continue;
+            Canvas::ItemExport e;
+            e.type = 2; e.label = s.label;
+            e.x = s.x; e.y = s.y; e.w = s.w; e.h = s.h;
+            e.filePath = s.filePath;
+            e.gifLoop = s.gifLoop; e.gifLoopMax = s.gifLoopMax;
+            m_canvas->importItem(e);
+        } else if (s.type == "title") {
+            Canvas::ItemExport e;
+            e.type = 3; e.label = s.label;
+            e.x = s.x; e.y = s.y; e.w = s.w; e.h = s.h;
+            m_canvas->importItem(e);
+        }
+    }
+
+    m_audioCheck->setChecked(state.audioEnabled);
+    if (!state.presenter.isEmpty()) m_presenterInput->setText(state.presenter);
+    if (!state.titleColor.isEmpty()) {
+        Config::instance().titleColor = state.titleColor;
+        m_canvas->setTitleColor(state.titleColor);
+    }
+    for (const auto &s : state.items) {
+        if (s.type == "title" && !s.label.isEmpty()) {
+            m_titleInput->setText(s.label);
+            break;
+        }
+    }
     refreshLayerList();
 }
 

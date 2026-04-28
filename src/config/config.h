@@ -6,6 +6,7 @@
 #pragma once
 
 #include <QString>
+#include <QMap>
 #include <QJsonObject>
 #include <QJsonArray>
 
@@ -80,6 +81,11 @@ public:
 
     /** Current canvas layout state persisted between sessions. */
     CanvasState canvasState;
+
+    /** Named canvas presets (name -> CanvasState). */
+    QMap<QString, CanvasState> presets;
+    /** Name of the currently active preset, or empty for unsaved. */
+    QString activePreset;
 
     /** @brief Returns the next sequential recording number based on existing files. */
     int nextRecordingNumber() const;
