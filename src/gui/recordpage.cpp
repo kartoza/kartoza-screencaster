@@ -237,7 +237,7 @@ void RecordPage::setupUI() {
 
     // Click preset in list -> load it
     connect(m_presetList, &QListWidget::currentRowChanged, this, [this](int row) {
-        if (m_restoring || row < 0) return;
+        if (m_restoring || row < 0 || !m_canvas) return;
         auto &cfg = Config::instance();
         // Strip the active marker to get the name
         QString text = m_presetList->item(row)->text();

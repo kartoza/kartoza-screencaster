@@ -8,7 +8,7 @@
 #include <QResizeEvent>
 #include <QDir>
 #include <QFileInfo>
-#include <QtConcurrent>
+#include <QThreadPool>
 #include <QThreadPool>
 #include <cmath>
 #include <signal.h>
@@ -51,7 +51,7 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
         update();
 
         // Capture screen in background
-        QtConcurrent::run(QThreadPool::globalInstance(), [this]() { captureScreen(); });
+        QThreadPool::globalInstance()->start([this]() { captureScreen(); });
     });
     m_refreshTimer->start();
 }
@@ -78,7 +78,7 @@ void Canvas::setMonitor(const MonitorInfo &mon) {
         emit itemsChanged();
     }
 
-    QtConcurrent::run(QThreadPool::globalInstance(), [this]() { captureScreen(); });
+    QThreadPool::globalInstance()->start([this]() { captureScreen(); });
     update();
 }
 

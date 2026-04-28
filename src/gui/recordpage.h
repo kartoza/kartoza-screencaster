@@ -96,7 +96,7 @@ private:
 
     // -- Canvas --
     /** @brief WYSIWYG canvas preview of the recording layout. */
-    Canvas *m_canvas;
+    Canvas *m_canvas = nullptr;
     /** @brief Button group for selecting the canvas orientation mode. */
     QButtonGroup *m_modeGroup;
 
