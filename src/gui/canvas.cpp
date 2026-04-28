@@ -170,7 +170,12 @@ void Canvas::addLogo(const QString &filePath) {
 void Canvas::removeItem(int index) {
     if (index < 0 || index >= m_items.size()) return;
     stopWebcamCapture(index);
-    if (m_items[index].movie) { m_items[index].movie->stop(); delete m_items[index].movie; m_items[index].movie = nullptr; }
+    if (m_items[index].movie) {
+        m_items[index].movie->disconnect();
+        m_items[index].movie->stop();
+        delete m_items[index].movie;
+        m_items[index].movie = nullptr;
+    }
     m_items.removeAt(index);
     if (m_selected >= m_items.size()) m_selected = -1;
     emit itemsChanged();
@@ -180,7 +185,12 @@ void Canvas::removeItem(int index) {
 void Canvas::clearAll() {
     for (int i = 0; i < m_items.size(); i++) {
         stopWebcamCapture(i);
-        if (m_items[i].movie) { m_items[i].movie->stop(); delete m_items[i].movie; m_items[i].movie = nullptr; }
+        if (m_items[i].movie) {
+            m_items[i].movie->disconnect(); // prevent use-after-free from queued signals
+            m_items[i].movie->stop();
+            delete m_items[i].movie;
+            m_items[i].movie = nullptr;
+        }
     }
     m_items.clear();
     m_selected = -1;

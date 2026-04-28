@@ -1,6 +1,9 @@
 #include "monitor/monitor.h"
 #include <QProcess>
 #include <QRegularExpression>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QDebug>
 
 QList<MonitorInfo> Monitor::listMonitors() {
@@ -84,8 +87,26 @@ QList<MonitorInfo> Monitor::listMonitorsHyprland() {
     proc.start("hyprctl", {"monitors", "-j"});
     if (!proc.waitForFinished(3000)) return {};
 
-    // TODO: parse JSON output
-    return {};
+    QJsonDocument doc = QJsonDocument::fromJson(proc.readAllStandardOutput());
+    if (!doc.isArray()) return {};
+
+    QList<MonitorInfo> monitors;
+    for (const auto &val : doc.array()) {
+        QJsonObject obj = val.toObject();
+        MonitorInfo mon;
+        mon.name = obj["name"].toString();
+        mon.description = obj["description"].toString();
+        mon.width = obj["width"].toInt();
+        mon.height = obj["height"].toInt();
+        mon.x = obj["x"].toInt();
+        mon.y = obj["y"].toInt();
+        mon.focused = obj["focused"].toBool();
+        if (mon.description.isEmpty()) {
+            mon.description = obj["make"].toString() + " " + obj["model"].toString();
+        }
+        monitors.append(mon);
+    }
+    return monitors;
 }
 
 QList<MonitorInfo> Monitor::listMonitorsSway() {
@@ -93,8 +114,28 @@ QList<MonitorInfo> Monitor::listMonitorsSway() {
     proc.start("swaymsg", {"-t", "get_outputs", "-r"});
     if (!proc.waitForFinished(3000)) return {};
 
-    // TODO: parse JSON output
-    return {};
+    QJsonDocument doc = QJsonDocument::fromJson(proc.readAllStandardOutput());
+    if (!doc.isArray()) return {};
+
+    QList<MonitorInfo> monitors;
+    for (const auto &val : doc.array()) {
+        QJsonObject obj = val.toObject();
+        MonitorInfo mon;
+        mon.name = obj["name"].toString();
+        mon.description = obj["make"].toString() + " " + obj["model"].toString();
+        mon.focused = obj["focused"].toBool();
+
+        auto rect = obj["rect"].toObject();
+        mon.x = rect["x"].toInt();
+        mon.y = rect["y"].toInt();
+
+        auto mode = obj["current_mode"].toObject();
+        mon.width = mode["width"].toInt();
+        mon.height = mode["height"].toInt();
+
+        monitors.append(mon);
+    }
+    return monitors;
 }
 
 QString Monitor::stripAnsi(const QString &s) {

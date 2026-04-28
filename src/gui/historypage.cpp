@@ -13,6 +13,7 @@
 #include <QTimer>
 #include <QProcess>
 #include <QPixmap>
+#include <QtConcurrent>
 #include <algorithm>
 
 HistoryPage::HistoryPage(QWidget *parent) : QWidget(parent) {
@@ -364,21 +365,32 @@ void HistoryPage::onRecordingSelected(int row) {
     m_playBtn->setText("Play");
     m_deleteBtn->setEnabled(true);
 
-    // Extract thumbnail using ffmpeg (reliable on all platforms)
+    // Extract thumbnail asynchronously
     if (!video.isEmpty()) {
         QString thumbPath = rec.folder + "/.thumbnail.jpg";
-        if (!QFile::exists(thumbPath)) {
-            QProcess ffmpeg;
-            ffmpeg.start("ffmpeg", {"-y", "-i", video, "-vf", "thumbnail,scale=400:-1",
-                                    "-frames:v", "1", thumbPath});
-            ffmpeg.waitForFinished(5000);
-        }
+        QSize labelSize = m_videoLabel->size();
+        QLabel *label = m_videoLabel;
+
         if (QFile::exists(thumbPath)) {
             QPixmap thumb(thumbPath);
-            if (!thumb.isNull()) {
-                m_videoLabel->setPixmap(thumb.scaled(m_videoLabel->size(),
-                    Qt::KeepAspectRatio, Qt::SmoothTransformation));
-            }
+            if (!thumb.isNull())
+                label->setPixmap(thumb.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        } else {
+            QString videoPath = video;
+            QtConcurrent::run([thumbPath, videoPath, label, labelSize]() {
+                QProcess ffmpeg;
+                ffmpeg.start("ffmpeg", {"-y", "-i", videoPath, "-vf", "thumbnail,scale=400:-1",
+                                        "-frames:v", "1", thumbPath});
+                ffmpeg.waitForFinished(10000);
+                if (QFile::exists(thumbPath)) {
+                    QPixmap thumb(thumbPath);
+                    if (!thumb.isNull()) {
+                        QMetaObject::invokeMethod(label, [label, thumb, labelSize]() {
+                            label->setPixmap(thumb.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                        }, Qt::QueuedConnection);
+                    }
+                }
+            });
         }
     }
 }
