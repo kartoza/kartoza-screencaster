@@ -33,7 +33,7 @@
           inherit system;
           config.allowUnfree = true;  # Required for Claude Code
         };
-        version = "0.8.2";
+        version = "0.9.0";
 
         # Initialize jail.nix for sandboxing AI agents
         jail = jail-nix.lib.init pkgs;
@@ -69,139 +69,49 @@
           pymdown-extensions
         ]);
 
-        # Helper function for cross-compilation (CGO disabled - no systray support)
-        mkCrossPackage = { pkgs, system, GOOS, GOARCH }:
-          pkgs.buildGoModule {
-            pname = "kartoza-screencaster";
-            inherit version;
-            src = ./.;
-
-            vendorHash = null;
-
-            CGO_ENABLED = 0;
-            inherit GOOS GOARCH;
-
-            ldflags = [
-              "-s"
-              "-w"
-              "-X main.version=${version}"
-            ];
-
-            tags = [ "release" ];
-
-            # Platform-specific binary name
-            postInstall = ''
-              cd $out/bin
-              if [ "${GOOS}" = "windows" ]; then
-                mv kartoza-screencaster kartoza-screencaster.exe
-              fi
-
-              # Create release tarball
-              mkdir -p $out/release
-              if [ "${GOOS}" = "windows" ]; then
-                tar -czf $out/release/kartoza-screencaster-${GOOS}-${GOARCH}.tar.gz kartoza-screencaster.exe
-              else
-                tar -czf $out/release/kartoza-screencaster-${GOOS}-${GOARCH}.tar.gz kartoza-screencaster
-              fi
-
-              # Install desktop file and icon (Linux only)
-              if [ "${GOOS}" = "linux" ]; then
-                mkdir -p $out/share/applications
-                cp ${./resources/kartoza-screencaster.desktop} $out/share/applications/kartoza-screencaster.desktop
-
-                # Install icon to hicolor theme
-                mkdir -p $out/share/icons/hicolor/scalable/apps
-                cp ${./resources/icon_ready.svg} $out/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
-              fi
-            '';
-
-            meta = with pkgs.lib; {
-              description = "Screen recording tool for Wayland with audio processing";
-              homepage = "https://github.com/kartoza/kartoza-screencaster";
-              license = licenses.mit;
-              maintainers = [ ];
-              platforms = platforms.unix ++ platforms.windows;
-            };
-          };
-
-        # Runtime dependencies for the application
+        # Runtime dependencies wrapped into PATH
         runtimeDeps = with pkgs; [
-          # Core recording tools
           wl-screenrec         # Wayland screen recording
           ffmpeg               # Video/audio processing (includes ffprobe)
-          pipewire             # Audio recording (pw-record)
-
-          # Optional but recommended
-          libnotify            # Desktop notifications (notify-send)
-          pulseaudio           # Audio playback for countdown beeps (paplay)
+          grim                 # Screenshot capture for canvas preview
         ];
 
-        # Native package with CGO enabled for systray support (Linux only)
-        mkNativePackage = { pkgs }:
-          pkgs.buildGoModule {
+        # CMake/Qt6-based package
+        mkPackage = { buildType ? "Release" }:
+          pkgs.stdenv.mkDerivation {
             pname = "kartoza-screencaster";
             inherit version;
-            src = ./.;
+            src = pkgs.lib.cleanSource ./.;
 
-            # Use proxy mode for dependencies
-            proxyVendor = true;
-            vendorHash = "sha256-hudvYKdRjWTftQvtX40meJalnHukYV7LSFdz8562wTM=";
-
-            # Required for systray (fyne.io/systray uses libayatana-appindicator)
             nativeBuildInputs = with pkgs; [
+              cmake
+              ninja
               pkg-config
-              makeWrapper
+              qt6.wrapQtAppsHook
             ];
 
             buildInputs = with pkgs; [
-              # GTK and GLib for systray
-              gtk3
-              glib
-              # AppIndicator support
-              libayatana-appindicator
-              # X11 libs (needed by some systray backends)
-              xorg.libX11
-              xorg.libXcursor
-              xorg.libXrandr
-              xorg.libXinerama
-              xorg.libXi
-              xorg.libXxf86vm
-              # OpenGL (sometimes needed)
-              libGL
+              qt6.qtbase
+              qt6.qtmultimedia
+              qt6.qtsvg
+              qt6.qtwayland
             ];
 
-            # Enable CGO for systray support
-            preBuild = ''
-              export CGO_ENABLED=1
-            '';
-
-            ldflags = [
-              "-s"
-              "-w"
-              "-X main.version=${version}"
+            cmakeFlags = [
+              "-DCMAKE_BUILD_TYPE=${buildType}"
             ];
-
-            tags = [ "release" ];
 
             postInstall = ''
-              # Install desktop file
-              mkdir -p $out/share/applications
-              cp ${./resources/kartoza-screencaster.desktop} $out/share/applications/kartoza-screencaster.desktop
-
-              # Install icon to hicolor theme
-              mkdir -p $out/share/icons/hicolor/scalable/apps
-              cp ${./resources/icon_ready.svg} $out/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
-
-              # Wrap the binary with runtime dependencies in PATH
+              # Wrap binary with runtime tools in PATH
               wrapProgram $out/bin/kartoza-screencaster \
                 --prefix PATH : ${pkgs.lib.makeBinPath runtimeDeps}
             '';
 
             meta = with pkgs.lib; {
-              description = "Screen recording tool for Wayland with audio processing and systray support";
+              description = "Screen recording tool for Wayland with WYSIWYG canvas editor";
               homepage = "https://github.com/kartoza/kartoza-screencaster";
               license = licenses.mit;
-              maintainers = [ ];
+              mainProgram = "kartoza-screencaster";
               platforms = platforms.linux;
             };
           };
@@ -209,67 +119,14 @@
       in
       {
         packages = {
-          # Default package uses native CGO build with systray support on Linux
-          default = if pkgs.stdenv.isLinux then
-            mkNativePackage { inherit pkgs; }
-          else
-            mkCrossPackage {
-              inherit pkgs system;
-              GOOS = if pkgs.stdenv.isDarwin then "darwin" else "linux";
-              GOARCH = if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64";
-            };
-
+          default = mkPackage {};
           kartoza-screencaster = self.packages.${system}.default;
 
-          # Native Linux package with CGO/systray support
-          linux-native = mkNativePackage { inherit pkgs; };
-
-          # Cross-compiled packages (no systray support)
-          linux-amd64 = mkCrossPackage {
-            inherit pkgs system;
-            GOOS = "linux";
-            GOARCH = "amd64";
-          };
-
-          linux-arm64 = mkCrossPackage {
-            inherit pkgs system;
-            GOOS = "linux";
-            GOARCH = "arm64";
-          };
-
-          darwin-amd64 = mkCrossPackage {
-            inherit pkgs system;
-            GOOS = "darwin";
-            GOARCH = "amd64";
-          };
-
-          darwin-arm64 = mkCrossPackage {
-            inherit pkgs system;
-            GOOS = "darwin";
-            GOARCH = "arm64";
-          };
-
-          windows-amd64 = mkCrossPackage {
-            inherit pkgs system;
-            GOOS = "windows";
-            GOARCH = "amd64";
-          };
-
-          # All releases combined
-          all-releases = pkgs.symlinkJoin {
-            name = "kartoza-screencaster-all-releases";
-            paths = [
-              self.packages.${system}.linux-amd64
-              self.packages.${system}.linux-arm64
-              self.packages.${system}.darwin-amd64
-              self.packages.${system}.darwin-arm64
-              self.packages.${system}.windows-amd64
-            ];
-          };
+          # Debug build (with symbols, no optimisation)
+          debug = mkPackage { buildType = "Debug"; };
 
           # Jailed AI agents (sandboxed to project folder)
           claude-jailed = jailedClaude;
-          # antigravity-jailed = jailedAntigravity;  # disabled due to electron version mismatch
         };
 
         devShells.default = pkgs.mkShell {
@@ -382,63 +239,36 @@
             program = "${self.packages.${system}.default}/bin/kartoza-screencaster";
           };
 
-          setup = {
-            type = "app";
-            program = toString (pkgs.writeShellScript "setup" ''
-              echo "Initializing kartoza-screencaster..."
-              go mod download
-              go mod tidy
-              echo "Setup complete!"
-            '');
-          };
-
-          release = {
-            type = "app";
-            program = toString (pkgs.writeShellScript "release" ''
-              echo "Building all release binaries..."
-              nix build .#all-releases
-              mkdir -p release
-              cp -r result/release/* release/
-              echo "Release binaries created in ./release/"
-            '');
-          };
-
           release-upload = {
             type = "app";
             program = toString (pkgs.writeShellScript "release-upload" ''
+              #!/usr/bin/env bash
               TAG="$1"
               if [ -z "$TAG" ]; then
                 echo "Usage: nix run .#release-upload -- vX.Y.Z"
                 exit 1
               fi
 
-              echo "Building and uploading release $TAG..."
-              nix build .#all-releases
-              mkdir -p release
-              cp -r result/release/* release/
+              echo "Building release package..."
+              nix build .#default
+              BINARY="result/bin/kartoza-screencaster"
 
-              # Generate checksums
-              cd release
-              sha256sum *.tar.gz > checksums.txt
-              cd ..
+              # Create release tarball
+              mkdir -p release
+              tar -czf "release/kartoza-screencaster-linux-$(uname -m).tar.gz" -C result/bin kartoza-screencaster
+              cd release && sha256sum *.tar.gz > checksums.txt && cd ..
 
               # Upload to GitHub
               gh release upload "$TAG" release/*.tar.gz release/checksums.txt --clobber
-
-              echo "Release $TAG uploaded successfully!"
+              echo "Release $TAG uploaded!"
             '');
           };
 
-          # Jailed AI agents - restricted to this project folder
+          # Jailed AI agent
           claude = {
             type = "app";
             program = "${jailedClaude}/bin/claude-code";
           };
-
-          # antigravity = {  # disabled due to electron version mismatch
-          #   type = "app";
-          #   program = "${jailedAntigravity}/bin/antigravity";
-          # };
         };
       }
     );
