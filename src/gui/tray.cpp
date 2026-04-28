@@ -44,7 +44,8 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
         m_mainWindow->setFocus();
     });
     m_menu->addSeparator();
-    m_menu->addAction("Quit", this, []() {
+    m_menu->addAction("Quit", this, [this]() {
+        m_trayIcon->hide();
         QApplication::quit();
     });
 
