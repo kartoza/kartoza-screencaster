@@ -5,6 +5,9 @@
 #include <QTimer>
 #include <QCursor>
 #include <QFrame>
+#include <QHideEvent>
+#include <QShowEvent>
+#include "gui/canvas.h"
 
 MainWindow::MainWindow(const QString &version, QWidget *parent)
     : QMainWindow(parent), m_version(version) {
@@ -202,6 +205,25 @@ QWidget *MainWindow::createFooter() {
     layout->addWidget(label);
 
     return footer;
+}
+
+void MainWindow::hideEvent(QHideEvent *event) {
+    // Suspend canvas previews when window is not visible
+    m_recordPage->recorder(); // ensure recorder exists
+    auto *canvas = m_recordPage->findChild<Canvas *>();
+    if (canvas && !m_recordPage->recorder()->isRecording()) {
+        canvas->suspendPreviews();
+    }
+    QMainWindow::hideEvent(event);
+}
+
+void MainWindow::showEvent(QShowEvent *event) {
+    // Resume canvas previews when window becomes visible
+    auto *canvas = m_recordPage->findChild<Canvas *>();
+    if (canvas && !m_recordPage->recorder()->isRecording()) {
+        canvas->resumePreviews();
+    }
+    QMainWindow::showEvent(event);
 }
 
 void MainWindow::navigateTo(Page page) {

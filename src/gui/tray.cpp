@@ -34,6 +34,7 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     m_menu->addAction("Open Window", this, [this]() {
         m_mainWindow->show();
         m_mainWindow->raise();
+        m_mainWindow->activateWindow();
     });
     m_menu->addSeparator();
     m_menu->addAction("Quit", this, []() {
@@ -64,9 +65,9 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
             // Blocked during room noise capture
             break;
         case Processing:
-            // Show window during processing
             m_mainWindow->show();
             m_mainWindow->raise();
+            m_mainWindow->activateWindow();
             break;
         }
     });
@@ -114,47 +115,46 @@ void Tray::setState(State s) {
     case Idle:
         iconPath = "resources/icon_ready.png";
         tooltip = "Kartoza Screencaster - Click to record";
-        m_startAction->setEnabled(true);
-        m_pauseAction->setEnabled(false);
-        m_stopAction->setEnabled(false);
-        m_pauseAction->setText("Pause");
+        m_startAction->setVisible(true);
+        m_pauseAction->setVisible(false);
+        m_stopAction->setVisible(false);
         break;
     case Countdown:
         iconPath = "resources/icon_ready.png";
         tooltip = QString("Starting in %1...").arg(m_countdownVal);
-        m_startAction->setEnabled(false);
-        m_pauseAction->setEnabled(false);
-        m_stopAction->setEnabled(true);
+        m_startAction->setVisible(false);
+        m_pauseAction->setVisible(false);
+        m_stopAction->setVisible(true);
         break;
     case Recording:
         iconPath = "resources/icon_recording.png";
         tooltip = "Recording - Click to pause";
-        m_startAction->setEnabled(false);
-        m_pauseAction->setEnabled(true);
+        m_startAction->setVisible(false);
+        m_pauseAction->setVisible(true);
         m_pauseAction->setText("Pause");
-        m_stopAction->setEnabled(true);
+        m_stopAction->setVisible(true);
         break;
     case Paused:
         iconPath = "resources/icon_ready.png";
         tooltip = "Paused - Click to resume";
-        m_startAction->setEnabled(false);
-        m_pauseAction->setEnabled(true);
+        m_startAction->setVisible(false);
+        m_pauseAction->setVisible(true);
         m_pauseAction->setText("Resume");
-        m_stopAction->setEnabled(true);
+        m_stopAction->setVisible(true);
         break;
     case RoomNoise:
         iconPath = "resources/icon_recording.png";
         tooltip = "Recording room noise - Please keep quiet!";
-        m_startAction->setEnabled(false);
-        m_pauseAction->setEnabled(false);
-        m_stopAction->setEnabled(false);
+        m_startAction->setVisible(false);
+        m_pauseAction->setVisible(false);
+        m_stopAction->setVisible(false);
         break;
     case Processing:
         iconPath = "resources/icon_ready.png";
         tooltip = "Processing video...";
-        m_startAction->setEnabled(false);
-        m_pauseAction->setEnabled(false);
-        m_stopAction->setEnabled(false);
+        m_startAction->setVisible(false);
+        m_pauseAction->setVisible(false);
+        m_stopAction->setVisible(false);
         break;
     }
 

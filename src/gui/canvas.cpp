@@ -210,6 +210,16 @@ void Canvas::startAllWebcamPreviews() {
     }
 }
 
+void Canvas::suspendPreviews() {
+    stopAllWebcamPreviews();
+    if (m_refreshTimer) m_refreshTimer->stop();
+}
+
+void Canvas::resumePreviews() {
+    startAllWebcamPreviews();
+    if (m_refreshTimer) m_refreshTimer->start();
+}
+
 void Canvas::setSelectedItem(int index) {
     m_selected = index;
     update();

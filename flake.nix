@@ -274,34 +274,12 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            # Go toolchain
-            go
-            gopls
-            golangci-lint
-            gomodifytags
-            gotests
-            impl
-            delve
-            go-tools
-
-            # Build tools
-            gnumake
+            # C++ build toolchain
             gcc
             pkg-config
+            gnumake
 
-            # CGO dependencies for systray
-            gtk3
-            glib
-            libayatana-appindicator
-            xorg.libX11
-            xorg.libXcursor
-            xorg.libXrandr
-            xorg.libXinerama
-            xorg.libXi
-            xorg.libXxf86vm
-            libGL
-
-            # Qt6 for native C++ GUI
+            # Qt6
             qt6.qtbase
             qt6.qtmultimedia
             qt6.qtsvg
@@ -309,6 +287,15 @@
             qt6.wrapQtAppsHook
             cmake
             ninja
+            ccache
+
+            # C++ development tools
+            clang-tools          # clangd, clang-format, clang-tidy
+            gdb
+            valgrind
+            doxygen
+            graphviz             # for doxygen call graphs
+            cppcheck
 
             # CLI utilities
             ripgrep
@@ -349,54 +336,40 @@
 
           shellHook = ''
             export EDITOR=nvim
-            export GOPATH="$PWD/.go"
-            export GOCACHE="$PWD/.go/cache"
-            export GOMODCACHE="$PWD/.go/pkg/mod"
-            export PATH="$GOPATH/bin:$PATH"
 
-            # Enable CGO for systray support in dev shell
-            export CGO_ENABLED=1
+            # Ensure build directory exists
+            mkdir -p build
 
-            # Helpful aliases
-            alias gor='go run .'
-            alias got='go test -v ./...'
-            alias gob='go build -o bin/kartoza-screencaster .'
-            alias gom='go mod tidy'
-            alias gol='golangci-lint run'
+            # Symlink compile_commands.json for clangd
+            [ -f build/compile_commands.json ] && ln -sf build/compile_commands.json compile_commands.json
+
+            # C++ development aliases
+            alias cb='cd build && cmake .. -G Ninja && ninja && cd ..'
+            alias cbr='cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja && cd ..'
+            alias ct='cd build && ctest --output-on-failure && cd ..'
+            alias cr='./build/kartoza-screencaster'
+            alias cf='find src tests -name "*.cpp" -o -name "*.h" | xargs clang-format -i'
 
             # Documentation aliases
             alias docs='mkdocs serve'
             alias docs-build='mkdocs build'
+            alias doxygen-build='doxygen Doxyfile'
 
             echo ""
-            echo "🎬 Kartoza Screencaster Development Environment"
+            echo "🎬 Kartoza Screencaster Development Environment (C++/Qt6)"
             echo ""
-            echo "Available commands:"
-            echo "  gor  - Run the application"
-            echo "  got  - Run tests"
-            echo "  gob  - Build binary"
-            echo "  gom  - Tidy go modules"
-            echo "  gol  - Run linter"
+            echo "Build commands:"
+            echo "  cb   - Configure + build (Debug)"
+            echo "  cbr  - Configure + build (Release, optimised+stripped)"
+            echo "  ct   - Run all tests"
+            echo "  cr   - Run the application"
+            echo "  cf   - Format all C++ code (clang-format)"
             echo ""
             echo "Documentation:"
-            echo "  docs       - Serve docs locally (http://localhost:8000)"
-            echo "  docs-build - Build static docs site"
+            echo "  docs          - Serve mkdocs (localhost:8000)"
+            echo "  doxygen-build - Generate Doxygen API docs"
             echo ""
-            echo "Make targets:"
-            echo "  make build    - Build binary"
-            echo "  make test     - Run tests"
-            echo "  make lint     - Run linter"
-            echo "  make release  - Build all platforms"
-            echo ""
-            echo "CGO is enabled for systray support."
-            echo ""
-            echo "AI Agents (sandboxed to this project folder only):"
-            echo "  claude-code   Run Claude Code CLI"
-            echo ""
-            echo "These agents can only access:"
-            echo "  - This project folder (read/write)"
-            echo "  - Their own config dirs (read/write)"
-            echo "  - Network (for API calls)"
+            echo "Neovim: <leader>p for all project commands"
             echo ""
           '';
         };

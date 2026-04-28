@@ -75,6 +75,8 @@ build/
 
 # C++ build artifacts
 kartoza-screencaster
+compile_commands.json
+.cache/
 *.o
 *.moc
 moc_*.cpp

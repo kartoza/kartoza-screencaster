@@ -3,6 +3,31 @@ project(kartoza-screencaster VERSION 0.9.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Default to Debug for local development
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+    message(STATUS "Build type: Debug (default - use -DCMAKE_BUILD_TYPE=Release for optimized builds)")
+endif()
+
+# Use ccache if available
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
+endif()
+
+# Compiler warnings
+add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
+
+# Release: optimize and strip
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    add_compile_options(-O2)
+    add_link_options(-s)  # strip symbols
+endif()
+
+# Export compile_commands.json for clangd
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
