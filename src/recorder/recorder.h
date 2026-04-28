@@ -23,9 +23,22 @@ struct RecordingOptions {
     int number = 1;
 
     // Logos: up to 3 paths (left, right, banner)
-    QString leftLogo;
-    QString rightLogo;
-    QString bannerLogo;
+    // gifLoop: 0=first frame only, 1=play once, 2=continuous
+    struct LogoOpts {
+        QString path;
+        int gifLoop = 2;
+        int gifLoopMax = 3;
+        // Canvas-relative position (0.0 - 1.0 of canvas dimensions)
+        double relX = 0, relY = 0, relW = 0.15, relH = 0.15;
+        bool isGif() const { return path.toLower().endsWith(".gif"); }
+    };
+    // Webcam overlay (canvas-relative position + shape)
+    // shape: 0=round/bubble, 1=square, 2=rectangle
+    double webcamRelX = 0.85, webcamRelY = 0.8, webcamRelW = 0.15, webcamRelH = 0.2;
+    int webcamShape = 0;
+    LogoOpts leftLogo;
+    LogoOpts rightLogo;
+    LogoOpts bannerLogo;
     QString titleColor = "#62A4C7";
 };
 

@@ -348,11 +348,34 @@ void RecordPage::onCountdownTick() {
         opts.presenter = m_presenterInput->text();
         opts.titleColor = Config::instance().titleColor;
 
-        // Map canvas logos: first=left, second=right, third=banner
-        QStringList logos = m_canvas->logoFilePaths();
-        if (logos.size() > 0) opts.leftLogo = logos[0];
-        if (logos.size() > 1) opts.rightLogo = logos[1];
-        if (logos.size() > 2) opts.bannerLogo = logos[2];
+        // Map canvas items with their interactive placement
+        auto items = m_canvas->exportItems();
+        double cw = m_canvas->canvasWidth();
+        double ch = m_canvas->canvasHeight();
+        int logoIdx = 0;
+        for (const auto &e : items) {
+            if (e.type == 2) { // logo
+                RecordingOptions::LogoOpts lo;
+                lo.path = e.filePath;
+                lo.gifLoop = e.gifLoop;
+                lo.gifLoopMax = e.gifLoopMax;
+                // Store canvas-relative positions (0.0-1.0)
+                lo.relX = (e.x - e.w/2.0) / cw;
+                lo.relY = (e.y - e.h/2.0) / ch;
+                lo.relW = e.w / cw;
+                lo.relH = e.h / ch;
+                if (logoIdx == 0) opts.leftLogo = lo;
+                else if (logoIdx == 1) opts.rightLogo = lo;
+                else if (logoIdx == 2) opts.bannerLogo = lo;
+                logoIdx++;
+            } else if (e.type == 1) { // webcam — capture placement and shape
+                opts.webcamRelX = (e.x - e.w/2.0) / cw;
+                opts.webcamRelY = (e.y - e.h/2.0) / ch;
+                opts.webcamRelW = e.w / cw;
+                opts.webcamRelH = e.h / ch;
+                opts.webcamShape = e.shape; // 0=round, 1=square, 2=rect
+            }
+        }
 
         // Save presenter for next session
         auto &cfg = Config::instance();

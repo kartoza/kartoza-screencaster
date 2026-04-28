@@ -32,6 +32,8 @@ public:
     QStringList logoFilePaths() const;
     bool isVertical() const { return m_mode >= 1; }
     int itemCount() const { return m_items.size(); }
+    int canvasWidth() const { return m_cw; }
+    int canvasHeight() const { return m_ch; }
     QString itemLabel(int index) const;
     int selectedItem() const { return m_selected; }
     void setSelectedItem(int index);

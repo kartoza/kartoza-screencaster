@@ -169,9 +169,13 @@ void Recorder::writeRecordingJson(const QString &status) {
     settings["screen_enabled"] = !m_opts.noScreen;
     settings["audio_enabled"] = !m_opts.noAudio;
     settings["webcam_enabled"] = !m_opts.noWebcam;
-    if (!m_opts.leftLogo.isEmpty()) settings["left_logo"] = m_opts.leftLogo;
-    if (!m_opts.rightLogo.isEmpty()) settings["right_logo"] = m_opts.rightLogo;
-    if (!m_opts.bannerLogo.isEmpty()) settings["banner_logo"] = m_opts.bannerLogo;
+    if (!m_opts.leftLogo.path.isEmpty()) settings["left_logo"] = m_opts.leftLogo.path;
+    if (!m_opts.rightLogo.path.isEmpty()) settings["right_logo"] = m_opts.rightLogo.path;
+    if (!m_opts.bannerLogo.path.isEmpty()) {
+        settings["banner_logo"] = m_opts.bannerLogo.path;
+        settings["banner_gif_loop"] = m_opts.bannerLogo.gifLoop;
+        settings["banner_gif_loop_max"] = m_opts.bannerLogo.gifLoopMax;
+    }
     settings["title_color"] = m_opts.titleColor;
     root["settings"] = settings;
 
@@ -577,11 +581,27 @@ void Recorder::processRecordings() {
         qint64 durationUs = getVideoDurationUs(m_screenFile);
 
         // Collect overlay inputs
-        bool hasLeftLogo = !m_opts.leftLogo.isEmpty() && QFile::exists(m_opts.leftLogo);
-        bool hasRightLogo = !m_opts.rightLogo.isEmpty() && QFile::exists(m_opts.rightLogo);
-        bool hasBannerLogo = !m_opts.bannerLogo.isEmpty() && QFile::exists(m_opts.bannerLogo);
-        bool mergeWebcam = hasWebcam && !m_opts.noScreen; // overlay webcam only when screen is primary
+        bool hasLeftLogo = !m_opts.leftLogo.path.isEmpty() && QFile::exists(m_opts.leftLogo.path);
+        bool hasRightLogo = !m_opts.rightLogo.path.isEmpty() && QFile::exists(m_opts.rightLogo.path);
+        bool hasBannerLogo = !m_opts.bannerLogo.path.isEmpty() && QFile::exists(m_opts.bannerLogo.path);
+        bool mergeWebcam = hasWebcam && !m_opts.noScreen;
         bool needsFilter = hasLeftLogo || hasRightLogo || hasBannerLogo || mergeWebcam;
+
+        // Helper: add logo input with GIF loop flags
+        auto addLogoInput = [](QStringList &a, const RecordingOptions::LogoOpts &logo) {
+            if (logo.isGif()) {
+                if (logo.gifLoop == 0) {
+                    // First frame only: no special flag (ffmpeg shows first frame)
+                    a << "-i" << logo.path;
+                } else if (logo.gifLoop == 1) {
+                    a << "-ignore_loop" << "1" << "-i" << logo.path;
+                } else {
+                    a << "-ignore_loop" << "0" << "-i" << logo.path;
+                }
+            } else {
+                a << "-i" << logo.path;
+            }
+        };
 
         QStringList args;
         args << "-y" << "-i" << m_screenFile;
@@ -590,9 +610,9 @@ void Recorder::processRecordings() {
         if (hasAudio) { audioInput = nextInput++; args << "-i" << audioToUse; }
         if (mergeWebcam) { webcamInput = nextInput++; args << "-i" << m_webcamFile; }
         int leftLogoInput = -1, rightLogoInput = -1, bannerLogoInput = -1;
-        if (hasLeftLogo) { leftLogoInput = nextInput++; args << "-i" << m_opts.leftLogo; }
-        if (hasRightLogo) { rightLogoInput = nextInput++; args << "-i" << m_opts.rightLogo; }
-        if (hasBannerLogo) { bannerLogoInput = nextInput++; args << "-i" << m_opts.bannerLogo; }
+        if (hasLeftLogo) { leftLogoInput = nextInput++; addLogoInput(args, m_opts.leftLogo); }
+        if (hasRightLogo) { rightLogoInput = nextInput++; addLogoInput(args, m_opts.rightLogo); }
+        if (hasBannerLogo) { bannerLogoInput = nextInput++; addLogoInput(args, m_opts.bannerLogo); }
 
         if (needsFilter) {
             QString filter;
@@ -600,29 +620,58 @@ void Recorder::processRecordings() {
             QString logoEnable = "enable='between(t,0,15)'";
             int vIdx = 0;
 
-            // Logo overlays (first 15 seconds)
+            // Helper: build overlay position from canvas-relative coords
+            // Uses FFmpeg expressions: W=base width, H=base height
+            auto overlayPos = [](const RecordingOptions::LogoOpts &lo) {
+                return QString("W*%1:H*%2").arg(lo.relX, 0, 'f', 4).arg(lo.relY, 0, 'f', 4);
+            };
+            auto scaleW = [](const RecordingOptions::LogoOpts &lo) {
+                return QString("W*%1").arg(lo.relW, 0, 'f', 4);
+            };
+
+            // Logo overlays using canvas placement (first 15 seconds)
             if (hasLeftLogo) {
-                filter += QString("[%1:v]scale=iw*1/8:-1[ll];").arg(leftLogoInput);
-                filter += QString("%1[ll]overlay=10:10:%2[v%3];").arg(current, logoEnable).arg(++vIdx);
+                filter += QString("[%1:v]scale='trunc(%2/2)*2':-1[ll];").arg(leftLogoInput).arg(scaleW(m_opts.leftLogo));
+                filter += QString("%1[ll]overlay=%2:%3[v%4];").arg(current, overlayPos(m_opts.leftLogo), logoEnable).arg(++vIdx);
                 current = QString("[v%1]").arg(vIdx);
             }
             if (hasRightLogo) {
-                filter += QString("[%1:v]scale=iw*1/8:-1[rl];").arg(rightLogoInput);
-                filter += QString("%1[rl]overlay=W-w-10:10:%2[v%3];").arg(current, logoEnable).arg(++vIdx);
+                filter += QString("[%1:v]scale='trunc(%2/2)*2':-1[rl];").arg(rightLogoInput).arg(scaleW(m_opts.rightLogo));
+                filter += QString("%1[rl]overlay=%2:%3[v%4];").arg(current, overlayPos(m_opts.rightLogo), logoEnable).arg(++vIdx);
                 current = QString("[v%1]").arg(vIdx);
             }
             if (hasBannerLogo) {
-                filter += QString("[%1:v]scale=iw*1/2:-1[bl];").arg(bannerLogoInput);
-                filter += QString("%1[bl]overlay=10:H-h-10:%2[v%3];").arg(current, logoEnable).arg(++vIdx);
+                filter += QString("[%1:v]scale='trunc(%2/2)*2':-1[bl];").arg(bannerLogoInput).arg(scaleW(m_opts.bannerLogo));
+                filter += QString("%1[bl]overlay=%2:%3[v%4];").arg(current, overlayPos(m_opts.bannerLogo), logoEnable).arg(++vIdx);
                 current = QString("[v%1]").arg(vIdx);
             }
 
-            // Circular webcam overlay (full duration, bottom-right, 250px)
+            // Webcam overlay using canvas placement and shape (full duration)
             if (mergeWebcam) {
-                filter += QString("[%1:v]scale=250:250,setsar=1[wcam];").arg(webcamInput);
-                filter += "color=black:250x250,geq=lum='if(lt(hypot(X-125,Y-125),125),255,0)':cb=128:cr=128[cmask];";
-                filter += "[wcam][cmask]alphamerge[wcam_c];";
-                filter += QString("%1[wcam_c]overlay=W-w-20:H-h-20[v%2];").arg(current).arg(++vIdx);
+                // Scale webcam to canvas-relative size
+                QString wcScale = QString("'trunc(W*%1/2)*2':'trunc(H*%2/2)*2'")
+                    .arg(m_opts.webcamRelW, 0, 'f', 4)
+                    .arg(m_opts.webcamRelH, 0, 'f', 4);
+                filter += QString("[%1:v]scale=%2,setsar=1[wcam];").arg(webcamInput).arg(wcScale);
+
+                if (m_opts.webcamShape == 0) {
+                    // Round bubble: circular alpha mask
+                    QString maskScale = QString("'trunc(W*%1/2)*2':'trunc(H*%2/2)*2'")
+                        .arg(m_opts.webcamRelW, 0, 'f', 4)
+                        .arg(m_opts.webcamRelH, 0, 'f', 4);
+                    filter += QString("color=black:2x2,scale=%1[cmask_raw];").arg(maskScale);
+                    filter += "[cmask_raw]geq=lum='if(lt(hypot(X-W/2,Y-H/2),min(W,H)/2),255,0)':cb=128:cr=128[cmask];";
+                    filter += "[wcam][cmask]alphamerge[wcam_shaped];";
+                } else {
+                    // Square or rectangle: no mask needed, just use as-is
+                    filter += "[wcam]null[wcam_shaped];";
+                }
+
+                filter += QString("%1[wcam_shaped]overlay=W*%2:H*%3[v%4];")
+                    .arg(current)
+                    .arg(m_opts.webcamRelX, 0, 'f', 4)
+                    .arg(m_opts.webcamRelY, 0, 'f', 4)
+                    .arg(++vIdx);
                 current = QString("[v%1]").arg(vIdx);
             }
 
@@ -677,9 +726,9 @@ void Recorder::createVerticalVideo(const QString &audioFile, bool hasAudio) {
         QString("%1-%2-vertical.mp4").arg(m_opts.number, 3, 10, QChar('0')).arg(titleSlug);
 
     bool hasWebcam = QFile::exists(m_webcamFile);
-    bool hasLeftLogo = !m_opts.leftLogo.isEmpty() && QFile::exists(m_opts.leftLogo);
-    bool hasRightLogo = !m_opts.rightLogo.isEmpty() && QFile::exists(m_opts.rightLogo);
-    bool hasBannerLogo = !m_opts.bannerLogo.isEmpty() && QFile::exists(m_opts.bannerLogo);
+    bool hasLeftLogo = !m_opts.leftLogo.path.isEmpty() && QFile::exists(m_opts.leftLogo.path);
+    bool hasRightLogo = !m_opts.rightLogo.path.isEmpty() && QFile::exists(m_opts.rightLogo.path);
+    bool hasBannerLogo = !m_opts.bannerLogo.path.isEmpty() && QFile::exists(m_opts.bannerLogo.path);
 
     QString titleColor = m_opts.titleColor.isEmpty() ? "white" : m_opts.titleColor;
     QString escapedTitle = m_opts.title;
@@ -695,9 +744,22 @@ void Recorder::createVerticalVideo(const QString &audioFile, bool hasAudio) {
 
     if (hasWebcam) { webcamInput = nextInput++; args << "-i" << m_webcamFile; }
     if (hasAudio) { audioInput = nextInput++; args << "-i" << audioFile; }
-    if (hasLeftLogo) { leftLogoIn = nextInput++; args << "-i" << m_opts.leftLogo; }
-    if (hasRightLogo) { rightLogoIn = nextInput++; args << "-i" << m_opts.rightLogo; }
-    if (hasBannerLogo) { bannerLogoIn = nextInput++; args << "-i" << m_opts.bannerLogo; }
+    auto addLogoInput = [](QStringList &a, const RecordingOptions::LogoOpts &logo) {
+        if (logo.isGif()) {
+            if (logo.gifLoop == 0) {
+                a << "-i" << logo.path;
+            } else if (logo.gifLoop == 1) {
+                a << "-ignore_loop" << "1" << "-i" << logo.path;
+            } else {
+                a << "-ignore_loop" << "0" << "-i" << logo.path;
+            }
+        } else {
+            a << "-i" << logo.path;
+        }
+    };
+    if (hasLeftLogo) { leftLogoIn = nextInput++; addLogoInput(args, m_opts.leftLogo); }
+    if (hasRightLogo) { rightLogoIn = nextInput++; addLogoInput(args, m_opts.rightLogo); }
+    if (hasBannerLogo) { bannerLogoIn = nextInput++; addLogoInput(args, m_opts.bannerLogo); }
 
     // Build filter_complex for 1080x1920 (9:16)
     // Layout: screen at top, white lower third at y=1280, logos in lower third, title at bottom
@@ -712,33 +774,56 @@ void Recorder::createVerticalVideo(const QString &audioFile, bool hasAudio) {
 
     QString current = "[canvas]";
 
-    // Webcam circle overlay (bottom-right of screen area)
+    // Webcam overlay using canvas placement and shape
     if (hasWebcam) {
-        f += QString("[%1:v]scale=250:250,setsar=1[wcam];").arg(webcamInput);
-        f += "color=black:250x250,geq=lum='if(lt(hypot(X-125,Y-125),125),255,0)':cb=128:cr=128[cmask];";
-        f += "[wcam][cmask]alphamerge[wcam_c];";
-        f += QString("%1[wcam_c]overlay=W-w-20:1020[wc_out];").arg(current);
+        int wcW = qMax(50, static_cast<int>(m_opts.webcamRelW * 1080));
+        int wcH = qMax(50, static_cast<int>(m_opts.webcamRelH * 1920));
+        int wcX = static_cast<int>(m_opts.webcamRelX * 1080);
+        int wcY = static_cast<int>(m_opts.webcamRelY * 1920);
+        // Make even
+        wcW = (wcW / 2) * 2; wcH = (wcH / 2) * 2;
+
+        f += QString("[%1:v]scale=%2:%3,setsar=1[wcam];").arg(webcamInput).arg(wcW).arg(wcH);
+
+        if (m_opts.webcamShape == 0) {
+            // Round bubble
+            int r = qMin(wcW, wcH) / 2;
+            f += QString("color=black:%1x%2,geq=lum='if(lt(hypot(X-%3,Y-%4),%5),255,0)':cb=128:cr=128[cmask];")
+                .arg(wcW).arg(wcH).arg(wcW/2).arg(wcH/2).arg(r);
+            f += "[wcam][cmask]alphamerge[wcam_shaped];";
+        } else {
+            f += "[wcam]null[wcam_shaped];";
+        }
+
+        f += QString("%1[wcam_shaped]overlay=%2:%3[wc_out];").arg(current).arg(wcX).arg(wcY);
         current = "[wc_out]";
     }
 
-    // Left logo in lower third (top-left of bottom area)
+    // Logo overlays using canvas placement
     if (hasLeftLogo) {
-        f += QString("[%1:v]scale=360:-1[ll];").arg(leftLogoIn);
-        f += QString("%1[ll]overlay=10:1290[ll_out];").arg(current);
+        int lw = qMax(20, static_cast<int>(m_opts.leftLogo.relW * 1080));
+        int lx = static_cast<int>(m_opts.leftLogo.relX * 1080);
+        int ly = static_cast<int>(m_opts.leftLogo.relY * 1920);
+        f += QString("[%1:v]scale=%2:-1[ll];").arg(leftLogoIn).arg(lw);
+        f += QString("%1[ll]overlay=%2:%3[ll_out];").arg(current).arg(lx).arg(ly);
         current = "[ll_out]";
     }
 
-    // Right logo in lower third (top-right of bottom area)
     if (hasRightLogo) {
-        f += QString("[%1:v]scale=360:-1[rl];").arg(rightLogoIn);
-        f += QString("%1[rl]overlay=W-w-10:1290[rl_out];").arg(current);
+        int rw = qMax(20, static_cast<int>(m_opts.rightLogo.relW * 1080));
+        int rx = static_cast<int>(m_opts.rightLogo.relX * 1080);
+        int ry = static_cast<int>(m_opts.rightLogo.relY * 1920);
+        f += QString("[%1:v]scale=%2:-1[rl];").arg(rightLogoIn).arg(rw);
+        f += QString("%1[rl]overlay=%2:%3[rl_out];").arg(current).arg(rx).arg(ry);
         current = "[rl_out]";
     }
 
-    // Banner logo (full width, centered above title)
     if (hasBannerLogo) {
-        f += QString("[%1:v]scale=1080:-1[bl];").arg(bannerLogoIn);
-        f += QString("%1[bl]overlay=(W-w)/2:1650[bl_out];").arg(current);
+        int bw = qMax(20, static_cast<int>(m_opts.bannerLogo.relW * 1080));
+        int bx = static_cast<int>(m_opts.bannerLogo.relX * 1080);
+        int by = static_cast<int>(m_opts.bannerLogo.relY * 1920);
+        f += QString("[%1:v]scale=%2:-1[bl];").arg(bannerLogoIn).arg(bw);
+        f += QString("%1[bl]overlay=%2:%3[bl_out];").arg(current).arg(bx).arg(by);
         current = "[bl_out]";
     }
 
