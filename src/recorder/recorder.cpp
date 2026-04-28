@@ -576,47 +576,58 @@ void Recorder::processRecordings() {
 
         qint64 durationUs = getVideoDurationUs(m_screenFile);
 
-        // Collect logo inputs
+        // Collect overlay inputs
         bool hasLeftLogo = !m_opts.leftLogo.isEmpty() && QFile::exists(m_opts.leftLogo);
         bool hasRightLogo = !m_opts.rightLogo.isEmpty() && QFile::exists(m_opts.rightLogo);
         bool hasBannerLogo = !m_opts.bannerLogo.isEmpty() && QFile::exists(m_opts.bannerLogo);
-        bool hasLogos = hasLeftLogo || hasRightLogo || hasBannerLogo;
+        bool mergeWebcam = hasWebcam && !m_opts.noScreen; // overlay webcam only when screen is primary
+        bool needsFilter = hasLeftLogo || hasRightLogo || hasBannerLogo || mergeWebcam;
 
         QStringList args;
         args << "-y" << "-i" << m_screenFile;
         int nextInput = 1;
-        int audioInput = -1;
+        int audioInput = -1, webcamInput = -1;
         if (hasAudio) { audioInput = nextInput++; args << "-i" << audioToUse; }
+        if (mergeWebcam) { webcamInput = nextInput++; args << "-i" << m_webcamFile; }
         int leftLogoInput = -1, rightLogoInput = -1, bannerLogoInput = -1;
         if (hasLeftLogo) { leftLogoInput = nextInput++; args << "-i" << m_opts.leftLogo; }
         if (hasRightLogo) { rightLogoInput = nextInput++; args << "-i" << m_opts.rightLogo; }
         if (hasBannerLogo) { bannerLogoInput = nextInput++; args << "-i" << m_opts.bannerLogo; }
 
-        if (hasLogos) {
-            // Build filter_complex for logo overlays (visible first 15 seconds)
+        if (needsFilter) {
             QString filter;
             QString current = "[0:v]";
-            QString enable = "enable='between(t,0,15)'";
+            QString logoEnable = "enable='between(t,0,15)'";
+            int vIdx = 0;
 
+            // Logo overlays (first 15 seconds)
             if (hasLeftLogo) {
-                // Scale to 1/8 width, overlay top-left
                 filter += QString("[%1:v]scale=iw*1/8:-1[ll];").arg(leftLogoInput);
-                filter += QString("%1[ll]overlay=10:10:%2[v1];").arg(current, enable);
-                current = "[v1]";
+                filter += QString("%1[ll]overlay=10:10:%2[v%3];").arg(current, logoEnable).arg(++vIdx);
+                current = QString("[v%1]").arg(vIdx);
             }
             if (hasRightLogo) {
                 filter += QString("[%1:v]scale=iw*1/8:-1[rl];").arg(rightLogoInput);
-                filter += QString("%1[rl]overlay=W-w-10:10:%2[v2];").arg(current, enable);
-                current = "[v2]";
+                filter += QString("%1[rl]overlay=W-w-10:10:%2[v%3];").arg(current, logoEnable).arg(++vIdx);
+                current = QString("[v%1]").arg(vIdx);
             }
             if (hasBannerLogo) {
                 filter += QString("[%1:v]scale=iw*1/2:-1[bl];").arg(bannerLogoInput);
-                filter += QString("%1[bl]overlay=10:H-h-10:%2[v3];").arg(current, enable);
-                current = "[v3]";
+                filter += QString("%1[bl]overlay=10:H-h-10:%2[v%3];").arg(current, logoEnable).arg(++vIdx);
+                current = QString("[v%1]").arg(vIdx);
             }
-            // Remove trailing semicolon from last filter and rename to [outv]
-            filter.chop(1); // remove ';' or tag
-            // Replace last tag with [outv]
+
+            // Circular webcam overlay (full duration, bottom-right, 250px)
+            if (mergeWebcam) {
+                filter += QString("[%1:v]scale=250:250,setsar=1[wcam];").arg(webcamInput);
+                filter += "color=black:250x250,geq=lum='if(lt(hypot(X-125,Y-125),125),255,0)':cb=128:cr=128[cmask];";
+                filter += "[wcam][cmask]alphamerge[wcam_c];";
+                filter += QString("%1[wcam_c]overlay=W-w-20:H-h-20[v%2];").arg(current).arg(++vIdx);
+                current = QString("[v%1]").arg(vIdx);
+            }
+
+            // Rename final output
+            filter.chop(1); // remove trailing ';'
             int lastBracket = filter.lastIndexOf('[');
             filter = filter.left(lastBracket) + "[outv]";
 
