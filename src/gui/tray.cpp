@@ -16,7 +16,7 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     m_menu = new QMenu;
 
     m_startAction = m_menu->addAction("Start Recording", this, [this]() {
-        if (m_state == Idle) startCountdown();
+        if (m_state == Idle) m_recordPage->onStartClicked();
     });
     m_pauseAction = m_menu->addAction("Pause", this, [this]() {
         if (m_state == Recording) {
@@ -28,9 +28,6 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     m_stopAction = m_menu->addAction("Stop Recording", this, [this]() {
         if (m_state == Recording || m_state == Paused) {
             m_recordPage->onStopClicked();
-        } else if (m_state == Countdown) {
-            m_countdownTimer->stop();
-            setState(Idle);
         }
     });
     m_menu->addSeparator();
@@ -51,11 +48,11 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
 
         switch (m_state) {
         case Idle:
-            startCountdown();
+            // Delegate to record page's own countdown (5 seconds)
+            m_recordPage->onStartClicked();
             break;
         case Countdown:
-            m_countdownTimer->stop();
-            setState(Idle);
+            // Not used — record page handles its own countdown
             break;
         case Recording:
             m_recordPage->onPauseClicked();
@@ -179,8 +176,10 @@ void Tray::onCountdownTick() {
     m_countdownVal--;
     if (m_countdownVal <= 0) {
         m_countdownTimer->stop();
-        // Start recording using saved canvas state defaults
-        m_recordPage->onStartClicked();
+        // Skip the record page's own countdown — start recording directly
+        // First ensure the record page has a title set
+        m_recordPage->onStartClicked(); // this sets default title if empty, then starts its own countdown
+        // The record page guard (isRecording || countdownActive) prevents double-start
     } else {
         m_trayIcon->setToolTip(QString("Starting in %1...").arg(m_countdownVal));
     }

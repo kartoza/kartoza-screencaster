@@ -15,7 +15,7 @@ struct RecordingOptions {
     bool noScreen = false;
     bool hwAccel = false;
     QString webcamDevice;
-    int webcamFPS = 60;
+    int webcamFPS = 30;
     QString audioDevice = "@DEFAULT_SOURCE@";
     QString title;
     QString description;

@@ -105,7 +105,8 @@ void ProcessingPage::startMonitoring(Recorder *recorder) {
     m_recorder = recorder;
 
     // Reset UI
-    for (auto *bar : m_bars) bar->setValue(0);
+    QString barStyle = "QProgressBar { background: #313244; border: none; border-radius: 4px; height: 18px; color: #cdd6f4; text-align: center; } QProgressBar::chunk { background: #89b4fa; border-radius: 4px; }";
+    for (auto *bar : m_bars) { bar->setValue(0); bar->setStyleSheet(barStyle); }
     for (auto *lbl : m_statusLabels) {
         lbl->setText("Pending");
         lbl->setStyleSheet("QLabel { color: #6c7086; font-size: 11px; }");

@@ -233,7 +233,7 @@ void Recorder::startWebcamRecorder(const RecordingOptions &opts) {
 
     QStringList args;
     args << "-f" << "v4l2"
-         << "-framerate" << QString::number(opts.webcamFPS > 0 ? opts.webcamFPS : 60)
+         << "-framerate" << QString::number(opts.webcamFPS > 0 ? opts.webcamFPS : 30)
          << "-i" << ("/dev/" + opts.webcamDevice)
          << "-c:v" << "libx264"
          << "-preset" << "ultrafast"
@@ -496,7 +496,8 @@ void Recorder::reprocess(const QString &folder) {
 
     // Update status
     writeRecordingJson("processing");
-    emit recordingStopped(); // triggers UI navigation to processing page
+    // Note: do NOT emit recordingStopped() here — the caller (mainwindow reprocess handler)
+    // already navigates to the processing page and calls startMonitoring
 
     QThread *thread = QThread::create([this]() {
         processRecordings();
