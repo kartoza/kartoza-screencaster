@@ -15,6 +15,8 @@ void appendLogoInputArgs(QStringList &args, const RecordingOptions::LogoOpts &lo
 
 // FFmpeg utilities
 qint64 getVideoDurationUs(const QString &filePath);
+struct VideoDimensions { int width = 0, height = 0; };
+VideoDimensions getVideoDimensions(const QString &filePath);
 QString concatenateParts(const QStringList &parts, const QString &outputFile,
                          const QString &listPrefix = "concat");
 

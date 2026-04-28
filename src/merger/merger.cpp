@@ -40,6 +40,22 @@ void appendLogoInputArgs(QStringList &args, const RecordingOptions::LogoOpts &lo
 
 // --- FFmpeg utilities ---
 
+VideoDimensions getVideoDimensions(const QString &filePath) {
+    VideoDimensions d;
+    QProcess probe;
+    probe.start("ffprobe", {"-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=p=0:s=x", filePath});
+    probe.waitForFinished(10000);
+    QString out = probe.readAllStandardOutput().trimmed();
+    QStringList parts = out.split('x');
+    if (parts.size() == 2) {
+        d.width = parts[0].toInt();
+        d.height = parts[1].toInt();
+    }
+    return d;
+}
+
 qint64 getVideoDurationUs(const QString &filePath) {
     QProcess probe;
     probe.start("ffprobe", {"-v", "error", "-show_entries", "format=duration",
@@ -164,11 +180,15 @@ int runFFmpegWithProgress(const QStringList &args, qint64 durationUs,
 
 static void appendLogoFilter(QString &filter, QString &current, int &vIdx,
                               int inputIdx, const RecordingOptions::LogoOpts &logo,
-                              const QString &tag, const QString &enable = {}) {
-    QString scaleExpr = QString("'trunc(W*%1/2)*2'").arg(logo.relW, 0, 'f', 4);
-    filter += QString("[%1:v]scale=%2:-1[%3];").arg(inputIdx).arg(scaleExpr, tag);
+                              const QString &tag, int canvasW, int canvasH,
+                              const QString &enable = {}) {
+    int logoW = qMax(20, static_cast<int>(logo.relW * canvasW));
+    int logoX = static_cast<int>(logo.relX * canvasW);
+    int logoY = static_cast<int>(logo.relY * canvasH);
 
-    QString pos = QString("W*%1:H*%2").arg(logo.relX, 0, 'f', 4).arg(logo.relY, 0, 'f', 4);
+    filter += QString("[%1:v]scale=%2:-1[%3];").arg(inputIdx).arg(logoW).arg(tag);
+
+    QString pos = QString("%1:%2").arg(logoX).arg(logoY);
     if (enable.isEmpty()) {
         filter += QString("%1[%2]overlay=%3[v%4];").arg(current, tag, pos).arg(++vIdx);
     } else {
@@ -179,42 +199,23 @@ static void appendLogoFilter(QString &filter, QString &current, int &vIdx,
 
 static void appendWebcamFilter(QString &filter, QString &current, int &vIdx,
                                 int webcamInput, const RecordingOptions &opts,
-                                bool useExpressions) {
-    if (useExpressions) {
-        // FFmpeg expressions for variable-size output (merged video)
-        QString wcScale = QString("'trunc(W*%1/2)*2':'trunc(H*%2/2)*2'")
-            .arg(opts.webcamRelW, 0, 'f', 4).arg(opts.webcamRelH, 0, 'f', 4);
-        filter += QString("[%1:v]scale=%2,setsar=1[wcam];").arg(webcamInput).arg(wcScale);
+                                int canvasW, int canvasH) {
+    int wcW = qMax(50, static_cast<int>(opts.webcamRelW * canvasW));
+    int wcH = qMax(50, static_cast<int>(opts.webcamRelH * canvasH));
+    wcW = (wcW / 2) * 2; wcH = (wcH / 2) * 2;
+    int wcX = static_cast<int>(opts.webcamRelX * canvasW);
+    int wcY = static_cast<int>(opts.webcamRelY * canvasH);
 
-        if (opts.webcamShape == 0) {
-            QString maskScale = wcScale;
-            filter += QString("color=black:2x2,scale=%1[cmask_raw];").arg(maskScale);
-            filter += "[cmask_raw]geq=lum='if(lt(hypot(X-W/2,Y-H/2),min(W,H)/2),255,0)':cb=128:cr=128[cmask];";
-            filter += "[wcam][cmask]alphamerge[wcam_shaped];";
-        } else {
-            filter += "[wcam]null[wcam_shaped];";
-        }
-        filter += QString("%1[wcam_shaped]overlay=W*%2:H*%3[v%4];")
-            .arg(current).arg(opts.webcamRelX, 0, 'f', 4).arg(opts.webcamRelY, 0, 'f', 4).arg(++vIdx);
+    filter += QString("[%1:v]scale=%2:%3,setsar=1[wcam];").arg(webcamInput).arg(wcW).arg(wcH);
+    if (opts.webcamShape == 0) {
+        int r = qMin(wcW, wcH) / 2;
+        filter += QString("color=black:%1x%2,geq=lum='if(lt(hypot(X-%3,Y-%4),%5),255,0)':cb=128:cr=128[cmask];")
+            .arg(wcW).arg(wcH).arg(wcW/2).arg(wcH/2).arg(r);
+        filter += "[wcam][cmask]alphamerge[wcam_shaped];";
     } else {
-        // Fixed-size output (vertical 1080x1920)
-        int wcW = qMax(50, static_cast<int>(opts.webcamRelW * 1080));
-        int wcH = qMax(50, static_cast<int>(opts.webcamRelH * 1920));
-        wcW = (wcW / 2) * 2; wcH = (wcH / 2) * 2;
-        int wcX = static_cast<int>(opts.webcamRelX * 1080);
-        int wcY = static_cast<int>(opts.webcamRelY * 1920);
-
-        filter += QString("[%1:v]scale=%2:%3,setsar=1[wcam];").arg(webcamInput).arg(wcW).arg(wcH);
-        if (opts.webcamShape == 0) {
-            int r = qMin(wcW, wcH) / 2;
-            filter += QString("color=black:%1x%2,geq=lum='if(lt(hypot(X-%3,Y-%4),%5),255,0)':cb=128:cr=128[cmask];")
-                .arg(wcW).arg(wcH).arg(wcW/2).arg(wcH/2).arg(r);
-            filter += "[wcam][cmask]alphamerge[wcam_shaped];";
-        } else {
-            filter += "[wcam]null[wcam_shaped];";
-        }
-        filter += QString("%1[wcam_shaped]overlay=%2:%3[v%4];").arg(current).arg(wcX).arg(wcY).arg(++vIdx);
+        filter += "[wcam]null[wcam_shaped];";
     }
+    filter += QString("%1[wcam_shaped]overlay=%2:%3[v%4];").arg(current).arg(wcX).arg(wcY).arg(++vIdx);
     current = QString("[v%1]").arg(vIdx);
 }
 
@@ -251,10 +252,14 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
         QString logoEnable = "enable='between(t,0,15)'";
         int vIdx = 0;
 
-        if (hasLeftLogo) appendLogoFilter(filter, current, vIdx, leftLogoIn, in.opts.leftLogo, "ll", logoEnable);
-        if (hasRightLogo) appendLogoFilter(filter, current, vIdx, rightLogoIn, in.opts.rightLogo, "rl", logoEnable);
-        if (hasBannerLogo) appendLogoFilter(filter, current, vIdx, bannerLogoIn, in.opts.bannerLogo, "bl", logoEnable);
-        if (mergeWebcam) appendWebcamFilter(filter, current, vIdx, webcamInput, in.opts, true);
+        auto dim = getVideoDimensions(in.screenFile);
+        int cw = dim.width > 0 ? dim.width : 1920;
+        int ch = dim.height > 0 ? dim.height : 1080;
+
+        if (hasLeftLogo) appendLogoFilter(filter, current, vIdx, leftLogoIn, in.opts.leftLogo, "ll", cw, ch, logoEnable);
+        if (hasRightLogo) appendLogoFilter(filter, current, vIdx, rightLogoIn, in.opts.rightLogo, "rl", cw, ch, logoEnable);
+        if (hasBannerLogo) appendLogoFilter(filter, current, vIdx, bannerLogoIn, in.opts.bannerLogo, "bl", cw, ch, logoEnable);
+        if (mergeWebcam) appendWebcamFilter(filter, current, vIdx, webcamInput, in.opts, cw, ch);
 
         finalizeFilter(filter);
         args << "-filter_complex" << filter << "-map" << "[outv]";
@@ -305,7 +310,7 @@ QStringList buildVerticalArgs(const MergeInputs &in, const QString &outputFile) 
     QString current = "[canvas]";
     int vIdx = 0;
 
-    if (hasWebcam) appendWebcamFilter(f, current, vIdx, webcamInput, in.opts, false);
+    if (hasWebcam) appendWebcamFilter(f, current, vIdx, webcamInput, in.opts, 1080, 1920);
 
     // Logos at fixed vertical positions
     if (hasLeftLogo) {
