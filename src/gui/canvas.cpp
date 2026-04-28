@@ -198,6 +198,18 @@ void Canvas::clearAll() {
     update();
 }
 
+void Canvas::stopAllWebcamPreviews() {
+    for (int i = 0; i < m_items.size(); i++) {
+        if (m_items[i].type == 1) stopWebcamCapture(i);
+    }
+}
+
+void Canvas::startAllWebcamPreviews() {
+    for (int i = 0; i < m_items.size(); i++) {
+        if (m_items[i].type == 1 && !m_items[i].webcamProc) startWebcamCapture(i);
+    }
+}
+
 void Canvas::setSelectedItem(int index) {
     m_selected = index;
     update();

@@ -14,6 +14,8 @@ struct RecordingOptions {
     bool noWebcam = false;
     bool noScreen = false;
     bool hwAccel = false;
+    // Canvas mode: 0=landscape, 1=vertical, 2=left split, 3=right split
+    int canvasMode = 0;
     QString webcamDevice;
     int webcamFPS = 30;
     QString audioDevice = "@DEFAULT_SOURCE@";

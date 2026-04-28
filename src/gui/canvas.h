@@ -24,6 +24,8 @@ public:
     void addLogo(const QString &filePath);
     void removeItem(int index);
     void clearAll();
+    void stopAllWebcamPreviews();
+    void startAllWebcamPreviews();
 
     // Queries
     QString selectedMonitor() const { return m_monitorName; }

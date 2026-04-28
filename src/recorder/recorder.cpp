@@ -178,6 +178,7 @@ void Recorder::writeRecordingJson(const QString &status) {
         settings["banner_gif_loop_max"] = m_opts.bannerLogo.gifLoopMax;
     }
     settings["title_color"] = m_opts.titleColor;
+    settings["canvas_mode"] = m_opts.canvasMode;
     root["settings"] = settings;
 
     // Write
@@ -456,6 +457,7 @@ void Recorder::reprocess(const QString &folder) {
     m_opts.noAudio = !settings["audio_enabled"].toBool(true);
     m_opts.noWebcam = !settings["webcam_enabled"].toBool(true);
     m_opts.titleColor = settings["title_color"].toString("#62A4C7");
+    m_opts.canvasMode = settings["canvas_mode"].toInt(0);
 
     if (settings.contains("left_logo")) {
         m_opts.leftLogo.path = settings["left_logo"].toString();
@@ -569,9 +571,14 @@ void Recorder::processRecordings() {
         emit processingStepDone(1, "Normalizing audio", true);
     }
 
-    // Step 2: Merge video + audio
+    // Render based on canvas mode:
+    // Mode 0 (landscape) = merged video only
+    // Mode 1/2/3 (vertical/left split/right split) = vertical video only
+    bool isVerticalMode = m_opts.canvasMode >= 1;
+
+    // Step 2: Merged landscape video
     emit processingProgress(2, 0, "Merging video & audio");
-    if (hasScreen) {
+    if (hasScreen && !isVerticalMode) {
         m_mergedFile = m_outputDir + "/" + Merger::outputFileName(m_opts.number, m_opts.title);
         qint64 durationUs = Merger::getVideoDurationUs(m_screenFile);
 
@@ -588,12 +595,12 @@ void Recorder::processRecordings() {
             emit processingStepError(2, "Merging", "FFmpeg merge failed");
         }
     } else {
-        emit processingStepDone(2, "Merging video & audio", true);
+        emit processingStepDone(2, "Merging video & audio", !isVerticalMode ? true : true);
     }
 
-    // Step 3: Create vertical video
+    // Step 3: Vertical video
     emit processingProgress(3, 0, "Creating vertical video");
-    if (hasScreen) {
+    if (hasScreen && isVerticalMode) {
         QString vertFile = m_outputDir + "/" + Merger::outputFileName(m_opts.number, m_opts.title, "vertical");
         qint64 durationUs = Merger::getVideoDurationUs(m_screenFile);
 

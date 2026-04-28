@@ -343,6 +343,7 @@ void RecordPage::onCountdownTick() {
         opts.noAudio = !m_audioCheck->isChecked();
         opts.webcamDevice = m_canvas->firstWebcamDevice();
         opts.noWebcam = opts.webcamDevice.isEmpty();
+        opts.canvasMode = m_modeGroup->checkedId(); // 0=landscape, 1=vertical, 2=left split, 3=right split
         opts.title = m_titleInput->text();
         opts.description = m_descInput->toPlainText();
         opts.number = m_numberInput->text().toInt();
@@ -383,6 +384,9 @@ void RecordPage::onCountdownTick() {
         cfg.defaultPresenter = opts.presenter;
         cfg.save();
 
+        // Release webcam devices so the recorder can use them
+        m_canvas->stopAllWebcamPreviews();
+
         m_recorder->start(opts);
     } else {
         m_statusLabel->setText(QString("Starting in %1...").arg(m_countdownVal));
@@ -421,6 +425,9 @@ void RecordPage::onRecorderStopped() {
     m_pauseBtn->setEnabled(true);
     m_stopBtn->hide();
     m_stopBtn->setEnabled(true);
+
+    // Restart webcam previews now that recording is done
+    m_canvas->startAllWebcamPreviews();
 
     // Increment number
     int num = m_numberInput->text().toInt() + 1;
