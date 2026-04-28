@@ -13,7 +13,7 @@
 #include <QTimer>
 #include <QProcess>
 #include <QPixmap>
-#include <QtConcurrent>
+#include <QThreadPool>
 #include <algorithm>
 
 HistoryPage::HistoryPage(QWidget *parent) : QWidget(parent) {
@@ -377,7 +377,7 @@ void HistoryPage::onRecordingSelected(int row) {
                 label->setPixmap(thumb.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
         } else {
             QString videoPath = video;
-            QtConcurrent::run([thumbPath, videoPath, label, labelSize]() {
+            QThreadPool::globalInstance()->start([thumbPath, videoPath, label, labelSize]() {
                 QProcess ffmpeg;
                 ffmpeg.start("ffmpeg", {"-y", "-i", videoPath, "-vf", "thumbnail,scale=400:-1",
                                         "-frames:v", "1", thumbPath});
