@@ -120,6 +120,8 @@ private:
     int m_countdownVal = 0;
     /** @brief Whether a recording is currently in progress. */
     bool m_isRecording = false;
+    /** @brief Guard to prevent saving during restore. */
+    bool m_restoring = false;
 
     // -- Layer list --
     /** @brief List widget showing canvas layer stack. */

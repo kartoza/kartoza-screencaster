@@ -220,7 +220,7 @@ void RecordPage::setupUI() {
     // Refresh layer list and auto-save when items change
     connect(m_canvas, &Canvas::itemsChanged, this, [this]() {
         refreshLayerList();
-        saveCanvasState();
+        if (!m_restoring) saveCanvasState();
     });
 
     // Restore saved canvas state
@@ -485,6 +485,8 @@ void RecordPage::restoreCanvasState() {
     auto &cfg = Config::instance();
     if (cfg.canvasState.items.isEmpty()) return;
 
+    m_restoring = true;
+
     // Restore mode
     QString mode = cfg.canvasState.mode;
     int modeId = 0;
@@ -558,6 +560,7 @@ void RecordPage::restoreCanvasState() {
         }
     }
 
+    m_restoring = false;
     refreshLayerList();
 }
 
