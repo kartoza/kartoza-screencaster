@@ -204,6 +204,14 @@ bool Canvas::hasWebcams() const {
     return false;
 }
 
+QString Canvas::firstWebcamDevice() const {
+    for (const auto &item : m_items) {
+        if (item.type == 1 && item.visible && !item.device.isEmpty())
+            return item.device;
+    }
+    return {};
+}
+
 QString Canvas::itemLabel(int index) const {
     if (index < 0 || index >= m_items.size()) return {};
     return m_items[index].label;

@@ -39,6 +39,8 @@ public:
 
     CanvasState canvasState;
 
+    int nextRecordingNumber() const;
+
     // YouTube
     QString youtubeClientId;
     QString youtubeClientSecret;

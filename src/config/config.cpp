@@ -3,6 +3,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QStandardPaths>
+#include <QRegularExpression>
 
 Config &Config::instance() {
     static Config cfg;
@@ -62,6 +63,24 @@ void Config::load() {
             canvasState.items.append(s);
         }
     }
+}
+
+int Config::nextRecordingNumber() const {
+    QString dir = outputDir;
+    if (dir.isEmpty()) dir = QDir::homePath() + "/Videos/Screencasts";
+    QDir d(dir);
+    if (!d.exists()) return 1;
+
+    int highest = 0;
+    QRegularExpression re("^(\\d{3})-");
+    for (const auto &entry : d.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        auto match = re.match(entry);
+        if (match.hasMatch()) {
+            int num = match.captured(1).toInt();
+            if (num > highest) highest = num;
+        }
+    }
+    return highest + 1;
 }
 
 void Config::save() {

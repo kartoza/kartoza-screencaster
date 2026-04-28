@@ -84,7 +84,7 @@ void RecordPage::setupUI() {
     numRow->addWidget(numLbl);
     m_numberInput = new QLineEdit;
     m_numberInput->setStyleSheet(inputStyle);
-    m_numberInput->setText("001"); // TODO: auto-increment
+    m_numberInput->setText(QString("%1").arg(cfg.nextRecordingNumber(), 3, 10, QChar('0')));
     m_numberInput->setToolTip("Sequential recording number.");
     numRow->addWidget(m_numberInput);
     leftLayout->addLayout(numRow);
@@ -324,14 +324,21 @@ void RecordPage::onCountdownTick() {
         m_countdownTimer->stop();
         m_statusLabel->setText("Starting recorders...");
 
-        // Build options and start
+        // Build options from canvas state
         RecordingOptions opts;
         opts.monitor = m_canvas->selectedMonitor();
         opts.noScreen = opts.monitor.isEmpty();
         opts.noAudio = !m_audioCheck->isChecked();
+        opts.webcamDevice = m_canvas->firstWebcamDevice();
+        opts.noWebcam = opts.webcamDevice.isEmpty();
         opts.title = m_titleInput->text();
         opts.number = m_numberInput->text().toInt();
         opts.presenter = m_presenterInput->text();
+
+        // Save presenter for next session
+        auto &cfg = Config::instance();
+        cfg.defaultPresenter = opts.presenter;
+        cfg.save();
 
         m_recorder->start(opts);
     } else {

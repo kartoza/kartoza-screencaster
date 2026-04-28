@@ -78,4 +78,8 @@ private:
     QString m_mergedFile;
 
     void writeRecordingJson(const QString &status);
+    void createVerticalVideo(const QString &audioFile, bool hasAudio);
+
+    int runFFmpegWithProgress(const QStringList &args, int step, const QString &stepName, qint64 durationUs);
+    static qint64 getVideoDurationUs(const QString &filePath);
 };

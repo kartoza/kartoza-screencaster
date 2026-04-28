@@ -267,6 +267,45 @@ void Recorder::resume() {
     emit recordingResumed();
 }
 
+qint64 Recorder::getVideoDurationUs(const QString &filePath) {
+    QProcess probe;
+    probe.start("ffprobe", {"-v", "error", "-show_entries", "format=duration",
+                            "-of", "default=noprint_wrappers=1:nokey=1", filePath});
+    probe.waitForFinished(10000);
+    QString out = probe.readAllStandardOutput().trimmed();
+    double secs = out.toDouble();
+    return static_cast<qint64>(secs * 1000000.0);
+}
+
+int Recorder::runFFmpegWithProgress(const QStringList &args, int step, const QString &stepName, qint64 durationUs) {
+    QProcess proc;
+    QStringList fullArgs = args;
+    fullArgs.insert(1, "-progress"); // after -y
+    fullArgs.insert(2, "pipe:1");
+    fullArgs.insert(3, "-stats_period");
+    fullArgs.insert(4, "0.5");
+
+    proc.setProcessChannelMode(QProcess::SeparateChannels);
+    proc.start("ffmpeg", fullArgs);
+    proc.waitForStarted(5000);
+
+    while (proc.state() != QProcess::NotRunning) {
+        proc.waitForReadyRead(500);
+        while (proc.canReadLine()) {
+            QString line = proc.readLine().trimmed();
+            if (line.startsWith("out_time_us=")) {
+                qint64 timeUs = line.mid(12).toLongLong();
+                if (durationUs > 0) {
+                    int pct = qBound(0, static_cast<int>(timeUs * 100 / durationUs), 99);
+                    emit processingProgress(step, pct, stepName);
+                }
+            }
+        }
+    }
+    proc.waitForFinished(-1);
+    return proc.exitCode();
+}
+
 void Recorder::processRecordings() {
     emit processingStarted();
 
@@ -281,19 +320,79 @@ void Recorder::processRecordings() {
         return;
     }
 
-    // Step 0: Analyze audio
+    // Determine audio file to use (may become normalized version)
+    QString audioToUse = m_audioFile;
+    QString normalizedAudio = m_outputDir + "/audio_normalized.wav";
+
+    // Step 0: Analyze audio (loudnorm pass 1)
     emit processingProgress(0, 0, "Analyzing audio");
+    QString loudnormParams; // will hold measured_* params for pass 2
     if (hasAudio) {
+        // Pass 1: measure loudness
+        QProcess analyze;
+        QStringList args;
+        args << "-y" << "-i" << m_audioFile
+             << "-af" << "loudnorm=I=-18:TP=-1.5:LRA=11:print_format=json"
+             << "-f" << "null" << "-";
+        analyze.start("ffmpeg", args);
+        analyze.waitForFinished(-1);
+
+        QString output = analyze.readAllStandardError();
+        // Parse measured values from JSON output
+        auto extractVal = [&output](const QString &key) -> QString {
+            int idx = output.indexOf("\"" + key + "\"");
+            if (idx < 0) return {};
+            int colon = output.indexOf(':', idx);
+            int quote1 = output.indexOf('"', colon);
+            int quote2 = output.indexOf('"', quote1 + 1);
+            if (quote1 < 0 || quote2 < 0) return {};
+            return output.mid(quote1 + 1, quote2 - quote1 - 1);
+        };
+
+        QString measI = extractVal("input_i");
+        QString measTP = extractVal("input_tp");
+        QString measLRA = extractVal("input_lra");
+        QString measThresh = extractVal("input_thresh");
+        QString measOffset = extractVal("target_offset");
+
+        if (!measI.isEmpty()) {
+            loudnormParams = QString("loudnorm=I=-18:TP=-1.5:LRA=11:"
+                "measured_I=%1:measured_TP=%2:measured_LRA=%3:"
+                "measured_thresh=%4:offset=%5:linear=true")
+                .arg(measI, measTP, measLRA, measThresh, measOffset);
+        }
+
         emit processingProgress(0, 100, "Analyzing audio");
         emit processingStepDone(0, "Analyzing audio", false);
     } else {
         emit processingStepDone(0, "Analyzing audio", true);
     }
 
-    // Step 1: Normalize audio
+    // Step 1: Normalize audio (loudnorm pass 2)
     emit processingProgress(1, 0, "Normalizing audio");
-    // TODO: actual normalization
-    emit processingStepDone(1, "Normalizing audio", true);
+    if (hasAudio && !loudnormParams.isEmpty()) {
+        QProcess norm;
+        QStringList args;
+        args << "-y" << "-i" << m_audioFile
+             << "-af" << loudnormParams
+             << "-ar" << "48000" << "-ac" << "2"
+             << normalizedAudio;
+
+        qDebug() << "Normalizing audio:" << args;
+        norm.start("ffmpeg", args);
+        norm.waitForFinished(-1);
+
+        if (norm.exitCode() == 0 && QFile::exists(normalizedAudio)) {
+            audioToUse = normalizedAudio;
+            emit processingProgress(1, 100, "Normalizing audio");
+            emit processingStepDone(1, "Normalizing audio", false);
+        } else {
+            qWarning() << "Normalization failed, using raw audio";
+            emit processingStepDone(1, "Normalizing audio", true);
+        }
+    } else {
+        emit processingStepDone(1, "Normalizing audio", true);
+    }
 
     // Step 2: Merge video + audio
     emit processingProgress(2, 0, "Merging video & audio");
@@ -303,10 +402,11 @@ void Recorder::processRecordings() {
         m_mergedFile = m_outputDir + "/" +
             QString("%1-%2.mp4").arg(m_opts.number, 3, 10, QChar('0')).arg(titleSlug);
 
-        QProcess ffmpeg;
+        qint64 durationUs = getVideoDurationUs(m_screenFile);
+
         QStringList args;
         args << "-y" << "-i" << m_screenFile;
-        if (hasAudio) args << "-i" << m_audioFile;
+        if (hasAudio) args << "-i" << audioToUse;
         args << "-c:v" << "libx264" << "-preset" << "medium" << "-crf" << "18" << "-r" << "30";
         if (hasAudio) {
             args << "-c:a" << "aac" << "-b:a" << "320k" << "-shortest";
@@ -316,27 +416,109 @@ void Recorder::processRecordings() {
         args << m_mergedFile;
 
         qDebug() << "Merging:" << args;
-        ffmpeg.start("ffmpeg", args);
-        ffmpeg.waitForFinished(-1);
+        int exitCode = runFFmpegWithProgress(args, 2, "Merging video & audio", durationUs);
 
-        if (ffmpeg.exitCode() == 0) {
+        if (exitCode == 0) {
             emit processingProgress(2, 100, "Merging video & audio");
             emit processingStepDone(2, "Merging video & audio", false);
         } else {
-            QString err = ffmpeg.readAllStandardError();
-            qWarning() << "Merge failed:" << err;
-            emit processingStepError(2, "Merging", err.left(200));
+            emit processingStepError(2, "Merging", "FFmpeg merge failed");
         }
     } else {
         emit processingStepDone(2, "Merging video & audio", true);
     }
 
-    // Step 3: Create vertical video (placeholder)
+    // Step 3: Create vertical video
     emit processingProgress(3, 0, "Creating vertical video");
-    emit processingStepDone(3, "Creating vertical video", true);
+    if (hasScreen) {
+        createVerticalVideo(audioToUse, hasAudio);
+    } else {
+        emit processingStepDone(3, "Creating vertical video", true);
+    }
 
     // Write final recording.json
     writeRecordingJson("completed");
 
     emit processingFinished(true);
+}
+
+void Recorder::createVerticalVideo(const QString &audioFile, bool hasAudio) {
+    QString titleSlug = m_opts.title.toLower().replace(QRegularExpression("[^a-z0-9]+"), "_").trimmed();
+    if (titleSlug.isEmpty()) titleSlug = "recording";
+    QString vertFile = m_outputDir + "/" +
+        QString("%1-%2-vertical.mp4").arg(m_opts.number, 3, 10, QChar('0')).arg(titleSlug);
+
+    bool hasWebcam = QFile::exists(m_webcamFile);
+
+    // Build filter_complex for 1080x1920 (9:16) vertical video
+    // Layout: screen at top, webcam below (if present), title at bottom
+    QString filter;
+    int inputIdx = 0;
+    int screenIdx = inputIdx++;
+    int webcamIdx = hasWebcam ? inputIdx++ : -1;
+    int audioIdx = hasAudio ? inputIdx++ : -1;
+    Q_UNUSED(audioIdx);
+
+    // Scale screen to fit 1080 width, maintaining aspect ratio
+    filter += QString("[%1:v]scale=1080:-2,setsar=1[screen];").arg(screenIdx);
+
+    if (hasWebcam) {
+        // Scale webcam to 250x250 circle overlay
+        filter += QString("[%1:v]scale=250:250,setsar=1[wcam];").arg(webcamIdx);
+
+        // Stack screen on black 1080x1920 canvas
+        filter += "[screen]pad=1080:1920:(ow-iw)/2:0:black[canvas];";
+
+        // Create circular mask for webcam
+        filter += "color=black:250x250[cmask];";
+        filter += "[cmask]drawbox=x=0:y=0:w=250:h=250:c=white@1:t=fill[mask_bg];";
+        filter += "color=white:250x250[circle_fg];";
+        filter += "[circle_fg]geq=lum='if(lt(hypot(X-125,Y-125),125),255,0)':cb=128:cr=128[circle_mask];";
+        filter += "[mask_bg][circle_mask]overlay=0:0[alpha_mask];";
+
+        // Apply mask to webcam
+        filter += "[wcam][alpha_mask]alphamerge[wcam_circle];";
+
+        // Overlay webcam on canvas (bottom-right with margin)
+        filter += "[canvas][wcam_circle]overlay=W-w-20:H-w-200[comp];";
+
+        // Add title text
+        filter += QString("[comp]drawtext=text='%1':fontsize=36:fontcolor=white:"
+            "x=(w-text_w)/2:y=h-100:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf[outv]")
+            .arg(m_opts.title.replace("'", "\\'"));
+    } else {
+        // No webcam: just screen on canvas with title
+        filter += "[screen]pad=1080:1920:(ow-iw)/2:0:black[canvas];";
+        filter += QString("[canvas]drawtext=text='%1':fontsize=36:fontcolor=white:"
+            "x=(w-text_w)/2:y=h-100:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf[outv]")
+            .arg(m_opts.title.replace("'", "\\'"));
+    }
+
+    qint64 durationUs = getVideoDurationUs(m_screenFile);
+
+    QStringList args;
+    args << "-y" << "-i" << m_screenFile;
+    if (hasWebcam) args << "-i" << m_webcamFile;
+    if (hasAudio) args << "-i" << audioFile;
+    args << "-filter_complex" << filter
+         << "-map" << "[outv]";
+    if (hasAudio) {
+        args << "-map" << QString("%1:a").arg(hasWebcam ? 2 : 1);
+        args << "-c:a" << "aac" << "-b:a" << "320k" << "-shortest";
+    } else {
+        args << "-an";
+    }
+    args << "-c:v" << "libx264" << "-preset" << "medium" << "-crf" << "18" << "-r" << "30"
+         << "-s" << "1080x1920"
+         << vertFile;
+
+    qDebug() << "Creating vertical:" << args;
+    int exitCode = runFFmpegWithProgress(args, 3, "Creating vertical video", durationUs);
+
+    if (exitCode == 0) {
+        emit processingProgress(3, 100, "Creating vertical video");
+        emit processingStepDone(3, "Creating vertical video", false);
+    } else {
+        emit processingStepError(3, "Creating vertical video", "FFmpeg vertical video failed");
+    }
 }
