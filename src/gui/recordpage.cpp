@@ -8,6 +8,7 @@
 #include <QDateTime>
 #include <QFile>
 #include <QSet>
+#include <QShowEvent>
 
 RecordPage::RecordPage(QWidget *parent) : QWidget(parent) {
     m_recorder = new Recorder(this);
@@ -313,6 +314,12 @@ void RecordPage::setupUI() {
 
 void RecordPage::addScreen(const MonitorInfo &mon) {
     m_canvas->setMonitor(mon);
+}
+
+void RecordPage::showEvent(QShowEvent *event) {
+    QWidget::showEvent(event);
+    refreshLayerList();
+    m_canvas->update();
 }
 
 void RecordPage::onStartClicked() {

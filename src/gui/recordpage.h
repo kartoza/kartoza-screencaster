@@ -43,6 +43,10 @@ public:
      */
     Recorder *recorder() { return m_recorder; }
 
+protected:
+    /** @brief Refresh layer list when page becomes visible. */
+    void showEvent(QShowEvent *event) override;
+
 signals:
     /** @brief Emitted when a recording session begins. */
     void recordingStarted();
