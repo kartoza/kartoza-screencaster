@@ -1,5 +1,6 @@
 #include "gui/tray.h"
 #include "gui/mainwindow.h"
+#include "config/config.h"
 #include <QApplication>
 #include <QIcon>
 #include <QDebug>
@@ -8,25 +9,29 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     : QObject(mainWindow), m_mainWindow(mainWindow), m_recordPage(recordPage) {
 
     m_trayIcon = new QSystemTrayIcon(this);
-    m_trayIcon->setToolTip("Kartoza Screencaster");
+    m_countdownTimer = new QTimer(this);
+    connect(m_countdownTimer, &QTimer::timeout, this, &Tray::onCountdownTick);
 
-    QIcon icon("resources/icon_ready.png");
-    if (icon.isNull()) icon = QIcon::fromTheme("camera-video");
-    m_trayIcon->setIcon(icon);
-
-    // All items always visible — Cosmic ignores dynamic menu changes.
-    // Logic handled in action callbacks based on m_recording state.
+    // Context menu
     m_menu = new QMenu;
 
-    m_menu->addAction("Start Recording", this, [this]() {
-        if (m_recording) return; // already recording
-        m_mainWindow->show();
-        m_mainWindow->raise();
-        m_mainWindow->navigateTo(MainWindow::PageRecord);
+    m_startAction = m_menu->addAction("Start Recording", this, [this]() {
+        if (m_state == Idle) startCountdown();
     });
-    m_menu->addAction("Stop Recording", this, [this]() {
-        if (!m_recording) return; // not recording
-        m_recordPage->onStopClicked();
+    m_pauseAction = m_menu->addAction("Pause", this, [this]() {
+        if (m_state == Recording) {
+            m_recordPage->onPauseClicked();
+        } else if (m_state == Paused) {
+            m_recordPage->onPauseClicked();
+        }
+    });
+    m_stopAction = m_menu->addAction("Stop Recording", this, [this]() {
+        if (m_state == Recording || m_state == Paused) {
+            m_recordPage->onStopClicked();
+        } else if (m_state == Countdown) {
+            m_countdownTimer->stop();
+            setState(Idle);
+        }
     });
     m_menu->addSeparator();
     m_menu->addAction("Open Window", this, [this]() {
@@ -40,32 +45,124 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
 
     m_trayIcon->setContextMenu(m_menu);
 
-    // Tray icon clicks
+    // Single click behavior
     connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
-        if (reason == QSystemTrayIcon::Trigger) {
-            if (m_recording) {
-                // During recording, single click stops
-                m_recordPage->onStopClicked();
-            } else {
-                m_mainWindow->setVisible(!m_mainWindow->isVisible());
-                if (m_mainWindow->isVisible()) m_mainWindow->raise();
-            }
+        if (reason != QSystemTrayIcon::Trigger) return;
+
+        switch (m_state) {
+        case Idle:
+            startCountdown();
+            break;
+        case Countdown:
+            m_countdownTimer->stop();
+            setState(Idle);
+            break;
+        case Recording:
+            m_recordPage->onPauseClicked();
+            break;
+        case Paused:
+            m_recordPage->onPauseClicked();
+            break;
+        case Processing:
+            // Show window during processing
+            m_mainWindow->show();
+            m_mainWindow->raise();
+            break;
         }
     });
 
-    // Track state for icon changes (these DO work on Cosmic)
+    // Track recorder state changes
     connect(m_recordPage, &RecordPage::recordingStarted, this, [this]() {
-        m_recording = true;
-        QIcon recIcon("resources/icon_recording.png");
-        if (!recIcon.isNull()) m_trayIcon->setIcon(recIcon);
-        m_trayIcon->setToolTip("Kartoza Screencaster - Recording (click to stop)");
+        setState(Recording);
+        m_mainWindow->hide(); // hide window during recording
     });
     connect(m_recordPage, &RecordPage::recordingStopped, this, [this]() {
-        m_recording = false;
-        QIcon icon("resources/icon_ready.png");
-        if (!icon.isNull()) m_trayIcon->setIcon(icon);
-        m_trayIcon->setToolTip("Kartoza Screencaster");
+        setState(Processing);
+        m_mainWindow->show();
+        m_mainWindow->raise();
+    });
+    connect(m_recordPage->recorder(), &Recorder::recordingPaused, this, [this]() {
+        setState(Paused);
+    });
+    connect(m_recordPage->recorder(), &Recorder::recordingResumed, this, [this]() {
+        setState(Recording);
+    });
+    connect(m_recordPage->recorder(), &Recorder::processingFinished, this, [this](bool) {
+        setState(Idle);
     });
 
+    setState(Idle);
     m_trayIcon->show();
+}
+
+void Tray::setState(State s) {
+    m_state = s;
+
+    QString iconPath;
+    QString tooltip;
+
+    switch (s) {
+    case Idle:
+        iconPath = "resources/icon_ready.png";
+        tooltip = "Kartoza Screencaster - Click to record";
+        m_startAction->setEnabled(true);
+        m_pauseAction->setEnabled(false);
+        m_stopAction->setEnabled(false);
+        m_pauseAction->setText("Pause");
+        break;
+    case Countdown:
+        iconPath = "resources/icon_ready.png";
+        tooltip = QString("Starting in %1...").arg(m_countdownVal);
+        m_startAction->setEnabled(false);
+        m_pauseAction->setEnabled(false);
+        m_stopAction->setEnabled(true);
+        break;
+    case Recording:
+        iconPath = "resources/icon_recording.png";
+        tooltip = "Recording - Click to pause";
+        m_startAction->setEnabled(false);
+        m_pauseAction->setEnabled(true);
+        m_pauseAction->setText("Pause");
+        m_stopAction->setEnabled(true);
+        break;
+    case Paused:
+        iconPath = "resources/icon_ready.png";
+        tooltip = "Paused - Click to resume";
+        m_startAction->setEnabled(false);
+        m_pauseAction->setEnabled(true);
+        m_pauseAction->setText("Resume");
+        m_stopAction->setEnabled(true);
+        break;
+    case Processing:
+        iconPath = "resources/icon_ready.png";
+        tooltip = "Processing video...";
+        m_startAction->setEnabled(false);
+        m_pauseAction->setEnabled(false);
+        m_stopAction->setEnabled(false);
+        break;
+    }
+
+    QIcon icon(iconPath);
+    if (icon.isNull()) icon = QIcon::fromTheme("camera-video");
+    m_trayIcon->setIcon(icon);
+    m_trayIcon->setToolTip(tooltip);
+}
+
+void Tray::startCountdown() {
+    m_countdownVal = 5;
+    setState(Countdown);
+    m_trayIcon->showMessage("Kartoza Screencaster",
+        "Recording starts in 5 seconds...", QSystemTrayIcon::Information, 4000);
+    m_countdownTimer->start(1000);
+}
+
+void Tray::onCountdownTick() {
+    m_countdownVal--;
+    if (m_countdownVal <= 0) {
+        m_countdownTimer->stop();
+        // Start recording using saved canvas state defaults
+        m_recordPage->onStartClicked();
+    } else {
+        m_trayIcon->setToolTip(QString("Starting in %1...").arg(m_countdownVal));
+    }
 }

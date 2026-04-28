@@ -316,10 +316,11 @@ void RecordPage::addScreen(const MonitorInfo &mon) {
 }
 
 void RecordPage::onStartClicked() {
-    if (m_titleInput->text().isEmpty()) {
-        m_statusLabel->setText("Enter a title");
-        m_statusLabel->setStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }");
-        return;
+    if (m_isRecording || m_countdownTimer->isActive()) return;
+
+    // Default title for systray-initiated recordings
+    if (m_titleInput->text().trimmed().isEmpty()) {
+        m_titleInput->setText("recording-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss"));
     }
 
     m_countdownVal = 5;
