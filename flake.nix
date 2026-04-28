@@ -353,7 +353,8 @@
             # Documentation aliases
             alias docs='mkdocs serve'
             alias docs-build='mkdocs build'
-            alias doxygen-build='doxygen Doxyfile'
+            alias doxygen-build='cd build && ninja docs && cd ..'
+            alias doxygen-open='cd build && ninja docs-open && cd ..'
 
             echo ""
             echo "🎬 Kartoza Screencaster Development Environment (C++/Qt6)"
@@ -368,6 +369,7 @@
             echo "Documentation:"
             echo "  docs          - Serve mkdocs (localhost:8000)"
             echo "  doxygen-build - Generate Doxygen API docs"
+            echo "  doxygen-open  - Generate + open Doxygen in browser"
             echo ""
             echo "Neovim: <leader>p for all project commands"
             echo ""
