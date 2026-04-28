@@ -45,6 +45,8 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     m_menu->addSeparator();
     m_menu->addAction("Quit", this, [this]() {
         m_trayIcon->hide();
+        // Tell closeEvent to allow the actual close
+        m_mainWindow->setProperty("quitting", true);
         QApplication::quit();
     });
 

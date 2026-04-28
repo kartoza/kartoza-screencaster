@@ -245,6 +245,10 @@ void MainWindow::showFromTray() {
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
+    if (property("quitting").toBool()) {
+        event->accept();
+        return;
+    }
     event->ignore();
     hideToTray();
 }
