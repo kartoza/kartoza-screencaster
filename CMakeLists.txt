@@ -33,6 +33,8 @@ set(SOURCES
     src/gui/tray.h
     src/recorder/recorder.cpp
     src/recorder/recorder.h
+    src/merger/merger.cpp
+    src/merger/merger.h
     src/monitor/monitor.cpp
     src/monitor/monitor.h
     src/webcam/webcam.cpp

@@ -1,4 +1,5 @@
 #include "recorder/recorder.h"
+#include "merger/merger.h"
 #include <QDebug>
 #include <QDir>
 #include <QDateTime>
@@ -252,15 +253,13 @@ void Recorder::startWebcamRecorder(const RecordingOptions &opts) {
 }
 
 void Recorder::renameOutputFolder() {
-    QString titleSlug = m_opts.title.toLower()
-        .replace(QRegularExpression("[^a-z0-9]+"), "_")
-        .replace(QRegularExpression("^_+|_+$"), ""); // trim leading/trailing underscores
-    if (titleSlug.isEmpty()) return; // keep timestamp name
+    QString slug = Merger::titleSlug(m_opts.title);
+    if (slug == "recording") return; // no meaningful title
 
     QString parentDir = QFileInfo(m_outputDir).absolutePath();
     QString newName = QString("%1-%2")
         .arg(m_opts.number, 3, 10, QChar('0'))
-        .arg(titleSlug);
+        .arg(slug);
     QString newDir = parentDir + "/" + newName;
 
     if (newDir == m_outputDir) return; // already correct
@@ -321,7 +320,7 @@ void Recorder::captureRoomNoise() {
         QThread::msleep(1000);
     }
 
-    proc.waitForFinished(5000);
+    proc.waitForFinished(DURATION_SECS * 1000 + 5000);
 
     qDebug() << "Room noise captured:" << roomNoiseFile
              << "exists:" << QFile::exists(roomNoiseFile);
@@ -345,7 +344,10 @@ void Recorder::stopProcess(QProcess *proc) {
 }
 
 void Recorder::stop() {
-    if (!m_recording && !m_paused) return;
+    if (!m_recording && !m_paused) {
+        qWarning() << "stop() called but not recording or paused";
+        return;
+    }
 
     bool wasPaused = m_paused;
 
@@ -427,8 +429,8 @@ void Recorder::resume() {
 }
 
 void Recorder::reprocess(const QString &folder) {
-    if (m_recording) {
-        emit recordingError("Cannot reprocess while recording");
+    if (m_recording || m_processing) {
+        emit recordingError("Cannot reprocess while recording or processing");
         return;
     }
 
@@ -503,187 +505,63 @@ void Recorder::reprocess(const QString &folder) {
     thread->start();
 }
 
-qint64 Recorder::getVideoDurationUs(const QString &filePath) {
-    QProcess probe;
-    probe.start("ffprobe", {"-v", "error", "-show_entries", "format=duration",
-                            "-of", "default=noprint_wrappers=1:nokey=1", filePath});
-    probe.waitForFinished(10000);
-    QString out = probe.readAllStandardOutput().trimmed();
-    double secs = out.toDouble();
-    return static_cast<qint64>(secs * 1000000.0);
-}
-
-int Recorder::runFFmpegWithProgress(const QStringList &args, int step, const QString &stepName, qint64 durationUs) {
-    QProcess proc;
-    QStringList fullArgs = args;
-    fullArgs.insert(1, "-progress"); // after -y
-    fullArgs.insert(2, "pipe:1");
-    fullArgs.insert(3, "-stats_period");
-    fullArgs.insert(4, "0.5");
-
-    proc.setProcessChannelMode(QProcess::SeparateChannels);
-    proc.start("ffmpeg", fullArgs);
-    proc.waitForStarted(5000);
-
-    while (proc.state() != QProcess::NotRunning) {
-        proc.waitForReadyRead(500);
-        while (proc.canReadLine()) {
-            QString line = proc.readLine().trimmed();
-            if (line.startsWith("out_time_us=")) {
-                qint64 timeUs = line.mid(12).toLongLong();
-                if (durationUs > 0) {
-                    int pct = qBound(0, static_cast<int>(timeUs * 100 / durationUs), 99);
-                    emit processingProgress(step, pct, stepName);
-                }
-            }
-        }
-    }
-    proc.waitForFinished(-1);
-    return proc.exitCode();
-}
-
-QString Recorder::concatenateParts(const QStringList &parts, const QString &outputFile) {
-    if (parts.isEmpty()) return {};
-    if (parts.size() == 1) return parts.first(); // no concat needed
-
-    // Filter to only existing files
-    QStringList existing;
-    for (const auto &p : parts) {
-        if (QFile::exists(p)) existing.append(p);
-    }
-    if (existing.isEmpty()) return {};
-    if (existing.size() == 1) return existing.first();
-
-    // Write concat list file
-    QString listFile = m_outputDir + "/concat_list.txt";
-    QFile list(listFile);
-    if (!list.open(QIODevice::WriteOnly | QIODevice::Text)) return {};
-    for (const auto &p : existing) {
-        list.write(QString("file '%1'\n").arg(p).toUtf8());
-    }
-    list.close();
-
-    // Run ffmpeg concat
-    QProcess ffmpeg;
-    QStringList args;
-    args << "-y" << "-f" << "concat" << "-safe" << "0"
-         << "-i" << listFile << "-c" << "copy" << outputFile;
-
-    qDebug() << "Concatenating" << existing.size() << "parts to" << outputFile;
-    ffmpeg.start("ffmpeg", args);
-    ffmpeg.waitForFinished(-1);
-
-    QFile::remove(listFile);
-
-    if (ffmpeg.exitCode() == 0 && QFile::exists(outputFile)) {
-        return outputFile;
-    }
-    qWarning() << "Concat failed:" << ffmpeg.readAllStandardError().left(200);
-    return existing.first(); // fallback to first part
-}
-
 void Recorder::processRecordings() {
+    m_processing = true;
     emit processingStarted();
 
     // Concatenate parts if we had pause/resume cycles
     if (m_screenParts.size() > 1) {
-        QString concat = concatenateParts(m_screenParts, m_outputDir + "/screen_combined.mp4");
-        if (!concat.isEmpty()) m_screenFile = concat;
+        QString c = Merger::concatenateParts(m_screenParts, m_outputDir + "/screen_combined.mp4", "concat_screen");
+        if (!c.isEmpty()) m_screenFile = c;
     } else if (!m_screenParts.isEmpty()) {
         m_screenFile = m_screenParts.first();
     }
     if (m_audioParts.size() > 1) {
-        QString concat = concatenateParts(m_audioParts, m_outputDir + "/audio_combined.wav");
-        if (!concat.isEmpty()) m_audioFile = concat;
+        QString c = Merger::concatenateParts(m_audioParts, m_outputDir + "/audio_combined.wav", "concat_audio");
+        if (!c.isEmpty()) m_audioFile = c;
     } else if (!m_audioParts.isEmpty()) {
         m_audioFile = m_audioParts.first();
     }
     if (m_webcamParts.size() > 1) {
-        QString concat = concatenateParts(m_webcamParts, m_outputDir + "/webcam_combined.mp4");
-        if (!concat.isEmpty()) m_webcamFile = concat;
+        QString c = Merger::concatenateParts(m_webcamParts, m_outputDir + "/webcam_combined.mp4", "concat_webcam");
+        if (!c.isEmpty()) m_webcamFile = c;
     } else if (!m_webcamParts.isEmpty()) {
         m_webcamFile = m_webcamParts.first();
     }
 
     bool hasScreen = QFile::exists(m_screenFile);
     bool hasAudio = QFile::exists(m_audioFile);
-    bool hasWebcam = QFile::exists(m_webcamFile);
 
-    if (!hasScreen && !hasAudio && !hasWebcam) {
+    if (!hasScreen && !hasAudio && !QFile::exists(m_webcamFile)) {
         emit processingStepError(0, "Merge", "No input files found");
         emit processingFinished(false);
         writeRecordingJson("failed");
+        m_processing = false;
         return;
     }
 
-    // Determine audio file to use (may become normalized version)
     QString audioToUse = m_audioFile;
     QString normalizedAudio = m_outputDir + "/audio_normalized.wav";
 
-    // Step 0: Analyze audio (loudnorm pass 1)
+    // Step 0: Analyze audio
     emit processingProgress(0, 0, "Analyzing audio");
-    QString loudnormParams; // will hold measured_* params for pass 2
+    Merger::LoudnormParams loudnorm;
     if (hasAudio) {
-        // Pass 1: measure loudness
-        QProcess analyze;
-        QStringList args;
-        args << "-y" << "-i" << m_audioFile
-             << "-af" << "loudnorm=I=-18:TP=-1.5:LRA=11:print_format=json"
-             << "-f" << "null" << "-";
-        analyze.start("ffmpeg", args);
-        analyze.waitForFinished(-1);
-
-        QString output = analyze.readAllStandardError();
-        // Parse measured values from JSON output
-        auto extractVal = [&output](const QString &key) -> QString {
-            int idx = output.indexOf("\"" + key + "\"");
-            if (idx < 0) return {};
-            int colon = output.indexOf(':', idx);
-            int quote1 = output.indexOf('"', colon);
-            int quote2 = output.indexOf('"', quote1 + 1);
-            if (quote1 < 0 || quote2 < 0) return {};
-            return output.mid(quote1 + 1, quote2 - quote1 - 1);
-        };
-
-        QString measI = extractVal("input_i");
-        QString measTP = extractVal("input_tp");
-        QString measLRA = extractVal("input_lra");
-        QString measThresh = extractVal("input_thresh");
-        QString measOffset = extractVal("target_offset");
-
-        if (!measI.isEmpty()) {
-            loudnormParams = QString("loudnorm=I=-18:TP=-1.5:LRA=11:"
-                "measured_I=%1:measured_TP=%2:measured_LRA=%3:"
-                "measured_thresh=%4:offset=%5:linear=true")
-                .arg(measI, measTP, measLRA, measThresh, measOffset);
-        }
-
+        loudnorm = Merger::analyzeAudio(m_audioFile);
         emit processingProgress(0, 100, "Analyzing audio");
         emit processingStepDone(0, "Analyzing audio", false);
     } else {
         emit processingStepDone(0, "Analyzing audio", true);
     }
 
-    // Step 1: Normalize audio (loudnorm pass 2)
+    // Step 1: Normalize audio
     emit processingProgress(1, 0, "Normalizing audio");
-    if (hasAudio && !loudnormParams.isEmpty()) {
-        QProcess norm;
-        QStringList args;
-        args << "-y" << "-i" << m_audioFile
-             << "-af" << loudnormParams
-             << "-ar" << "48000" << "-ac" << "2"
-             << normalizedAudio;
-
-        qDebug() << "Normalizing audio:" << args;
-        norm.start("ffmpeg", args);
-        norm.waitForFinished(-1);
-
-        if (norm.exitCode() == 0 && QFile::exists(normalizedAudio)) {
+    if (hasAudio && loudnorm.valid) {
+        if (Merger::normalizeAudio(m_audioFile, normalizedAudio, loudnorm)) {
             audioToUse = normalizedAudio;
             emit processingProgress(1, 100, "Normalizing audio");
             emit processingStepDone(1, "Normalizing audio", false);
         } else {
-            qWarning() << "Normalization failed, using raw audio";
             emit processingStepDone(1, "Normalizing audio", true);
         }
     } else {
@@ -693,128 +571,15 @@ void Recorder::processRecordings() {
     // Step 2: Merge video + audio
     emit processingProgress(2, 0, "Merging video & audio");
     if (hasScreen) {
-        QString titleSlug = m_opts.title.toLower().replace(QRegularExpression("[^a-z0-9]+"), "_").trimmed();
-        if (titleSlug.isEmpty()) titleSlug = "recording";
-        m_mergedFile = m_outputDir + "/" +
-            QString("%1-%2.mp4").arg(m_opts.number, 3, 10, QChar('0')).arg(titleSlug);
+        m_mergedFile = m_outputDir + "/" + Merger::outputFileName(m_opts.number, m_opts.title);
+        qint64 durationUs = Merger::getVideoDurationUs(m_screenFile);
 
-        qint64 durationUs = getVideoDurationUs(m_screenFile);
+        Merger::MergeInputs in{m_screenFile, audioToUse, m_webcamFile, m_opts};
+        QStringList args = Merger::buildMergedArgs(in, m_mergedFile);
 
-        // Collect overlay inputs
-        bool hasLeftLogo = !m_opts.leftLogo.path.isEmpty() && QFile::exists(m_opts.leftLogo.path);
-        bool hasRightLogo = !m_opts.rightLogo.path.isEmpty() && QFile::exists(m_opts.rightLogo.path);
-        bool hasBannerLogo = !m_opts.bannerLogo.path.isEmpty() && QFile::exists(m_opts.bannerLogo.path);
-        bool mergeWebcam = hasWebcam && !m_opts.noScreen;
-        bool needsFilter = hasLeftLogo || hasRightLogo || hasBannerLogo || mergeWebcam;
-
-        // Helper: add logo input with GIF loop flags
-        auto addLogoInput = [](QStringList &a, const RecordingOptions::LogoOpts &logo) {
-            if (logo.isGif()) {
-                if (logo.gifLoop == 0) {
-                    // First frame only: no special flag (ffmpeg shows first frame)
-                    a << "-i" << logo.path;
-                } else if (logo.gifLoop == 1) {
-                    a << "-ignore_loop" << "1" << "-i" << logo.path;
-                } else {
-                    a << "-ignore_loop" << "0" << "-i" << logo.path;
-                }
-            } else {
-                a << "-i" << logo.path;
-            }
-        };
-
-        QStringList args;
-        args << "-y" << "-i" << m_screenFile;
-        int nextInput = 1;
-        int audioInput = -1, webcamInput = -1;
-        if (hasAudio) { audioInput = nextInput++; args << "-i" << audioToUse; }
-        if (mergeWebcam) { webcamInput = nextInput++; args << "-i" << m_webcamFile; }
-        int leftLogoInput = -1, rightLogoInput = -1, bannerLogoInput = -1;
-        if (hasLeftLogo) { leftLogoInput = nextInput++; addLogoInput(args, m_opts.leftLogo); }
-        if (hasRightLogo) { rightLogoInput = nextInput++; addLogoInput(args, m_opts.rightLogo); }
-        if (hasBannerLogo) { bannerLogoInput = nextInput++; addLogoInput(args, m_opts.bannerLogo); }
-
-        if (needsFilter) {
-            QString filter;
-            QString current = "[0:v]";
-            QString logoEnable = "enable='between(t,0,15)'";
-            int vIdx = 0;
-
-            // Helper: build overlay position from canvas-relative coords
-            // Uses FFmpeg expressions: W=base width, H=base height
-            auto overlayPos = [](const RecordingOptions::LogoOpts &lo) {
-                return QString("W*%1:H*%2").arg(lo.relX, 0, 'f', 4).arg(lo.relY, 0, 'f', 4);
-            };
-            auto scaleW = [](const RecordingOptions::LogoOpts &lo) {
-                return QString("W*%1").arg(lo.relW, 0, 'f', 4);
-            };
-
-            // Logo overlays using canvas placement (first 15 seconds)
-            if (hasLeftLogo) {
-                filter += QString("[%1:v]scale='trunc(%2/2)*2':-1[ll];").arg(leftLogoInput).arg(scaleW(m_opts.leftLogo));
-                filter += QString("%1[ll]overlay=%2:%3[v%4];").arg(current, overlayPos(m_opts.leftLogo), logoEnable).arg(++vIdx);
-                current = QString("[v%1]").arg(vIdx);
-            }
-            if (hasRightLogo) {
-                filter += QString("[%1:v]scale='trunc(%2/2)*2':-1[rl];").arg(rightLogoInput).arg(scaleW(m_opts.rightLogo));
-                filter += QString("%1[rl]overlay=%2:%3[v%4];").arg(current, overlayPos(m_opts.rightLogo), logoEnable).arg(++vIdx);
-                current = QString("[v%1]").arg(vIdx);
-            }
-            if (hasBannerLogo) {
-                filter += QString("[%1:v]scale='trunc(%2/2)*2':-1[bl];").arg(bannerLogoInput).arg(scaleW(m_opts.bannerLogo));
-                filter += QString("%1[bl]overlay=%2:%3[v%4];").arg(current, overlayPos(m_opts.bannerLogo), logoEnable).arg(++vIdx);
-                current = QString("[v%1]").arg(vIdx);
-            }
-
-            // Webcam overlay using canvas placement and shape (full duration)
-            if (mergeWebcam) {
-                // Scale webcam to canvas-relative size
-                QString wcScale = QString("'trunc(W*%1/2)*2':'trunc(H*%2/2)*2'")
-                    .arg(m_opts.webcamRelW, 0, 'f', 4)
-                    .arg(m_opts.webcamRelH, 0, 'f', 4);
-                filter += QString("[%1:v]scale=%2,setsar=1[wcam];").arg(webcamInput).arg(wcScale);
-
-                if (m_opts.webcamShape == 0) {
-                    // Round bubble: circular alpha mask
-                    QString maskScale = QString("'trunc(W*%1/2)*2':'trunc(H*%2/2)*2'")
-                        .arg(m_opts.webcamRelW, 0, 'f', 4)
-                        .arg(m_opts.webcamRelH, 0, 'f', 4);
-                    filter += QString("color=black:2x2,scale=%1[cmask_raw];").arg(maskScale);
-                    filter += "[cmask_raw]geq=lum='if(lt(hypot(X-W/2,Y-H/2),min(W,H)/2),255,0)':cb=128:cr=128[cmask];";
-                    filter += "[wcam][cmask]alphamerge[wcam_shaped];";
-                } else {
-                    // Square or rectangle: no mask needed, just use as-is
-                    filter += "[wcam]null[wcam_shaped];";
-                }
-
-                filter += QString("%1[wcam_shaped]overlay=W*%2:H*%3[v%4];")
-                    .arg(current)
-                    .arg(m_opts.webcamRelX, 0, 'f', 4)
-                    .arg(m_opts.webcamRelY, 0, 'f', 4)
-                    .arg(++vIdx);
-                current = QString("[v%1]").arg(vIdx);
-            }
-
-            // Rename final output
-            filter.chop(1); // remove trailing ';'
-            int lastBracket = filter.lastIndexOf('[');
-            filter = filter.left(lastBracket) + "[outv]";
-
-            args << "-filter_complex" << filter << "-map" << "[outv]";
-            if (hasAudio) args << "-map" << QString("%1:a").arg(audioInput);
-        }
-
-        args << "-c:v" << "libx264" << "-preset" << "medium" << "-crf" << "18" << "-r" << "30";
-        if (hasAudio) {
-            args << "-c:a" << "aac" << "-b:a" << "320k" << "-shortest";
-        } else {
-            args << "-an";
-        }
-        args << m_mergedFile;
-
-        qDebug() << "Merging:" << args;
-        int exitCode = runFFmpegWithProgress(args, 2, "Merging video & audio", durationUs);
-
+        int exitCode = Merger::runFFmpegWithProgress(args, durationUs, [this](int pct) {
+            emit processingProgress(2, pct, "Merging video & audio");
+        });
         if (exitCode == 0) {
             emit processingProgress(2, 100, "Merging video & audio");
             emit processingStepDone(2, "Merging video & audio", false);
@@ -828,151 +593,26 @@ void Recorder::processRecordings() {
     // Step 3: Create vertical video
     emit processingProgress(3, 0, "Creating vertical video");
     if (hasScreen) {
-        createVerticalVideo(audioToUse, hasAudio);
+        QString vertFile = m_outputDir + "/" + Merger::outputFileName(m_opts.number, m_opts.title, "vertical");
+        qint64 durationUs = Merger::getVideoDurationUs(m_screenFile);
+
+        Merger::MergeInputs in{m_screenFile, audioToUse, m_webcamFile, m_opts};
+        QStringList args = Merger::buildVerticalArgs(in, vertFile);
+
+        int exitCode = Merger::runFFmpegWithProgress(args, durationUs, [this](int pct) {
+            emit processingProgress(3, pct, "Creating vertical video");
+        });
+        if (exitCode == 0) {
+            emit processingProgress(3, 100, "Creating vertical video");
+            emit processingStepDone(3, "Creating vertical video", false);
+        } else {
+            emit processingStepError(3, "Creating vertical video", "FFmpeg vertical video failed");
+        }
     } else {
         emit processingStepDone(3, "Creating vertical video", true);
     }
 
-    // Write final recording.json
     writeRecordingJson("completed");
-
+    m_processing = false;
     emit processingFinished(true);
-}
-
-void Recorder::createVerticalVideo(const QString &audioFile, bool hasAudio) {
-    QString titleSlug = m_opts.title.toLower().replace(QRegularExpression("[^a-z0-9]+"), "_").trimmed();
-    if (titleSlug.isEmpty()) titleSlug = "recording";
-    QString vertFile = m_outputDir + "/" +
-        QString("%1-%2-vertical.mp4").arg(m_opts.number, 3, 10, QChar('0')).arg(titleSlug);
-
-    bool hasWebcam = QFile::exists(m_webcamFile);
-    bool hasLeftLogo = !m_opts.leftLogo.path.isEmpty() && QFile::exists(m_opts.leftLogo.path);
-    bool hasRightLogo = !m_opts.rightLogo.path.isEmpty() && QFile::exists(m_opts.rightLogo.path);
-    bool hasBannerLogo = !m_opts.bannerLogo.path.isEmpty() && QFile::exists(m_opts.bannerLogo.path);
-
-    QString titleColor = m_opts.titleColor.isEmpty() ? "white" : m_opts.titleColor;
-    QString escapedTitle = m_opts.title;
-    escapedTitle.replace("'", "\\'");
-    escapedTitle.replace(":", "\\:");
-
-    // Build input list and track indices
-    QStringList args;
-    args << "-y" << "-i" << m_screenFile;
-    int nextInput = 1;
-    int webcamInput = -1, audioInput = -1;
-    int leftLogoIn = -1, rightLogoIn = -1, bannerLogoIn = -1;
-
-    if (hasWebcam) { webcamInput = nextInput++; args << "-i" << m_webcamFile; }
-    if (hasAudio) { audioInput = nextInput++; args << "-i" << audioFile; }
-    auto addLogoInput = [](QStringList &a, const RecordingOptions::LogoOpts &logo) {
-        if (logo.isGif()) {
-            if (logo.gifLoop == 0) {
-                a << "-i" << logo.path;
-            } else if (logo.gifLoop == 1) {
-                a << "-ignore_loop" << "1" << "-i" << logo.path;
-            } else {
-                a << "-ignore_loop" << "0" << "-i" << logo.path;
-            }
-        } else {
-            a << "-i" << logo.path;
-        }
-    };
-    if (hasLeftLogo) { leftLogoIn = nextInput++; addLogoInput(args, m_opts.leftLogo); }
-    if (hasRightLogo) { rightLogoIn = nextInput++; addLogoInput(args, m_opts.rightLogo); }
-    if (hasBannerLogo) { bannerLogoIn = nextInput++; addLogoInput(args, m_opts.bannerLogo); }
-
-    // Build filter_complex for 1080x1920 (9:16)
-    // Layout: screen at top, white lower third at y=1280, logos in lower third, title at bottom
-    QString f;
-
-    // Scale screen to 1080 width
-    f += "[0:v]scale=1080:-2,setsar=1[screen];";
-
-    // Create canvas with white lower third
-    f += "[screen]pad=1080:1920:(ow-iw)/2:0:black[padded];";
-    f += "[padded]drawbox=y=1280:w=1080:h=640:c=white:t=fill[canvas];";
-
-    QString current = "[canvas]";
-
-    // Webcam overlay using canvas placement and shape
-    if (hasWebcam) {
-        int wcW = qMax(50, static_cast<int>(m_opts.webcamRelW * 1080));
-        int wcH = qMax(50, static_cast<int>(m_opts.webcamRelH * 1920));
-        int wcX = static_cast<int>(m_opts.webcamRelX * 1080);
-        int wcY = static_cast<int>(m_opts.webcamRelY * 1920);
-        // Make even
-        wcW = (wcW / 2) * 2; wcH = (wcH / 2) * 2;
-
-        f += QString("[%1:v]scale=%2:%3,setsar=1[wcam];").arg(webcamInput).arg(wcW).arg(wcH);
-
-        if (m_opts.webcamShape == 0) {
-            // Round bubble
-            int r = qMin(wcW, wcH) / 2;
-            f += QString("color=black:%1x%2,geq=lum='if(lt(hypot(X-%3,Y-%4),%5),255,0)':cb=128:cr=128[cmask];")
-                .arg(wcW).arg(wcH).arg(wcW/2).arg(wcH/2).arg(r);
-            f += "[wcam][cmask]alphamerge[wcam_shaped];";
-        } else {
-            f += "[wcam]null[wcam_shaped];";
-        }
-
-        f += QString("%1[wcam_shaped]overlay=%2:%3[wc_out];").arg(current).arg(wcX).arg(wcY);
-        current = "[wc_out]";
-    }
-
-    // Logo overlays using canvas placement
-    if (hasLeftLogo) {
-        int lw = qMax(20, static_cast<int>(m_opts.leftLogo.relW * 1080));
-        int lx = static_cast<int>(m_opts.leftLogo.relX * 1080);
-        int ly = static_cast<int>(m_opts.leftLogo.relY * 1920);
-        f += QString("[%1:v]scale=%2:-1[ll];").arg(leftLogoIn).arg(lw);
-        f += QString("%1[ll]overlay=%2:%3[ll_out];").arg(current).arg(lx).arg(ly);
-        current = "[ll_out]";
-    }
-
-    if (hasRightLogo) {
-        int rw = qMax(20, static_cast<int>(m_opts.rightLogo.relW * 1080));
-        int rx = static_cast<int>(m_opts.rightLogo.relX * 1080);
-        int ry = static_cast<int>(m_opts.rightLogo.relY * 1920);
-        f += QString("[%1:v]scale=%2:-1[rl];").arg(rightLogoIn).arg(rw);
-        f += QString("%1[rl]overlay=%2:%3[rl_out];").arg(current).arg(rx).arg(ry);
-        current = "[rl_out]";
-    }
-
-    if (hasBannerLogo) {
-        int bw = qMax(20, static_cast<int>(m_opts.bannerLogo.relW * 1080));
-        int bx = static_cast<int>(m_opts.bannerLogo.relX * 1080);
-        int by = static_cast<int>(m_opts.bannerLogo.relY * 1920);
-        f += QString("[%1:v]scale=%2:-1[bl];").arg(bannerLogoIn).arg(bw);
-        f += QString("%1[bl]overlay=%2:%3[bl_out];").arg(current).arg(bx).arg(by);
-        current = "[bl_out]";
-    }
-
-    // Title text centered near bottom
-    f += QString("%1drawtext=text='%2':fontsize=36:fontcolor=%3:"
-        "x=(w-text_w)/2:y=1850[outv]")
-        .arg(current, escapedTitle, titleColor);
-
-    qint64 durationUs = getVideoDurationUs(m_screenFile);
-
-    args << "-filter_complex" << f
-         << "-map" << "[outv]";
-    if (hasAudio) {
-        args << "-map" << QString("%1:a").arg(audioInput);
-        args << "-c:a" << "aac" << "-b:a" << "320k" << "-shortest";
-    } else {
-        args << "-an";
-    }
-    args << "-c:v" << "libx264" << "-preset" << "medium" << "-crf" << "18" << "-r" << "30"
-         << "-s" << "1080x1920"
-         << vertFile;
-
-    qDebug() << "Creating vertical:" << args;
-    int exitCode = runFFmpegWithProgress(args, 3, "Creating vertical video", durationUs);
-
-    if (exitCode == 0) {
-        emit processingProgress(3, 100, "Creating vertical video");
-        emit processingStepDone(3, "Creating vertical video", false);
-    } else {
-        emit processingStepError(3, "Creating vertical video", "FFmpeg vertical video failed");
-    }
 }

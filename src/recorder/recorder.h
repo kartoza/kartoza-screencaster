@@ -114,11 +114,8 @@ private:
     void captureRoomNoise();
     void startRecordersForPart();
     void renameOutputFolder();
-    QString concatenateParts(const QStringList &parts, const QString &outputFile);
 
     void writeRecordingJson(const QString &status);
-    void createVerticalVideo(const QString &audioFile, bool hasAudio);
 
-    int runFFmpegWithProgress(const QStringList &args, int step, const QString &stepName, qint64 durationUs);
-    static qint64 getVideoDurationUs(const QString &filePath);
+    bool m_processing = false;
 };
