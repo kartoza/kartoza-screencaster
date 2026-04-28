@@ -294,10 +294,12 @@ void Canvas::importItem(const ItemExport &e) {
             addLogo(e.filePath);
             auto &last = m_items.last();
             last.x = e.x; last.y = e.y; last.w = e.w; last.h = e.h;
+            last.gifLoop = e.gifLoop; last.gifLoopMax = e.gifLoopMax;
         }
         break;
     }
     case 3: { // title
+        m_title = e.label;
         CanvasItem item;
         item.type = 3; item.label = e.label;
         item.x = e.x; item.y = e.y; item.w = e.w; item.h = e.h;

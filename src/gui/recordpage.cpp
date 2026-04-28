@@ -496,13 +496,18 @@ void RecordPage::restoreCanvasState() {
 
     for (const auto &s : cfg.canvasState.items) {
         if (s.type == "screen") {
-            // Find matching monitor
+            // Try exact label match first, then fallback to first available
+            bool matched = false;
             for (const auto &mon : m_monitors) {
                 QString desc = mon.description.isEmpty() ? mon.name : mon.description;
-                if (s.label == "Screen: " + desc || availableMonitors.contains(mon.name)) {
+                if (s.label == "Screen: " + desc) {
                     addScreen(mon);
+                    matched = true;
                     break;
                 }
+            }
+            if (!matched && !m_monitors.isEmpty()) {
+                addScreen(m_monitors.first());
             }
         } else if (s.type == "webcam") {
             if (!availableWebcams.contains(s.device)) continue; // disconnected
@@ -531,6 +536,20 @@ void RecordPage::restoreCanvasState() {
     m_audioCheck->setChecked(cfg.canvasState.audioEnabled);
     if (!cfg.canvasState.presenter.isEmpty())
         m_presenterInput->setText(cfg.canvasState.presenter);
+
+    // Restore title color
+    if (!cfg.canvasState.titleColor.isEmpty()) {
+        cfg.titleColor = cfg.canvasState.titleColor;
+        m_canvas->setTitleColor(cfg.canvasState.titleColor);
+    }
+
+    // Restore title text into input field (from title item if present)
+    for (const auto &s : cfg.canvasState.items) {
+        if (s.type == "title" && !s.label.isEmpty()) {
+            m_titleInput->setText(s.label);
+            break;
+        }
+    }
 
     refreshLayerList();
 }
