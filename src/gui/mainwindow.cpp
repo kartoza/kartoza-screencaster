@@ -76,7 +76,7 @@ void MainWindow::setupUI() {
         QMainWindow::statusBar()->showMessage("Recording...");
     });
     connect(m_recordPage, &RecordPage::recordingStopped, this, [this]() {
-        show();
+        showNormal();
         raise();
         navigateTo(PageProcessing);
         m_processingPage->startMonitoring(m_recordPage->recorder());

@@ -38,9 +38,10 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
 
     m_menu->addSeparator();
     m_menu->addAction("Open Window", this, [this]() {
-        m_mainWindow->show();
+        m_mainWindow->showNormal();
         m_mainWindow->raise();
         m_mainWindow->activateWindow();
+        m_mainWindow->setFocus();
     });
     m_menu->addSeparator();
     m_menu->addAction("Quit", this, []() {
@@ -71,7 +72,7 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
             // Blocked during room noise capture
             break;
         case Processing:
-            m_mainWindow->show();
+            m_mainWindow->showNormal();
             m_mainWindow->raise();
             m_mainWindow->activateWindow();
             break;
