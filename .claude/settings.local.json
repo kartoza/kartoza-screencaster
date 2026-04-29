@@ -39,7 +39,15 @@
       "Bash(gdbus call:*)",
       "Bash(timeout 3 gst-launch-1.0:*)",
       "Bash(timeout 2 wl-screenrec:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(grep -v \"^$\")",
+      "Bash(while ps:*)",
+      "Bash(do cat:*)",
+      "Bash(pkill -f \"kartoza-screencaster gui\")",
+      "Bash(pkill -9 -f ./build/kartoza-screencaster)",
+      "Bash(python3:*)",
+      "Bash(pidof kartoza-screencaster:*)",
+      "Bash(wl-screenrec --output=FAKE --filename=/tmp/test.mp4)"
     ],
     "deny": [],
     "ask": []

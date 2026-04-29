@@ -1,113 +1,63 @@
-" Kartoza Screencaster - Vim Project Configuration
-" =================================================
-" Project-specific keybindings under <leader>p (Project)
-" Requires: which-key.nvim or manual loading
+" Kartoza Screencaster - Vim/Neovim Project Settings (C++ / Qt6)
+" ===============================================================
 
-" Set local options
-set tabstop=4
-set shiftwidth=4
-set noexpandtab
+" C++ indent: 2 spaces, no tabs
+set tabstop=2
+set shiftwidth=2
+set expandtab
+set cinoptions=g0,N-s,i2s,+2s,(0,w1,W2s
+
+" Error format for GCC/clang
+set errorformat=%f:%l:%c:\ %m,%f:%l:\ %m
 
 " Ignore build artifacts
-set wildignore+=*.exe,bin/*,release/*,.go/*,site/*,*.tar.gz
-
-" Error format for Go
-set errorformat=%f:%l:%c:\ %m,%f:%l:\ %m
+set wildignore+=build/*,*.o,*.moc,*_autogen/*,*.so,*.a
 
 " =====================================
 " Project Keybindings (<leader>p)
 " =====================================
 
-" Build commands
-nnoremap <leader>pbb :!make build<CR>
-nnoremap <leader>pbs :!make static<CR>
-nnoremap <leader>pba :!make build-all<CR>
-nnoremap <leader>pbc :!make clean<CR>
+" Build
+nnoremap <leader>pbb :!cd build && ninja<CR>
+nnoremap <leader>pbr :!cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja<CR>
+nnoremap <leader>pbc :!cd build && ninja clean<CR>
 
-" Run commands
-nnoremap <leader>prr :!make dev<CR>
-nnoremap <leader>prn :!nix run<CR>
+" Run
+nnoremap <leader>prr :!./build/kartoza-screencaster<CR>
 
-" Test commands
-nnoremap <leader>ptt :!make test<CR>
-nnoremap <leader>ptc :!make check<CR>
-nnoremap <leader>ptf :execute '!go test -v -run ' . expand('<cword>') . ' ./...'<CR>
-nnoremap <leader>ptp :execute '!go test -v ' . expand('%:h')<CR>
+" Test
+nnoremap <leader>ptt :!cd build && ctest --output-on-failure<CR>
+nnoremap <leader>ptm :!cd build && ./test_merger -v1<CR>
+nnoremap <leader>ptp :!cd build && ./test_pipeline -v1<CR>
 
-" Lint/Format commands
-nnoremap <leader>pll :!make lint<CR>
-nnoremap <leader>plf :!make fmt<CR>
+" Lint/Format
+nnoremap <leader>plf :!find src tests -name '*.cpp' -o -name '*.h' \| xargs clang-format -i<CR>
+nnoremap <leader>plt :!cd build && run-clang-tidy -p . ../src/<CR>
 
-" Dependencies
-nnoremap <leader>pdd :!make deps<CR>
-nnoremap <leader>pdm :!go mod tidy<CR>
+" Debug
+nnoremap <leader>pDd :terminal gdb -q ./build/kartoza-screencaster<CR>
 
-" Documentation
+" Profile
+nnoremap <leader>pPv :terminal valgrind --leak-check=full ./build/kartoza-screencaster<CR>
+
+" Docs
+nnoremap <leader>pod :!doxygen Doxyfile && xdg-open docs/doxygen/html/index.html<CR>
 nnoremap <leader>pos :!mkdocs serve &<CR>
-nnoremap <leader>pob :!mkdocs build<CR>
-nnoremap <leader>poo :!xdg-open http://localhost:8000 &<CR>
 
-" Release commands
-nnoremap <leader>pxr :!make release<CR>
-nnoremap <leader>pxc :!make release-clean<CR>
-nnoremap <leader>pxn :!nix run .#release<CR>
-
-" Package commands
-nnoremap <leader>pkd :!make deb<CR>
-nnoremap <leader>pkr :!make rpm<CR>
-nnoremap <leader>pks :!make snap<CR>
-nnoremap <leader>pkf :!make flatpak<CR>
-nnoremap <leader>pka :!make packages<CR>
-
-" Nix commands
-nnoremap <leader>pnd :terminal nix develop<CR>
-nnoremap <leader>pnb :!nix build<CR>
-nnoremap <leader>pnf :!nix flake check<CR>
-nnoremap <leader>pnu :!nix flake update<CR>
-nnoremap <leader>pns :!nix flake show<CR>
-
-" Git/GitHub commands
-nnoremap <leader>pgs :!git status<CR>
-nnoremap <leader>pgp :!gh pr list<CR>
-nnoremap <leader>pgi :!gh issue list<CR>
-nnoremap <leader>pgr :!gh release list<CR>
-
-" Debug commands (Delve)
-nnoremap <leader>pDd :terminal dlv debug .<CR>
-nnoremap <leader>pDs :terminal dlv debug . -- systray<CR>
-nnoremap <leader>pDt :terminal dlv test ./...<CR>
-nnoremap <leader>pDf :execute 'terminal dlv test ' . expand('%:h') . ' -- -test.run ' . expand('<cword>')<CR>
-nnoremap <leader>pDp :execute 'terminal dlv test ' . expand('%:h')<CR>
-nnoremap <leader>pDh :terminal dlv debug . --headless --listen=:2345 --api-version=2<CR>
-nnoremap <leader>pDc :terminal dlv connect 127.0.0.1:2345<CR>
-
-" Info commands
-nnoremap <leader>pii :!make info<CR>
-nnoremap <leader>pih :!make help<CR>
-nnoremap <leader>pic :!go version && echo '' && go env<CR>
+" Info
+nnoremap <leader>pii :!cmake --version && ninja --version && ccache -s<CR>
+nnoremap <leader>pis :!wc -l src/**/*.cpp src/**/*.h \| sort -rn \| head -20<CR>
 
 " =====================================
-" Quick Reference
+" Quick Reference (<leader>p)
 " =====================================
-" <leader>pb* - Build (build, static, all, clean)
-" <leader>pr* - Run (run, nix)
-" <leader>pt* - Test (test, check, function, package)
-" <leader>pl* - Lint (lint, format)
-" <leader>pd* - Dependencies
-" <leader>pD* - Debug (debug, systray, tests, attach, headless)
-" <leader>po* - Documentation
-" <leader>px* - Release
-" <leader>pk* - Packages
-" <leader>pn* - Nix
-" <leader>pg* - Git/GitHub
-" <leader>pi* - Info
-"
-" Debug Keybindings (with nvim-dap):
-" <leader>pDb - Toggle breakpoint
-" <leader>pDB - Conditional breakpoint
-" <leader>pDr - Start/Continue
-" <leader>pDn - Step over
-" <leader>pDi - Step into
-" <leader>pDo - Step out
-" <leader>pDq - Stop
-" <leader>pDu - Toggle DAP UI
+" pb* - Build (build, release, clean)
+" pr* - Run
+" pt* - Test (all, merger, pipeline)
+" pl* - Lint/Format (clang-format, clang-tidy)
+" pD* - Debug (GDB, attach)
+" pP* - Profile (valgrind, callgrind, cachegrind, massif)
+" po* - Docs (doxygen, mkdocs)
+" pn* - Nix
+" pg* - Git/GitHub
+" pi* - Info

@@ -70,3 +70,17 @@ build-dir/
 
 # MkDocs build output
 site/
+
+# Doxygen output
+docs/doxygen/
+build/
+@DEFAULT_SOURCE@
+
+# C++ build artifacts
+kartoza-screencaster
+compile_commands.json
+.cache/
+*.o
+*.moc
+moc_*.cpp
+*_autogen/

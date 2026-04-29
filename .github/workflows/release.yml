@@ -6,330 +6,214 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g., v0.1.0)'
+        description: 'Release tag (e.g., v1.0.0)'
         required: true
 
 permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    name: Build and Release
-    runs-on: ubuntu-latest
+  build-linux:
+    name: Build Linux x86_64
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-          cache: true
-
-      - name: Get version
-        id: version
-        run: |
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
-            VERSION="${{ github.event.inputs.tag }}"
-          else
-            VERSION="${{ github.ref_name }}"
-          fi
-          # Remove v prefix if present
-          VERSION="${VERSION#v}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Building version: $VERSION"
-
-      - name: Install CGO dependencies for Linux systray
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            gcc \
-            pkg-config \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            libgl1-mesa-dev \
-            libx11-dev \
-            libxcursor-dev \
-            libxrandr-dev \
-            libxinerama-dev \
-            libxi-dev \
-            libxxf86vm-dev
+            cmake ninja-build \
+            qt6-base-dev qt6-multimedia-dev \
+            libqt6svg6-dev qt6-wayland-dev \
+            libgl1-mesa-dev
 
-      - name: Build binaries
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
+      - name: Build Release
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(nproc)
+          strip build/kartoza-screencaster
+
+      - name: Create tarball
         run: |
           mkdir -p release
+          cp build/kartoza-screencaster release/
+          cp resources/kartoza-screencaster.desktop release/
+          cp resources/icon_ready.svg release/kartoza-screencaster.svg
+          cd release && tar -czf ../kartoza-screencaster-linux-x86_64.tar.gz .
 
-          LDFLAGS="-s -w -X main.version=${VERSION}"
-
-          echo "Building linux-amd64 (with CGO for systray support)..."
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-linux-amd64 .
-
-          echo "Building linux-arm64 (no systray - CGO cross-compile not supported)..."
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-linux-arm64 .
-
-          echo "Building darwin-amd64 (no systray - CGO cross-compile not supported)..."
-          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-darwin-amd64 .
-
-          echo "Building darwin-arm64 (no systray - CGO cross-compile not supported)..."
-          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-darwin-arm64 .
-
-          echo "Building windows-amd64 (no systray - CGO cross-compile not supported)..."
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-windows-amd64.exe .
-
-      - name: Create tarballs
-        run: |
-          cd release
-
-          tar -czf kartoza-screencaster-linux-amd64.tar.gz kartoza-screencaster-linux-amd64
-          tar -czf kartoza-screencaster-linux-arm64.tar.gz kartoza-screencaster-linux-arm64
-          tar -czf kartoza-screencaster-darwin-amd64.tar.gz kartoza-screencaster-darwin-amd64
-          tar -czf kartoza-screencaster-darwin-arm64.tar.gz kartoza-screencaster-darwin-arm64
-          tar -czf kartoza-screencaster-windows-amd64.tar.gz kartoza-screencaster-windows-amd64.exe
-
-          # Generate checksums
-          sha256sum *.tar.gz > checksums.txt
-
-          # Clean up raw binaries (not the tarballs!)
-          rm -f kartoza-screencaster-linux-amd64 kartoza-screencaster-linux-arm64
-          rm -f kartoza-screencaster-darwin-amd64 kartoza-screencaster-darwin-arm64
-          rm -f kartoza-screencaster-windows-amd64.exe
-
-      - name: Upload release assets
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release/*.tar.gz
-            release/checksums.txt
-
-      - name: Upload artifacts (manual trigger)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ steps.version.outputs.version }}
-          path: release/
+          name: linux-x86_64
+          path: kartoza-screencaster-linux-x86_64.tar.gz
 
   build-deb:
     name: Build Debian Package
-    runs-on: ubuntu-latest
-    needs: build-and-release
-    if: github.event_name == 'release'
-
+    runs-on: ubuntu-24.04
+    needs: build-linux
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-          cache: true
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build dpkg-dev \
+            qt6-base-dev qt6-multimedia-dev \
+            libqt6svg6-dev qt6-wayland-dev \
+            libgl1-mesa-dev
 
       - name: Get version
         id: version
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ github.ref_name || github.event.inputs.tag }}"
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build Debian package
+      - name: Build
         run: |
-          # Install build dependencies (including CGO deps for systray)
-          sudo apt-get update
-          sudo apt-get install -y \
-            dpkg-dev \
-            gcc \
-            pkg-config \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            libgl1-mesa-dev \
-            libx11-dev \
-            libxcursor-dev \
-            libxrandr-dev \
-            libxinerama-dev \
-            libxi-dev \
-            libxxf86vm-dev
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(nproc)
+          strip build/kartoza-screencaster
 
-          # Build binary with CGO for systray support
-          CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o kartoza-screencaster .
-
-          # Create package structure
+      - name: Package
+        run: |
+          VER=${{ steps.version.outputs.version }}
           mkdir -p dpkg/DEBIAN
           mkdir -p dpkg/usr/bin
           mkdir -p dpkg/usr/share/applications
+          mkdir -p dpkg/usr/share/icons/hicolor/scalable/apps
           mkdir -p dpkg/usr/share/doc/kartoza-screencaster
 
-          cp kartoza-screencaster dpkg/usr/bin/
+          cp build/kartoza-screencaster dpkg/usr/bin/
+          cp resources/kartoza-screencaster.desktop dpkg/usr/share/applications/
+          cp resources/icon_ready.svg dpkg/usr/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
 
-          # Create control file with dependencies
           cat > dpkg/DEBIAN/control << EOF
           Package: kartoza-screencaster
-          Version: ${{ steps.version.outputs.version }}
+          Version: ${VER}
           Section: video
           Priority: optional
           Architecture: amd64
-          Depends: ffmpeg, pipewire | pulseaudio, libgtk-3-0, libayatana-appindicator3-1
-          Recommends: wl-clipboard, libnotify-bin
-          Suggests: v4l-utils
+          Depends: ffmpeg, libqt6core6, libqt6gui6, libqt6widgets6, libqt6multimedia6
+          Recommends: wl-screenrec, grim, pipewire
           Maintainer: Tim Sutton <tim@kartoza.com>
           Homepage: https://github.com/kartoza/kartoza-screencaster
-          Description: Screen recording tool for Wayland/X11
-           A TUI-based screen recording tool with support for:
-           - Screen recording (Wayland via wl-screenrec, X11 via ffmpeg)
-           - Audio recording via PipeWire
-           - Webcam recording
-           - Audio normalization
-           - Vertical video creation for social media
-           - Logo overlays and title text
+          Description: Screen recording tool for Wayland with WYSIWYG canvas editor
+           Professional screen recording with webcam overlays, logo placement,
+           audio normalization, and vertical video generation. Features a
+           WYSIWYG canvas editor for composing recording layouts with presets.
           EOF
 
-          # Create desktop file
-          cat > dpkg/usr/share/applications/kartoza-screencaster.desktop << 'EOF'
-          [Desktop Entry]
-          Name=Kartoza Video Processor
-          Comment=Screen recording tool for Wayland/X11
-          Exec=kartoza-screencaster
-          Icon=video-x-generic
-          Terminal=true
-          Type=Application
-          Categories=AudioVideo;Video;Recorder;
-          Keywords=screen;record;video;wayland;x11;
-          EOF
+          dpkg-deb --build dpkg kartoza-screencaster_${VER}_amd64.deb
 
-          # Create copyright file
-          cat > dpkg/usr/share/doc/kartoza-screencaster/copyright << 'EOF'
-          Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-          Upstream-Name: kartoza-screencaster
-          Upstream-Contact: Tim Sutton <tim@kartoza.com>
-          Source: https://github.com/kartoza/kartoza-screencaster
-
-          Files: *
-          Copyright: 2024 Kartoza (Pty) Ltd
-          License: MIT
-          EOF
-
-          # Build package
-          dpkg-deb --build dpkg kartoza-screencaster_${{ steps.version.outputs.version }}_amd64.deb
-
-      - name: Upload Debian package
-        uses: softprops/action-gh-release@v2
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: '*.deb'
+          name: deb-package
+          path: '*.deb'
 
   build-rpm:
     name: Build RPM Package
-    runs-on: ubuntu-latest
-    needs: build-and-release
-    if: github.event_name == 'release'
-
+    runs-on: ubuntu-24.04
+    needs: build-linux
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-          cache: true
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build rpm \
+            qt6-base-dev qt6-multimedia-dev \
+            libqt6svg6-dev qt6-wayland-dev \
+            libgl1-mesa-dev
 
       - name: Get version
         id: version
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ github.ref_name || github.event.inputs.tag }}"
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build RPM package
+      - name: Build
         run: |
-          # Install build dependencies (including CGO deps for systray)
-          sudo apt-get update
-          sudo apt-get install -y \
-            rpm \
-            gcc \
-            pkg-config \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            libgl1-mesa-dev \
-            libx11-dev \
-            libxcursor-dev \
-            libxrandr-dev \
-            libxinerama-dev \
-            libxi-dev \
-            libxxf86vm-dev
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(nproc)
+          strip build/kartoza-screencaster
 
-          # Build binary with CGO for systray support
-          CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o kartoza-screencaster .
-
-          # Create RPM build structure
+      - name: Package
+        run: |
+          VER=${{ steps.version.outputs.version }}
           mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          DATE=$(date '+%a %b %d %Y')
 
-          # Get the date for changelog
-          CHANGELOG_DATE=$(date '+%a %b %d %Y')
-
-          # Create spec file with install section that copies files
           cat > rpmbuild/SPECS/kartoza-screencaster.spec << EOF
           Name:           kartoza-screencaster
-          Version:        ${{ steps.version.outputs.version }}
+          Version:        ${VER}
           Release:        1%{?dist}
-          Summary:        Screen recording tool for Wayland/X11
-
+          Summary:        Screen recording tool for Wayland with WYSIWYG canvas
           License:        MIT
           URL:            https://github.com/kartoza/kartoza-screencaster
-
-          Requires:       ffmpeg
-          Requires:       pipewire
-          Requires:       gtk3
-          Requires:       libayatana-appindicator-gtk3
-          Recommends:     wl-clipboard
-          Recommends:     libnotify
+          Requires:       ffmpeg qt6-qtbase qt6-qtmultimedia
+          Recommends:     wl-screenrec grim pipewire
 
           %description
-          A TUI-based screen recording tool with support for:
-          - Screen recording (Wayland via wl-screenrec, X11 via ffmpeg)
-          - Audio recording via PipeWire
-          - Webcam recording
-          - Audio normalization
-          - Vertical video creation for social media
-          - Logo overlays and title text
+          Professional screen recording with webcam overlays, logo placement,
+          audio normalization, and vertical video generation.
 
           %install
           mkdir -p %{buildroot}/usr/bin
           mkdir -p %{buildroot}/usr/share/applications
-          cp $(pwd)/kartoza-screencaster %{buildroot}/usr/bin/
-          cat > %{buildroot}/usr/share/applications/kartoza-screencaster.desktop << 'DESKTOP'
-          [Desktop Entry]
-          Name=Kartoza Video Processor
-          Comment=Screen recording tool for Wayland/X11
-          Exec=kartoza-screencaster
-          Icon=video-x-generic
-          Terminal=true
-          Type=Application
-          Categories=AudioVideo;Video;Recorder;
-          Keywords=screen;record;video;wayland;x11;
-          DESKTOP
+          mkdir -p %{buildroot}/usr/share/icons/hicolor/scalable/apps
+          cp $(pwd)/build/kartoza-screencaster %{buildroot}/usr/bin/
+          cp $(pwd)/resources/kartoza-screencaster.desktop %{buildroot}/usr/share/applications/
+          cp $(pwd)/resources/icon_ready.svg %{buildroot}/usr/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
 
           %files
           %attr(755, root, root) /usr/bin/kartoza-screencaster
           /usr/share/applications/kartoza-screencaster.desktop
+          /usr/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
 
           %changelog
-          * ${CHANGELOG_DATE} Tim Sutton <tim@kartoza.com> - ${{ steps.version.outputs.version }}-1
-          - Release ${{ steps.version.outputs.version }}
+          * ${DATE} Tim Sutton <tim@kartoza.com> - ${VER}-1
+          - Release ${VER}
           EOF
 
-          # Build RPM
-          rpmbuild --define "_topdir $(pwd)/rpmbuild" \
-                   --define "_rpmdir $(pwd)" \
+          rpmbuild --define "_topdir $(pwd)/rpmbuild" --define "_rpmdir $(pwd)" \
                    -bb rpmbuild/SPECS/kartoza-screencaster.spec
-
-          # Move RPM to current directory
           mv x86_64/*.rpm .
 
-      - name: Upload RPM package
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-package
+          path: '*.rpm'
+
+  upload-release:
+    name: Upload Release Assets
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-deb, build-rpm]
+    if: github.event_name == 'release'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate checksums
+        run: |
+          mkdir -p release
+          cp artifacts/linux-x86_64/*.tar.gz release/
+          cp artifacts/deb-package/*.deb release/
+          cp artifacts/rpm-package/*.rpm release/
+          cd release && sha256sum * > checksums.txt
+
+      - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: '*.rpm'
+          files: release/*
