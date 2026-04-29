@@ -11,7 +11,9 @@
 #include <QThreadPool>
 #include <QThreadPool>
 #include <cmath>
+#ifndef Q_OS_WIN
 #include <signal.h>
+#endif
 
 Canvas::Canvas(QWidget *parent) : QWidget(parent) {
     qDebug() << "Canvas::Canvas starting";
@@ -367,7 +369,9 @@ void Canvas::stopWebcamCapture(int idx) {
     auto &item = m_items[idx];
     if (!item.webcamProc) return;
     qint64 pid = item.webcamProc->processId();
+#ifndef Q_OS_WIN
     if (pid > 0) ::kill(pid, SIGINT);
+#endif
     item.webcamProc->waitForFinished(2000);
     item.webcamProc->deleteLater();
     item.webcamProc = nullptr;
@@ -378,9 +382,28 @@ void Canvas::stopWebcamCapture(int idx) {
 void Canvas::captureScreen() {
     if (m_monitorName.isEmpty()) return;
     QString path = QDir::tempPath() + "/kartoza-canvas-" + m_monitorName + ".png";
-    QProcess grim;
-    grim.start("grim", {"-o", m_monitorName, "-t", "png", "-l", "0", path});
-    if (grim.waitForFinished(5000) && grim.exitCode() == 0) {
+
+    QProcess proc;
+#if defined(Q_OS_LINUX)
+    // Try grim first (Wayland), fall back to scrot/import (X11)
+    QString wayland = qEnvironmentVariable("WAYLAND_DISPLAY");
+    if (!wayland.isEmpty()) {
+        proc.start("grim", {"-o", m_monitorName, "-t", "png", "-l", "0", path});
+    } else {
+        // X11: use ffmpeg to grab a single frame
+        QString display = qEnvironmentVariable("DISPLAY", ":0");
+        proc.start("ffmpeg", {"-y", "-f", "x11grab", "-video_size", "1920x1080",
+                              "-i", display, "-frames:v", "1", path});
+    }
+#elif defined(Q_OS_MACOS)
+    proc.start("screencapture", {"-x", path});
+#elif defined(Q_OS_WIN)
+    // On Windows use ffmpeg gdigrab single frame
+    proc.start("ffmpeg", {"-y", "-f", "gdigrab", "-i", "desktop",
+                          "-frames:v", "1", path});
+#endif
+
+    if (proc.waitForFinished(5000) && proc.exitCode() == 0) {
         m_mutex.lock();
         m_pendingScreenPath = path;
         m_mutex.unlock();

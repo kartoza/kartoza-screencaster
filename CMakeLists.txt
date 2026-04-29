@@ -17,8 +17,10 @@ if(CCACHE_PROGRAM)
     message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
 endif()
 
-# Compiler warnings
-add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
+# Compiler warnings (GCC/Clang only — MSVC uses /W4 by default)
+if(NOT MSVC)
+    add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
+endif()
 
 # Release: optimize and strip
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -69,9 +71,12 @@ set(SOURCES
     src/webcam/webcam.h
     src/config/config.cpp
     src/config/config.h
+    src/platform/platform.cpp
+    src/platform/platform.h
 )
 
-add_executable(${PROJECT_NAME} ${SOURCES})
+qt6_add_resources(RESOURCES resources/resources.qrc)
+add_executable(${PROJECT_NAME} ${SOURCES} ${RESOURCES})
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Core
@@ -105,6 +110,8 @@ if(Qt6Test_FOUND)
         src/monitor/monitor.h
         src/webcam/webcam.cpp
         src/webcam/webcam.h
+        src/platform/platform.cpp
+        src/platform/platform.h
     )
 
     macro(add_unit_test name source)

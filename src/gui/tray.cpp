@@ -125,21 +125,21 @@ void Tray::setState(State s) {
 
     switch (s) {
     case Idle:
-        iconPath = "resources/icon_ready.png";
+        iconPath = ":/icons/ready.png";
         tooltip = "Kartoza Screencaster - Click to record";
         m_startAction->setVisible(true);
         m_pauseAction->setVisible(false);
         m_stopAction->setVisible(false);
         break;
     case Countdown:
-        iconPath = "resources/icon_ready.png";
+        iconPath = ":/icons/ready.png";
         tooltip = QString("Starting in %1...").arg(m_countdownVal);
         m_startAction->setVisible(false);
         m_pauseAction->setVisible(false);
         m_stopAction->setVisible(true);
         break;
     case Recording:
-        iconPath = "resources/icon_recording.png";
+        iconPath = ":/icons/recording.png";
         tooltip = "Recording - Click to pause";
         m_startAction->setVisible(false);
         m_pauseAction->setVisible(true);
@@ -147,7 +147,7 @@ void Tray::setState(State s) {
         m_stopAction->setVisible(true);
         break;
     case Paused:
-        iconPath = "resources/icon_ready.png";
+        iconPath = ":/icons/ready.png";
         tooltip = "Paused - Click to resume";
         m_startAction->setVisible(false);
         m_pauseAction->setVisible(true);
@@ -155,14 +155,14 @@ void Tray::setState(State s) {
         m_stopAction->setVisible(true);
         break;
     case RoomNoise:
-        iconPath = "resources/icon_recording.png";
+        iconPath = ":/icons/recording.png";
         tooltip = "Recording room noise - Please keep quiet!";
         m_startAction->setVisible(false);
         m_pauseAction->setVisible(false);
         m_stopAction->setVisible(false);
         break;
     case Processing:
-        iconPath = "resources/icon_ready.png";
+        iconPath = ":/icons/ready.png";
         tooltip = "Processing video...";
         m_startAction->setVisible(false);
         m_pauseAction->setVisible(false);
