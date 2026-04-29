@@ -69,12 +69,13 @@ jobs:
         with:
           version: '6.7.*'
           modules: 'qtmultimedia'
+          arch: 'win64_msvc2019_64'
 
-      - name: Install dependencies
-        run: choco install cmake ninja ffmpeg -y
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build

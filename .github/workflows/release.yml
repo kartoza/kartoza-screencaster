@@ -72,11 +72,12 @@ jobs:
         with:
           version: '6.7.*'
           modules: 'qtmultimedia'
-      - name: Install tools
-        run: choco install cmake ninja -y
+          arch: 'win64_msvc2019_64'
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
       - name: Build
         run: |
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
           cmake --build build
       - name: Package
         shell: bash
