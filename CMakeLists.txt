@@ -73,7 +73,8 @@ set(SOURCES
     src/platform/platform.h
 )
 
-add_executable(${PROJECT_NAME} ${SOURCES})
+qt6_add_resources(RESOURCES resources/resources.qrc)
+add_executable(${PROJECT_NAME} ${SOURCES} ${RESOURCES})
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Core

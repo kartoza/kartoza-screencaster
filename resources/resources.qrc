@@ -1,0 +1,8 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file alias="ready.png">icon_ready.png</file>
+    <file alias="recording.png">icon_recording.png</file>
+    <file alias="paused.png">icon_paused.png</file>
+    <file alias="ready.svg">icon_ready.svg</file>
+  </qresource>
+</RCC>
