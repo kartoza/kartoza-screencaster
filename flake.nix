@@ -96,6 +96,12 @@
               qt6.qtmultimedia
               qt6.qtsvg
               qt6.qtwayland
+              # GStreamer backend for QtMultimedia (video playback in history)
+              gst_all_1.gstreamer
+              gst_all_1.gst-plugins-base
+              gst_all_1.gst-plugins-good
+              gst_all_1.gst-plugins-bad
+              gst_all_1.gst-libav
             ];
 
             cmakeFlags = [
@@ -143,6 +149,11 @@
             qt6.qtsvg
             qt6.qtwayland
             qt6.wrapQtAppsHook
+            gst_all_1.gstreamer
+            gst_all_1.gst-plugins-base
+            gst_all_1.gst-plugins-good
+            gst_all_1.gst-plugins-bad
+            gst_all_1.gst-libav
             cmake
             ninja
             ccache

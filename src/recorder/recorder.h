@@ -194,4 +194,5 @@ private:
     void writeRecordingJson(const QString &status);
 
     bool m_processing = false;             /**< True while post-processing is running. */
+    QThread *m_processingThread = nullptr; /**< Worker thread for post-processing. */
 };

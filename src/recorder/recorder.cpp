@@ -20,7 +20,14 @@
 Recorder::Recorder(QObject *parent) : QObject(parent) {}
 
 Recorder::~Recorder() {
-    if (m_recording) stop();
+    if (m_recording) {
+        m_recording = false;
+        stopAllProcesses();
+    }
+    if (m_processingThread && m_processingThread->isRunning()) {
+        m_processingThread->quit();
+        m_processingThread->wait(5000);
+    }
 }
 
 qint64 Recorder::elapsedMs() const {
@@ -511,7 +518,7 @@ void Recorder::stop() {
     // Start room noise capture + processing in a worker thread
     bool hasAudioEnabled = !m_opts.noAudio;
     int waitMs = wasPaused ? 500 : 2000;
-    QThread *thread = QThread::create([this, waitMs, hasAudioEnabled]() {
+    m_processingThread = QThread::create([this, waitMs, hasAudioEnabled]() {
         QThread::msleep(waitMs);
 
         // Room noise capture (only if audio was recorded)
@@ -521,8 +528,9 @@ void Recorder::stop() {
 
         processRecordings();
     });
-    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
-    thread->start();
+    connect(m_processingThread, &QThread::finished, m_processingThread, &QThread::deleteLater);
+    connect(m_processingThread, &QThread::finished, this, [this]() { m_processingThread = nullptr; });
+    m_processingThread->start();
 }
 
 void Recorder::pause() {
@@ -632,11 +640,12 @@ void Recorder::reprocess(const QString &folder) {
     // Note: do NOT emit recordingStopped() here — the caller (mainwindow reprocess handler)
     // already navigates to the processing page and calls startMonitoring
 
-    QThread *thread = QThread::create([this]() {
+    m_processingThread = QThread::create([this]() {
         processRecordings();
     });
-    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
-    thread->start();
+    connect(m_processingThread, &QThread::finished, m_processingThread, &QThread::deleteLater);
+    connect(m_processingThread, &QThread::finished, this, [this]() { m_processingThread = nullptr; });
+    m_processingThread->start();
 }
 
 void Recorder::processRecordings() {
