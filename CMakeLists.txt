@@ -17,8 +17,10 @@ if(CCACHE_PROGRAM)
     message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
 endif()
 
-# Compiler warnings
-add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
+# Compiler warnings (GCC/Clang only — MSVC uses /W4 by default)
+if(NOT MSVC)
+    add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
+endif()
 
 # Release: optimize and strip
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
