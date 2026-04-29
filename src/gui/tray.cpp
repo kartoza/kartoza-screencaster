@@ -19,14 +19,13 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
         if (m_state == Idle) m_recordPage->onStartClicked();
     });
     m_pauseAction = m_menu->addAction("Pause", this, [this]() {
-        if (m_state == Recording) {
-            m_recordPage->onPauseClicked();
-        } else if (m_state == Paused) {
+        if (m_recordPage->recorder()->isRecording() || m_recordPage->recorder()->isPaused()) {
             m_recordPage->onPauseClicked();
         }
     });
     m_stopAction = m_menu->addAction("Stop Recording", this, [this]() {
-        if (m_state == Recording || m_state == Paused) {
+        // Always try to stop — don't rely on tray state matching
+        if (m_recordPage->recorder()->isRecording() || m_recordPage->recorder()->isPaused()) {
             m_recordPage->onStopClicked();
         }
     });
@@ -82,7 +81,7 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     // Track recorder state changes
     connect(m_recordPage, &RecordPage::recordingStarted, this, [this]() {
         setState(Recording);
-        m_mainWindow->hide(); // hide window during recording
+        m_mainWindow->hideToTray();
     });
     connect(m_recordPage, &RecordPage::recordingStopped, this, [this]() {
         setState(Processing);
