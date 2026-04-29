@@ -1,6 +1,6 @@
 #include "recorder/recorder.h"
 #include "merger/merger.h"
-#include <QApplication>
+#include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
 #include <QDateTime>
@@ -99,7 +99,8 @@ void Recorder::writeRecordingJson(const QString &status) {
     QJsonObject root;
     root["status"] = status;
     root["start_time"] = m_startTime.toString(Qt::ISODate);
-    root["app_version"] = QApplication::applicationVersion();
+    root["app_version"] = QCoreApplication::instance()
+        ? QCoreApplication::applicationVersion() : QString(APP_VERSION);
     root["created_at"] = m_startTime.toString(Qt::ISODate);
     root["updated_at"] = QDateTime::currentDateTime().toString(Qt::ISODate);
 
