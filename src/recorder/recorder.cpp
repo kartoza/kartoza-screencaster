@@ -1,5 +1,6 @@
 #include "recorder/recorder.h"
 #include "merger/merger.h"
+#include "platform/platform.h"
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
@@ -193,16 +194,71 @@ void Recorder::writeRecordingJson(const QString &status) {
 
 void Recorder::startScreenRecorder(const RecordingOptions &opts) {
     m_screenProc = new QProcess(this);
-
+    QString cmd;
     QStringList args;
-    if (!opts.hwAccel) {
-        args << "--no-hw";
-    }
-    args << QString("--output=%1").arg(opts.monitor)
-         << QString("--filename=%1").arg(m_screenFile);
 
-    qDebug() << "Starting wl-screenrec:" << args;
-    m_screenProc->start("wl-screenrec", args);
+    switch (Platform::os()) {
+    case Platform::OS::Linux:
+        if (Platform::isWayland()) {
+            // wl-screenrec for wlroots compositors
+            cmd = "wl-screenrec";
+            if (!opts.hwAccel) args << "--no-hw";
+            args << QString("--output=%1").arg(opts.monitor)
+                 << QString("--filename=%1").arg(m_screenFile);
+        } else {
+            // ffmpeg x11grab for X11
+            cmd = "ffmpeg";
+            QString display = qEnvironmentVariable("DISPLAY", ":0");
+            args << "-y" << "-f" << "x11grab"
+                 << "-framerate" << "30"
+                 << "-video_size" << QString("%1x%2").arg(
+                        opts.monitor.isEmpty() ? "1920" : QString::number(0),
+                        opts.monitor.isEmpty() ? "1080" : QString::number(0));
+            // If monitor name looks like a geometry (e.g. "1920x1080+0+0"), use it
+            // Otherwise capture the full default display
+            if (opts.monitor.contains('+')) {
+                args << "-i" << (display + "+" + opts.monitor.split('+').mid(1).join("+"));
+            } else {
+                args << "-i" << display;
+            }
+            args << "-c:v" << "libx264" << "-preset" << "ultrafast"
+                 << "-crf" << "18" << "-pix_fmt" << "yuv420p"
+                 << m_screenFile;
+        }
+        break;
+
+    case Platform::OS::macOS:
+        // ffmpeg avfoundation - screen device is typically "1" or "Capture screen 0"
+        cmd = "ffmpeg";
+        args << "-y" << "-f" << "avfoundation"
+             << "-framerate" << "30"
+             << "-capture_cursor" << "1"
+             << "-i" << (opts.monitor.isEmpty() ? "1" : opts.monitor) + ":"
+             << "-c:v" << "libx264" << "-preset" << "ultrafast"
+             << "-crf" << "18" << "-pix_fmt" << "yuv420p"
+             << m_screenFile;
+        break;
+
+    case Platform::OS::Windows:
+        // ffmpeg gdigrab
+        cmd = "ffmpeg";
+        args << "-y" << "-f" << "gdigrab"
+             << "-framerate" << "30"
+             << "-i" << "desktop"
+             << "-c:v" << "libx264" << "-preset" << "ultrafast"
+             << "-crf" << "18" << "-pix_fmt" << "yuv420p"
+             << m_screenFile;
+        break;
+
+    default:
+        emit recordingError("Unsupported platform for screen recording");
+        delete m_screenProc;
+        m_screenProc = nullptr;
+        return;
+    }
+
+    qDebug() << "Starting screen recorder:" << cmd << args;
+    m_screenProc->start(cmd, args);
 
     if (!m_screenProc->waitForStarted(5000)) {
         emit recordingError("Failed to start screen recorder: " + m_screenProc->errorString());
@@ -213,13 +269,38 @@ void Recorder::startAudioRecorder(const RecordingOptions &opts) {
     m_audioProc = new QProcess(this);
 
     QString device = opts.audioDevice;
-    if (device.isEmpty()) device = "@DEFAULT_SOURCE@";
-
     QStringList args;
-    args << "-f" << "pulse"
-         << "-i" << device
-         << "-ac" << "2"
-         << "-y" << m_audioFile;
+
+    switch (Platform::os()) {
+    case Platform::OS::Linux:
+        if (device.isEmpty()) device = "@DEFAULT_SOURCE@";
+        args << "-y" << "-f" << "pulse"
+             << "-i" << device
+             << "-ac" << "2" << m_audioFile;
+        break;
+
+    case Platform::OS::macOS:
+        // avfoundation audio - "0" is default mic, or use device name
+        if (device.isEmpty()) device = "0";
+        args << "-y" << "-f" << "avfoundation"
+             << "-i" << (":" + device)
+             << "-ac" << "2" << m_audioFile;
+        break;
+
+    case Platform::OS::Windows:
+        // dshow audio
+        if (device.isEmpty()) device = "Microphone";
+        args << "-y" << "-f" << "dshow"
+             << "-i" << ("audio=" + device)
+             << "-ac" << "2" << m_audioFile;
+        break;
+
+    default:
+        qWarning() << "Unsupported platform for audio recording";
+        delete m_audioProc;
+        m_audioProc = nullptr;
+        return;
+    }
 
     qDebug() << "Starting audio ffmpeg:" << args;
     m_audioProc->start("ffmpeg", args);
@@ -234,16 +315,44 @@ void Recorder::startAudioRecorder(const RecordingOptions &opts) {
 void Recorder::startWebcamRecorder(const RecordingOptions &opts) {
     m_webcamProc = new QProcess(this);
 
+    int fps = opts.webcamFPS > 0 ? opts.webcamFPS : 30;
     QStringList args;
-    args << "-f" << "v4l2"
-         << "-framerate" << QString::number(opts.webcamFPS > 0 ? opts.webcamFPS : 30)
-         << "-i" << ("/dev/" + opts.webcamDevice)
-         << "-c:v" << "libx264"
+
+    switch (Platform::os()) {
+    case Platform::OS::Linux:
+        args << "-y" << "-f" << "v4l2"
+             << "-framerate" << QString::number(fps)
+             << "-i" << ("/dev/" + opts.webcamDevice);
+        break;
+
+    case Platform::OS::macOS:
+        // avfoundation - webcam device index or name
+        args << "-y" << "-f" << "avfoundation"
+             << "-framerate" << QString::number(fps)
+             << "-i" << (opts.webcamDevice + ":");
+        break;
+
+    case Platform::OS::Windows:
+        // dshow - webcam device name
+        args << "-y" << "-f" << "dshow"
+             << "-framerate" << QString::number(fps)
+             << "-i" << ("video=" + opts.webcamDevice);
+        break;
+
+    default:
+        qWarning() << "Unsupported platform for webcam recording";
+        delete m_webcamProc;
+        m_webcamProc = nullptr;
+        return;
+    }
+
+    // Common encoding options
+    args << "-c:v" << "libx264"
          << "-preset" << "ultrafast"
          << "-tune" << "zerolatency"
          << "-crf" << "18"
          << "-pix_fmt" << "yuv420p"
-         << "-y" << m_webcamFile;
+         << m_webcamFile;
 
     qDebug() << "Starting webcam ffmpeg:" << args;
     m_webcamProc->start("ffmpeg", args);
@@ -302,13 +411,28 @@ void Recorder::captureRoomNoise() {
     emit roomNoiseStarted();
 
     QString device = m_opts.audioDevice;
-    if (device.isEmpty()) device = "@DEFAULT_SOURCE@";
 
     QProcess proc;
     QStringList args;
-    args << "-f" << "pulse" << "-i" << device
-         << "-ac" << "2" << "-t" << QString::number(DURATION_SECS)
-         << "-y" << roomNoiseFile;
+
+    switch (Platform::os()) {
+    case Platform::OS::Linux:
+        if (device.isEmpty()) device = "@DEFAULT_SOURCE@";
+        args << "-y" << "-f" << "pulse" << "-i" << device;
+        break;
+    case Platform::OS::macOS:
+        if (device.isEmpty()) device = "0";
+        args << "-y" << "-f" << "avfoundation" << "-i" << (":" + device);
+        break;
+    case Platform::OS::Windows:
+        if (device.isEmpty()) device = "Microphone";
+        args << "-y" << "-f" << "dshow" << "-i" << ("audio=" + device);
+        break;
+    default:
+        emit roomNoiseFinished();
+        return;
+    }
+    args << "-ac" << "2" << "-t" << QString::number(DURATION_SECS) << roomNoiseFile;
 
     proc.start("ffmpeg", args);
     if (!proc.waitForStarted(5000)) {

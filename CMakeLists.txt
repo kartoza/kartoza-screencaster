@@ -69,6 +69,8 @@ set(SOURCES
     src/webcam/webcam.h
     src/config/config.cpp
     src/config/config.h
+    src/platform/platform.cpp
+    src/platform/platform.h
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -105,6 +107,8 @@ if(Qt6Test_FOUND)
         src/monitor/monitor.h
         src/webcam/webcam.cpp
         src/webcam/webcam.h
+        src/platform/platform.cpp
+        src/platform/platform.h
     )
 
     macro(add_unit_test name source)
