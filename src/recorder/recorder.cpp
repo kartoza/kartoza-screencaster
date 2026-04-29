@@ -13,7 +13,9 @@
 #include <QFileInfo>
 #include <QHostInfo>
 #include <QRegularExpression>
+#ifndef Q_OS_WIN
 #include <signal.h>
+#endif
 
 Recorder::Recorder(QObject *parent) : QObject(parent) {}
 
@@ -457,10 +459,13 @@ void Recorder::captureRoomNoise() {
 void Recorder::stopProcess(QProcess *proc) {
     if (!proc || proc->state() == QProcess::NotRunning) return;
 
+#ifndef Q_OS_WIN
+    // Send SIGINT for graceful ffmpeg shutdown (POSIX only)
     qint64 pid = proc->processId();
     if (pid > 0) {
         ::kill(pid, SIGINT);
     }
+#endif
     if (!proc->waitForFinished(5000)) {
         proc->terminate();
         if (!proc->waitForFinished(3000)) {
