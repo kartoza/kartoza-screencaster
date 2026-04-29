@@ -11,7 +11,9 @@
 #include <QThreadPool>
 #include <QThreadPool>
 #include <cmath>
+#ifndef Q_OS_WIN
 #include <signal.h>
+#endif
 
 Canvas::Canvas(QWidget *parent) : QWidget(parent) {
     qDebug() << "Canvas::Canvas starting";
@@ -367,7 +369,9 @@ void Canvas::stopWebcamCapture(int idx) {
     auto &item = m_items[idx];
     if (!item.webcamProc) return;
     qint64 pid = item.webcamProc->processId();
+#ifndef Q_OS_WIN
     if (pid > 0) ::kill(pid, SIGINT);
+#endif
     item.webcamProc->waitForFinished(2000);
     item.webcamProc->deleteLater();
     item.webcamProc = nullptr;
