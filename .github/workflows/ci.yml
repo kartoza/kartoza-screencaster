@@ -7,7 +7,7 @@ on:
     branches: [main, develop]
 
 jobs:
-  build-and-test:
+  build-linux:
     name: Build & Test (Linux)
     runs-on: ubuntu-24.04
     steps:
@@ -22,8 +22,7 @@ jobs:
             qt6-base-dev qt6-multimedia-dev \
             libqt6svg6-dev qt6-wayland-dev \
             libgl1-mesa-dev \
-            ffmpeg \
-            clang-format cppcheck
+            ffmpeg
 
       - name: Configure
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
@@ -36,34 +35,52 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: cd build && ctest --output-on-failure
 
-      - name: Check formatting
-        run: |
-          find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror 2>&1 || true
-
-  build-release:
-    name: Build Release (Linux x86_64)
-    runs-on: ubuntu-24.04
-    needs: build-and-test
+  build-macos:
+    name: Build (macOS)
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            cmake ninja-build \
-            qt6-base-dev qt6-multimedia-dev \
-            libqt6svg6-dev qt6-wayland-dev \
-            libgl1-mesa-dev
+        run: brew install qt6 cmake ninja ffmpeg
 
-      - name: Build Release
-        run: |
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build build -j$(nproc)
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$(brew --prefix qt6)
+
+      - name: Build
+        run: cmake --build build -j$(sysctl -n hw.logicalcpu)
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kartoza-screencaster-linux-x86_64
+          name: kartoza-screencaster-macos
           path: build/kartoza-screencaster
+
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.*'
+          modules: 'qtmultimedia'
+
+      - name: Install dependencies
+        run: choco install cmake ninja ffmpeg -y
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kartoza-screencaster-windows
+          path: build/kartoza-screencaster.exe

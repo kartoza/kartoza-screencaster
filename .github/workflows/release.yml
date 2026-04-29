@@ -17,81 +17,104 @@ jobs:
     name: Build Linux x86_64
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            cmake ninja-build \
-            qt6-base-dev qt6-multimedia-dev \
-            libqt6svg6-dev qt6-wayland-dev \
-            libgl1-mesa-dev
-
-      - name: Build Release
+          sudo apt-get install -y cmake ninja-build \
+            qt6-base-dev qt6-multimedia-dev libqt6svg6-dev qt6-wayland-dev libgl1-mesa-dev
+      - name: Build
         run: |
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j$(nproc)
           strip build/kartoza-screencaster
-
-      - name: Create tarball
+      - name: Package
         run: |
           mkdir -p release
           cp build/kartoza-screencaster release/
           cp resources/kartoza-screencaster.desktop release/
           cp resources/icon_ready.svg release/kartoza-screencaster.svg
           cd release && tar -czf ../kartoza-screencaster-linux-x86_64.tar.gz .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: linux-x86_64
           path: kartoza-screencaster-linux-x86_64.tar.gz
+
+  build-macos:
+    name: Build macOS (Universal)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install qt6 cmake ninja ffmpeg
+      - name: Build
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$(brew --prefix qt6)
+          cmake --build build -j$(sysctl -n hw.logicalcpu)
+          strip build/kartoza-screencaster
+      - name: Package
+        run: |
+          mkdir -p release
+          cp build/kartoza-screencaster release/
+          cd release && tar -czf ../kartoza-screencaster-macos-arm64.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: kartoza-screencaster-macos-arm64.tar.gz
+
+  build-windows:
+    name: Build Windows x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.*'
+          modules: 'qtmultimedia'
+      - name: Install tools
+        run: choco install cmake ninja -y
+      - name: Build
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p release
+          cp build/kartoza-screencaster.exe release/
+          cd release && 7z a ../kartoza-screencaster-windows-x86_64.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: kartoza-screencaster-windows-x86_64.zip
 
   build-deb:
     name: Build Debian Package
     runs-on: ubuntu-24.04
     needs: build-linux
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            cmake ninja-build dpkg-dev \
-            qt6-base-dev qt6-multimedia-dev \
-            libqt6svg6-dev qt6-wayland-dev \
-            libgl1-mesa-dev
-
+          sudo apt-get install -y cmake ninja-build dpkg-dev \
+            qt6-base-dev qt6-multimedia-dev libqt6svg6-dev qt6-wayland-dev libgl1-mesa-dev
       - name: Get version
         id: version
         run: |
           VERSION="${{ github.ref_name || github.event.inputs.tag }}"
-          VERSION="${VERSION#v}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Build
+          echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
+      - name: Build & Package
         run: |
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j$(nproc)
           strip build/kartoza-screencaster
-
-      - name: Package
-        run: |
           VER=${{ steps.version.outputs.version }}
-          mkdir -p dpkg/DEBIAN
-          mkdir -p dpkg/usr/bin
-          mkdir -p dpkg/usr/share/applications
-          mkdir -p dpkg/usr/share/icons/hicolor/scalable/apps
-          mkdir -p dpkg/usr/share/doc/kartoza-screencaster
-
+          mkdir -p dpkg/{DEBIAN,usr/bin,usr/share/applications,usr/share/icons/hicolor/scalable/apps}
           cp build/kartoza-screencaster dpkg/usr/bin/
           cp resources/kartoza-screencaster.desktop dpkg/usr/share/applications/
           cp resources/icon_ready.svg dpkg/usr/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
-
           cat > dpkg/DEBIAN/control << EOF
           Package: kartoza-screencaster
           Version: ${VER}
@@ -102,16 +125,11 @@ jobs:
           Recommends: wl-screenrec, grim, pipewire
           Maintainer: Tim Sutton <tim@kartoza.com>
           Homepage: https://github.com/kartoza/kartoza-screencaster
-          Description: Screen recording tool for Wayland with WYSIWYG canvas editor
-           Professional screen recording with webcam overlays, logo placement,
-           audio normalization, and vertical video generation. Features a
-           WYSIWYG canvas editor for composing recording layouts with presets.
+          Description: Screen recording with WYSIWYG canvas editor
+           Professional screen recording for Linux, macOS, and Windows.
           EOF
-
           dpkg-deb --build dpkg kartoza-screencaster_${VER}_amd64.deb
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: deb-package
           path: '*.deb'
@@ -121,75 +139,52 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build-linux
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            cmake ninja-build rpm \
-            qt6-base-dev qt6-multimedia-dev \
-            libqt6svg6-dev qt6-wayland-dev \
-            libgl1-mesa-dev
-
+          sudo apt-get install -y cmake ninja-build rpm \
+            qt6-base-dev qt6-multimedia-dev libqt6svg6-dev qt6-wayland-dev libgl1-mesa-dev
       - name: Get version
         id: version
         run: |
           VERSION="${{ github.ref_name || github.event.inputs.tag }}"
-          VERSION="${VERSION#v}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Build
+          echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
+      - name: Build & Package
         run: |
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j$(nproc)
           strip build/kartoza-screencaster
-
-      - name: Package
-        run: |
           VER=${{ steps.version.outputs.version }}
           mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
           DATE=$(date '+%a %b %d %Y')
-
           cat > rpmbuild/SPECS/kartoza-screencaster.spec << EOF
           Name:           kartoza-screencaster
           Version:        ${VER}
           Release:        1%{?dist}
-          Summary:        Screen recording tool for Wayland with WYSIWYG canvas
+          Summary:        Screen recording with WYSIWYG canvas editor
           License:        MIT
           URL:            https://github.com/kartoza/kartoza-screencaster
           Requires:       ffmpeg qt6-qtbase qt6-qtmultimedia
-          Recommends:     wl-screenrec grim pipewire
-
           %description
-          Professional screen recording with webcam overlays, logo placement,
-          audio normalization, and vertical video generation.
-
+          Professional screen recording for Linux, macOS, and Windows.
           %install
-          mkdir -p %{buildroot}/usr/bin
-          mkdir -p %{buildroot}/usr/share/applications
-          mkdir -p %{buildroot}/usr/share/icons/hicolor/scalable/apps
+          mkdir -p %{buildroot}/usr/bin %{buildroot}/usr/share/applications %{buildroot}/usr/share/icons/hicolor/scalable/apps
           cp $(pwd)/build/kartoza-screencaster %{buildroot}/usr/bin/
           cp $(pwd)/resources/kartoza-screencaster.desktop %{buildroot}/usr/share/applications/
           cp $(pwd)/resources/icon_ready.svg %{buildroot}/usr/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
-
           %files
           %attr(755, root, root) /usr/bin/kartoza-screencaster
           /usr/share/applications/kartoza-screencaster.desktop
           /usr/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
-
           %changelog
           * ${DATE} Tim Sutton <tim@kartoza.com> - ${VER}-1
           - Release ${VER}
           EOF
-
           rpmbuild --define "_topdir $(pwd)/rpmbuild" --define "_rpmdir $(pwd)" \
                    -bb rpmbuild/SPECS/kartoza-screencaster.spec
           mv x86_64/*.rpm .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: rpm-package
           path: '*.rpm'
@@ -197,23 +192,21 @@ jobs:
   upload-release:
     name: Upload Release Assets
     runs-on: ubuntu-latest
-    needs: [build-linux, build-deb, build-rpm]
+    needs: [build-linux, build-macos, build-windows, build-deb, build-rpm]
     if: github.event_name == 'release'
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
-
-      - name: Generate checksums
+      - name: Collect and checksum
         run: |
           mkdir -p release
           cp artifacts/linux-x86_64/*.tar.gz release/
+          cp artifacts/macos-arm64/*.tar.gz release/
+          cp artifacts/windows-x86_64/*.zip release/
           cp artifacts/deb-package/*.deb release/
           cp artifacts/rpm-package/*.rpm release/
           cd release && sha256sum * > checksums.txt
-
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: release/*
