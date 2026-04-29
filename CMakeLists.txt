@@ -125,6 +125,7 @@ if(Qt6Test_FOUND)
     add_unit_test(test_config tests/test_config.cpp)
     add_unit_test(test_monitor tests/test_monitor.cpp)
     add_unit_test(test_pipeline tests/test_pipeline.cpp)
+    add_unit_test(test_recorder tests/test_recorder.cpp)
 endif()
 
 # Doxygen documentation
