@@ -131,7 +131,6 @@ void Canvas::setMode(int mode) {
 void Canvas::addWebcam(const QString &device, const QString &name, int shape) {
     int count = 0;
     for (const auto &item : m_items) if (item.type == 1) count++;
-    int r = 30;
 
     CanvasItem item;
     item.type = 1; item.label = name; item.device = device; item.shape = shape;
