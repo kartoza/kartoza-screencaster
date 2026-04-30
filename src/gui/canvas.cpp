@@ -322,6 +322,8 @@ void Canvas::importItem(const ItemExport &e) {
             int idx = m_items.size() - 1;
             m_items[idx].x = e.x; m_items[idx].y = e.y;
             m_items[idx].w = e.w; m_items[idx].h = e.h;
+            m_items[idx].gifLoop = e.gifLoop;
+            m_items[idx].gifLoopMax = e.gifLoopMax;
         }
         break;
     }
