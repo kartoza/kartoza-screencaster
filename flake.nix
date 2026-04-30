@@ -218,6 +218,7 @@
             alias ct='cd build && ctest --output-on-failure && cd ..'
             alias cr='./build/kartoza-screencaster'
             alias cf='find src tests -name "*.cpp" -o -name "*.h" | xargs clang-format -i'
+            alias cc='rm -rf build/* && cd build && cmake .. -G Ninja && ninja && cd ..'
 
             # Documentation aliases
             alias docs='mkdocs serve'
@@ -233,6 +234,7 @@
             echo "  cbr  - Configure + build (Release, optimised+stripped)"
             echo "  ct   - Run all tests"
             echo "  cr   - Run the application"
+            echo "  cc   - Clean rebuild from scratch"
             echo "  cf   - Format all C++ code (clang-format)"
             echo ""
             echo "Documentation:"
