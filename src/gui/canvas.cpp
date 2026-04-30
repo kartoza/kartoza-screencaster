@@ -210,9 +210,10 @@ void Canvas::removeItem(int index) {
     update();
 }
 
-void Canvas::setItemGifLoop(int index, int gifLoop) {
+void Canvas::setItemGifLoop(int index, int gifLoop, int gifLoopMax) {
     if (index < 0 || index >= m_items.size()) return;
     m_items[index].gifLoop = gifLoop;
+    m_items[index].gifLoopMax = gifLoopMax;
     emit itemsChanged();
 }
 

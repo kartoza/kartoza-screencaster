@@ -132,6 +132,8 @@ private:
     // -- Layer list --
     /** @brief List widget showing canvas layer stack. */
     QListWidget *m_layerList;
+    /** @brief GIF loop controls row (shown when GIF logo selected). */
+    QWidget *m_gifLoopRow = nullptr;
     /** @brief Rebuild the layer list from current canvas items. */
     void refreshLayerList();
     /** @brief Persist current canvas item layout to settings. */

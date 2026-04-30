@@ -10,6 +10,8 @@
 #include <QSet>
 #include <QShowEvent>
 #include <QMessageBox>
+#include <QInputDialog>
+#include <QSpinBox>
 
 RecordPage::RecordPage(QWidget *parent) : QWidget(parent) {
     m_recorder = new Recorder(this);
@@ -164,30 +166,6 @@ void RecordPage::setupUI() {
     m_layerList->setMaximumHeight(120);
     m_layerList->setStyleSheet("QListWidget { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #45475a; }");
     connect(m_layerList, &QListWidget::currentRowChanged, m_canvas, &Canvas::setSelectedItem);
-    m_layerList->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(m_layerList, &QListWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
-        int row = m_layerList->indexAt(pos).row();
-        if (row < 0 || row >= m_canvas->itemCount()) return;
-        auto items = m_canvas->exportItems();
-        if (row >= items.size()) return;
-        auto &item = items[row];
-        if (item.type != 2) return; // only logos have GIF options
-        if (!item.filePath.toLower().endsWith(".gif")) return;
-
-        QMenu menu;
-        menu.setStyleSheet("QMenu { background: #313244; color: #cdd6f4; } QMenu::item:selected { background: #45475a; }");
-        auto *loopCont = menu.addAction("Loop continuously");
-        auto *loopOnce = menu.addAction("Play once");
-        auto *loopNone = menu.addAction("First frame only");
-        loopCont->setCheckable(true); loopCont->setChecked(item.gifLoop == 2);
-        loopOnce->setCheckable(true); loopOnce->setChecked(item.gifLoop == 1);
-        loopNone->setCheckable(true); loopNone->setChecked(item.gifLoop == 0);
-
-        auto *chosen = menu.exec(m_layerList->mapToGlobal(pos));
-        if (!chosen) return;
-        int newLoop = (chosen == loopCont) ? 2 : (chosen == loopOnce) ? 1 : 0;
-        m_canvas->setItemGifLoop(row, newLoop);
-    });
     leftLayout->addWidget(m_layerList);
 
     auto *layerBtnRow = new QHBoxLayout;
@@ -393,6 +371,87 @@ void RecordPage::setupUI() {
         addMenu->popup(addBtn->mapToGlobal(QPoint(0, addBtn->height())));
     });
     addRow->addWidget(addBtn);
+
+    // GIF loop controls (shown when a GIF logo is selected)
+    m_gifLoopRow = new QWidget;
+    auto *gifLayout = new QHBoxLayout(m_gifLoopRow);
+    gifLayout->setContentsMargins(0, 0, 0, 0);
+    gifLayout->setSpacing(4);
+
+    QString smallBtnStyle = "QPushButton { background: #45475a; color: #cdd6f4; border: none; border-radius: 3px; padding: 4px 8px; font-size: 10px; } QPushButton:hover { background: #585b70; } QPushButton:checked { background: #89b4fa; color: #1e1e2e; }";
+
+    auto *loopLabel = new QLabel("GIF:");
+    loopLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 10px; }");
+    gifLayout->addWidget(loopLabel);
+
+    auto *btnCont = new QPushButton("Loop");
+    btnCont->setStyleSheet(smallBtnStyle); btnCont->setCheckable(true);
+    gifLayout->addWidget(btnCont);
+
+    auto *btnOnce = new QPushButton("Once");
+    btnOnce->setStyleSheet(smallBtnStyle); btnOnce->setCheckable(true);
+    gifLayout->addWidget(btnOnce);
+
+    auto *btnNone = new QPushButton("Still");
+    btnNone->setStyleSheet(smallBtnStyle); btnNone->setCheckable(true);
+    gifLayout->addWidget(btnNone);
+
+    auto *loopCountSpin = new QSpinBox;
+    loopCountSpin->setRange(1, 999);
+    loopCountSpin->setValue(3);
+    loopCountSpin->setPrefix("x");
+    loopCountSpin->setFixedWidth(55);
+    loopCountSpin->setStyleSheet("QSpinBox { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 3px; padding: 2px; font-size: 10px; }");
+    gifLayout->addWidget(loopCountSpin);
+
+    auto *btnNTimes = new QPushButton("N times");
+    btnNTimes->setStyleSheet(smallBtnStyle); btnNTimes->setCheckable(true);
+    gifLayout->addWidget(btnNTimes);
+
+    m_gifLoopRow->hide();
+    addRow->addWidget(m_gifLoopRow);
+
+    // Update GIF controls when selection changes
+    auto updateGifControls = [this, btnCont, btnOnce, btnNone, btnNTimes, loopCountSpin]() {
+        int sel = m_canvas->selectedItem();
+        if (sel < 0 || sel >= m_canvas->itemCount()) { m_gifLoopRow->hide(); return; }
+        auto items = m_canvas->exportItems();
+        if (sel >= items.size() || items[sel].type != 2 ||
+            !items[sel].filePath.toLower().endsWith(".gif")) { m_gifLoopRow->hide(); return; }
+
+        m_gifLoopRow->show();
+        int loop = items[sel].gifLoop;
+        btnCont->setChecked(loop == 2);
+        btnOnce->setChecked(loop == 1);
+        btnNone->setChecked(loop == 0);
+        btnNTimes->setChecked(loop == 3);
+        loopCountSpin->setValue(items[sel].gifLoopMax);
+        loopCountSpin->setVisible(loop == 3);
+    };
+
+    connect(m_canvas, &Canvas::selectionChanged, this, updateGifControls);
+    connect(m_canvas, &Canvas::itemsChanged, this, updateGifControls);
+
+    connect(btnCont, &QPushButton::clicked, this, [this]() {
+        int s = m_canvas->selectedItem(); if (s >= 0) m_canvas->setItemGifLoop(s, 2);
+    });
+    connect(btnOnce, &QPushButton::clicked, this, [this]() {
+        int s = m_canvas->selectedItem(); if (s >= 0) m_canvas->setItemGifLoop(s, 1);
+    });
+    connect(btnNone, &QPushButton::clicked, this, [this]() {
+        int s = m_canvas->selectedItem(); if (s >= 0) m_canvas->setItemGifLoop(s, 0);
+    });
+    connect(btnNTimes, &QPushButton::clicked, this, [this, loopCountSpin]() {
+        int s = m_canvas->selectedItem(); if (s >= 0) m_canvas->setItemGifLoop(s, 3, loopCountSpin->value());
+    });
+    connect(loopCountSpin, &QSpinBox::valueChanged, this, [this](int val) {
+        int s = m_canvas->selectedItem();
+        if (s >= 0) {
+            auto items = m_canvas->exportItems();
+            if (s < items.size() && items[s].gifLoop == 3) m_canvas->setItemGifLoop(s, 3, val);
+        }
+    });
+
     addRow->addStretch();
 
     m_statusLabel = new QLabel("Ready");
