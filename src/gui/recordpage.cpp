@@ -597,14 +597,13 @@ void RecordPage::restoreCanvasState() {
     QSet<QString> availableMonitors;
     for (const auto &mon : m_monitors) availableMonitors.insert(mon.name);
 
-    int cw = m_canvas->canvasWidth();
-    int ch = m_canvas->canvasHeight();
+    QRect fr = m_canvas->frameRect();
 
     for (const auto &s : cfg.canvasState.items) {
-        int px = static_cast<int>(s.rx * cw);
-        int py = static_cast<int>(s.ry * ch);
-        int pw = static_cast<int>(s.rw * cw);
-        int ph = static_cast<int>(s.rh * ch);
+        int px = fr.x() + static_cast<int>(s.rx * fr.width());
+        int py = fr.y() + static_cast<int>(s.ry * fr.height());
+        int pw = static_cast<int>(s.rw * fr.width());
+        int ph = static_cast<int>(s.rh * fr.height());
 
         if (s.type == "screen") {
             bool matched = false;
@@ -699,13 +698,14 @@ CanvasState RecordPage::captureCurrentState() {
         default: s.type = "unknown"; break;
         }
         s.label = e.label;
-        // Store as relative fractions of canvas size
-        double cw = m_canvas->canvasWidth();
-        double ch = m_canvas->canvasHeight();
-        s.rx = cw > 0 ? e.x / cw : 0;
-        s.ry = ch > 0 ? e.y / ch : 0;
-        s.rw = cw > 0 ? e.w / cw : 0;
-        s.rh = ch > 0 ? e.h / ch : 0;
+        // Store as relative fractions of the output frame (not the widget)
+        QRect fr = m_canvas->frameRect();
+        double fw = fr.width() > 0 ? fr.width() : 1;
+        double fh = fr.height() > 0 ? fr.height() : 1;
+        s.rx = (e.x - fr.x()) / fw;
+        s.ry = (e.y - fr.y()) / fh;
+        s.rw = e.w / fw;
+        s.rh = e.h / fh;
         s.device = e.device; s.filePath = e.filePath;
         s.shape = e.shape; s.gifLoop = e.gifLoop; s.gifLoopMax = e.gifLoopMax;
         state.items.append(s);
@@ -728,15 +728,14 @@ void RecordPage::applyState(const CanvasState &state) {
     QSet<QString> availableWebcams;
     for (const auto &dev : m_webcams) availableWebcams.insert(dev.device);
 
-    int cw = m_canvas->canvasWidth();
-    int ch = m_canvas->canvasHeight();
+    QRect fr = m_canvas->frameRect();
 
     for (const auto &s : state.items) {
-        // Convert relative coords back to pixels
-        int px = static_cast<int>(s.rx * cw);
-        int py = static_cast<int>(s.ry * ch);
-        int pw = static_cast<int>(s.rw * cw);
-        int ph = static_cast<int>(s.rh * ch);
+        // Convert frame-relative fractions back to canvas pixels
+        int px = fr.x() + static_cast<int>(s.rx * fr.width());
+        int py = fr.y() + static_cast<int>(s.ry * fr.height());
+        int pw = static_cast<int>(s.rw * fr.width());
+        int ph = static_cast<int>(s.rh * fr.height());
 
         if (s.type == "screen") {
             bool matched = false;

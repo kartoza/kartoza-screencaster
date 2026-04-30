@@ -101,6 +101,8 @@ public:
     int canvasWidth() const { return m_cw; }
     /** @brief Return the logical canvas height in pixels. */
     int canvasHeight() const { return m_ch; }
+    /** @brief Return the output frame rect (where items should be placed). */
+    QRect frameRect() const;
     /**
      * @brief Return the display label for an item.
      * @param index Zero-based item index.

@@ -410,6 +410,16 @@ void Canvas::captureScreen() {
     }
 }
 
+QRect Canvas::frameRect() const {
+    if (m_mode == 0) {
+        return QRect(0, 0, m_cw, m_ch);
+    }
+    int fh = m_ch - 20, fw = fh * 9 / 16;
+    if (fw > m_cw - 20) { fw = m_cw - 20; fh = fw * 16 / 9; }
+    int fx = (m_cw - fw) / 2, fy = (m_ch - fh) / 2;
+    return QRect(fx, fy, fw, fh);
+}
+
 void Canvas::resizeEvent(QResizeEvent *event) {
     m_cw = event->size().width();
     m_ch = event->size().height();
