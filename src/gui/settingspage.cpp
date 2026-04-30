@@ -83,7 +83,11 @@ void SettingsPage::setupUI() {
     m_normalizeCheck = new QCheckBox("Normalize and process audio");
     m_normalizeCheck->setStyleSheet(checkStyle);
     m_normalizeCheck->setToolTip("Denoise, compress, and normalize audio after recording.");
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    connect(m_normalizeCheck, &QCheckBox::checkStateChanged, this, [this]() { saveToConfig(); });
+#else
     connect(m_normalizeCheck, &QCheckBox::stateChanged, this, [this]() { saveToConfig(); });
+#endif
     layout->addWidget(m_normalizeCheck);
 
     // --- Appearance ---
