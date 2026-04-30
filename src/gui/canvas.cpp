@@ -210,6 +210,12 @@ void Canvas::removeItem(int index) {
     update();
 }
 
+void Canvas::setItemGifLoop(int index, int gifLoop) {
+    if (index < 0 || index >= m_items.size()) return;
+    m_items[index].gifLoop = gifLoop;
+    emit itemsChanged();
+}
+
 void Canvas::clearAll() {
     for (int i = 0; i < m_items.size(); i++) {
         stopWebcamCapture(i);

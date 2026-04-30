@@ -164,6 +164,30 @@ void RecordPage::setupUI() {
     m_layerList->setMaximumHeight(120);
     m_layerList->setStyleSheet("QListWidget { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #45475a; }");
     connect(m_layerList, &QListWidget::currentRowChanged, m_canvas, &Canvas::setSelectedItem);
+    m_layerList->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_layerList, &QListWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        int row = m_layerList->indexAt(pos).row();
+        if (row < 0 || row >= m_canvas->itemCount()) return;
+        auto items = m_canvas->exportItems();
+        if (row >= items.size()) return;
+        auto &item = items[row];
+        if (item.type != 2) return; // only logos have GIF options
+        if (!item.filePath.toLower().endsWith(".gif")) return;
+
+        QMenu menu;
+        menu.setStyleSheet("QMenu { background: #313244; color: #cdd6f4; } QMenu::item:selected { background: #45475a; }");
+        auto *loopCont = menu.addAction("Loop continuously");
+        auto *loopOnce = menu.addAction("Play once");
+        auto *loopNone = menu.addAction("First frame only");
+        loopCont->setCheckable(true); loopCont->setChecked(item.gifLoop == 2);
+        loopOnce->setCheckable(true); loopOnce->setChecked(item.gifLoop == 1);
+        loopNone->setCheckable(true); loopNone->setChecked(item.gifLoop == 0);
+
+        auto *chosen = menu.exec(m_layerList->mapToGlobal(pos));
+        if (!chosen) return;
+        int newLoop = (chosen == loopCont) ? 2 : (chosen == loopOnce) ? 1 : 0;
+        m_canvas->setItemGifLoop(row, newLoop);
+    });
     leftLayout->addWidget(m_layerList);
 
     auto *layerBtnRow = new QHBoxLayout;
@@ -261,19 +285,17 @@ void RecordPage::setupUI() {
         m_presetNameInput->setFocus();
     });
 
-    // Create: save new preset with typed name
+    // Create: save current canvas as a new preset
     auto doCreate = [this]() {
         QString name = m_presetNameInput->text().trimmed();
         if (name.isEmpty()) return;
         auto &cfg = Config::instance();
-        m_canvas->clearAll();
-        cfg.canvasState = CanvasState();
+        cfg.canvasState = captureCurrentState();
         cfg.presets[name] = cfg.canvasState;
         cfg.activePreset = name;
         cfg.save();
         m_presetNameRow->hide();
         refreshPresetList();
-        refreshLayerList();
         emit presetChanged();
     };
     connect(createBtn, &QPushButton::clicked, this, doCreate);

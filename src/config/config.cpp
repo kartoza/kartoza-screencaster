@@ -30,10 +30,19 @@ static CanvasState canvasStateFromJson(const QJsonObject &cs) {
     CanvasItemState s;
     s.type = obj["type"].toString();
     s.label = obj["label"].toString();
-    s.rx = obj["rx"].toDouble();
-    s.ry = obj["ry"].toDouble();
-    s.rw = obj["rw"].toDouble();
-    s.rh = obj["rh"].toDouble();
+    // Support both new relative (rx/ry/rw/rh) and old absolute (x/y/w/h) formats
+    if (obj.contains("rx")) {
+      s.rx = obj["rx"].toDouble();
+      s.ry = obj["ry"].toDouble();
+      s.rw = obj["rw"].toDouble();
+      s.rh = obj["rh"].toDouble();
+    } else {
+      // Migrate old absolute coords (assume 560x315 default canvas)
+      s.rx = obj["x"].toDouble() / 560.0;
+      s.ry = obj["y"].toDouble() / 315.0;
+      s.rw = obj["w"].toDouble() / 560.0;
+      s.rh = obj["h"].toDouble() / 315.0;
+    }
     s.device = obj["device"].toString();
     s.filePath = obj["file_path"].toString();
     s.shape = obj["shape"].toInt();

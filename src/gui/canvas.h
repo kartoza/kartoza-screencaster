@@ -72,6 +72,8 @@ public:
      * @param index Zero-based index into the item list.
      */
     void removeItem(int index);
+    /** @brief Set GIF loop mode for an item. */
+    void setItemGifLoop(int index, int gifLoop);
     /** @brief Remove all overlay items and reset the canvas. */
     void clearAll();
     /** @brief Stop all running webcam preview capture processes. */
