@@ -56,6 +56,7 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
         QThreadPool::globalInstance()->start([this]() { captureScreen(); });
     });
     m_refreshTimer->start();
+    m_lastFrameRect = frameRect();
 }
 
 Canvas::~Canvas() {
@@ -100,7 +101,30 @@ void Canvas::setTitle(const QString &text) {
 }
 
 void Canvas::setMode(int mode) {
+    QRect oldFrame = frameRect();
     m_mode = mode;
+    QRect newFrame = frameRect();
+
+    // Rescale items to new frame
+    if (oldFrame.isValid() && newFrame.isValid() &&
+        oldFrame.width() > 0 && oldFrame.height() > 0) {
+        for (auto &item : m_items) {
+            if (item.type == 0) continue;
+            double relX = double(item.x - oldFrame.x()) / oldFrame.width();
+            double relY = double(item.y - oldFrame.y()) / oldFrame.height();
+            double relW = double(item.w) / oldFrame.width();
+            double relH = double(item.h) / oldFrame.height();
+            item.x = newFrame.x() + int(relX * newFrame.width());
+            item.y = newFrame.y() + int(relY * newFrame.height());
+            item.w = std::max(10, int(relW * newFrame.width()));
+            if (item.type == 1) {
+                item.h = (item.shape == 0) ? item.w : item.w * 3 / 4;
+            } else {
+                item.h = std::max(10, int(relH * newFrame.height()));
+            }
+        }
+    }
+    m_lastFrameRect = newFrame;
     update();
 }
 
@@ -111,10 +135,13 @@ void Canvas::addWebcam(const QString &device, const QString &name, int shape) {
 
     CanvasItem item;
     item.type = 1; item.label = name; item.device = device; item.shape = shape;
-    item.w = (shape == 2) ? r*3 : r*2;
-    item.h = r*2;
-    item.x = m_cw - r - 15 - count*(r*2+10);
-    item.y = m_ch - r - 15;
+    QRect fr = frameRect();
+    int sz = fr.width() / 5; // 1/5 of frame width
+    item.w = sz;
+    item.h = (shape == 0) ? sz : sz * 3 / 4; // round=square, rect/square=4:3
+    // Position in bottom-right of frame
+    item.x = fr.right() - sz/2 - 10 - count*(sz+10);
+    item.y = fr.bottom() - item.h/2 - 10;
     item.webcamBuf.resize(WC_FRAME_SIZE);
 
     m_items.append(item);
@@ -423,6 +450,32 @@ QRect Canvas::frameRect() const {
 void Canvas::resizeEvent(QResizeEvent *event) {
     m_cw = event->size().width();
     m_ch = event->size().height();
+
+    // Rescale all items from old frame to new frame
+    QRect newFrame = frameRect();
+    if (m_lastFrameRect.isValid() && newFrame.isValid() &&
+        m_lastFrameRect.width() > 0 && m_lastFrameRect.height() > 0) {
+        for (auto &item : m_items) {
+            if (item.type == 0) continue; // screen fills the frame, skip
+
+            // Convert from old frame-relative to new frame-relative
+            double relX = double(item.x - m_lastFrameRect.x()) / m_lastFrameRect.width();
+            double relY = double(item.y - m_lastFrameRect.y()) / m_lastFrameRect.height();
+            double relW = double(item.w) / m_lastFrameRect.width();
+            double relH = double(item.h) / m_lastFrameRect.height();
+
+            item.x = newFrame.x() + int(relX * newFrame.width());
+            item.y = newFrame.y() + int(relY * newFrame.height());
+            item.w = std::max(10, int(relW * newFrame.width()));
+            if (item.type == 1) {
+                item.h = (item.shape == 0) ? item.w : item.w * 3 / 4;
+            } else {
+                item.h = std::max(10, int(relH * newFrame.height()));
+            }
+        }
+    }
+    m_lastFrameRect = newFrame;
+
     QWidget::resizeEvent(event);
 }
 
@@ -492,8 +545,13 @@ void Canvas::wheelEvent(QWheelEvent *event) {
         if (hitTest(item, mx, my)) {
             int delta = event->angleDelta().y() > 0 ? 5 : -5;
             item.w = std::max(20, item.w + delta);
-            item.h = std::max(15, item.h + delta);
-            if (item.type == 1 && item.shape == 2) item.h = item.w * 2 / 3;
+            if (item.type == 1) {
+                // Webcam: maintain aspect ratio
+                if (item.shape == 0) item.h = item.w; // round: square
+                else item.h = item.w * 3 / 4; // 4:3 aspect
+            } else {
+                item.h = std::max(15, item.h + delta);
+            }
             emit itemsChanged();
             update();
             break;

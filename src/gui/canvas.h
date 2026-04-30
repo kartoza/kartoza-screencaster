@@ -188,7 +188,7 @@ private:
     struct CanvasItem {
         int type;           /**< 0=screen, 1=webcam, 2=logo, 3=title. */
         QString label;      /**< Display label. */
-        int x, y, w, h;    /**< Position and size. */
+        int x, y, w, h;    /**< Position and size in canvas pixels. */
         int shape = 0;     /**< Webcam shape: 0=round, 1=square, 2=rect. */
         QPixmap pixmap;     /**< Static image content. */
         QString filePath;   /**< Source file path for logos. */
@@ -263,6 +263,8 @@ private:
     QString m_pendingScreenPath;
     /** @brief Mutex protecting shared screen capture state. */
     QMutex m_mutex;
+    /** @brief Last known frame rect for rescaling items on resize. */
+    QRect m_lastFrameRect;
 
     static constexpr int WC_W = 160;              /**< Webcam capture width. */
     static constexpr int WC_H = 120;              /**< Webcam capture height. */
