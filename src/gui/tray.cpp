@@ -12,13 +12,67 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     m_countdownTimer = new QTimer(this);
     connect(m_countdownTimer, &QTimer::timeout, this, &Tray::onCountdownTick);
 
-    // Single click behavior
+    // Build a single persistent menu — COSMIC caches D-Bus menus
+    // so we can't rebuild. Instead we update text/enabled state.
+    m_menu = new QMenu;
+
+    // Primary action: Start / Pause / Resume (changes text per state)
+    m_recordAction = m_menu->addAction("Start Recording");
+    connect(m_recordAction, &QAction::triggered, this, [this]() {
+        auto *rec = m_recordPage->recorder();
+        if (rec->isRecording()) {
+            m_recordPage->onPauseClicked();
+        } else if (rec->isPaused()) {
+            m_recordPage->onPauseClicked();
+        } else {
+            m_recordPage->onStartClicked();
+        }
+    });
+
+    // Stop action
+    m_stopAction = m_menu->addAction("Stop Recording");
+    connect(m_stopAction, &QAction::triggered, this, [this]() {
+        auto *rec = m_recordPage->recorder();
+        if (rec->isRecording() || rec->isPaused()) {
+            m_recordPage->onStopClicked();
+        }
+    });
+
+    m_menu->addSeparator();
+
+    // Presets submenu
+    m_presetMenu = m_menu->addMenu("Presets");
+    refreshPresetMenu();
+
+    m_menu->addSeparator();
+
+    // Open Window
+    m_openAction = m_menu->addAction("Open Window");
+    connect(m_openAction, &QAction::triggered, this, [this]() {
+        QTimer::singleShot(50, m_mainWindow, [this]() {
+            m_mainWindow->showFromTray();
+        });
+    });
+
+    m_menu->addSeparator();
+
+    // Quit
+    auto *quitAction = m_menu->addAction("Quit");
+    connect(quitAction, &QAction::triggered, this, [this]() {
+        m_trayIcon->hide();
+        m_mainWindow->setProperty("quitting", true);
+        QApplication::quit();
+    });
+
+    m_trayIcon->setContextMenu(m_menu);
+
+    // Single click behavior — always check recorder state directly
     connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason != QSystemTrayIcon::Trigger) return;
-
-        if (m_recordPage->recorder()->isRecording()) {
+        auto *rec = m_recordPage->recorder();
+        if (rec->isRecording()) {
             m_recordPage->onPauseClicked();
-        } else if (m_recordPage->recorder()->isPaused()) {
+        } else if (rec->isPaused()) {
             m_recordPage->onPauseClicked();
         } else if (m_state == Idle) {
             m_recordPage->onStartClicked();
@@ -54,84 +108,37 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     connect(m_recordPage->recorder(), &Recorder::processingFinished, this, [this](bool) {
         setState(Idle);
     });
-
-    // Sync preset menu when canvas preset changes
     connect(m_recordPage, &RecordPage::presetChanged, this, [this]() {
-        rebuildMenu();
+        refreshPresetMenu();
     });
 
     setState(Idle);
     m_trayIcon->show();
 }
 
-void Tray::rebuildMenu() {
-    // Rebuild the entire menu from scratch on every state change.
-    // Wayland compositors (COSMIC, etc.) cache the menu structure and
-    // ignore setVisible/setEnabled changes on existing QActions.
-    auto *oldMenu = m_menu;
-    m_menu = new QMenu;
+void Tray::updateMenuState() {
+    auto *rec = m_recordPage->recorder();
+    bool recording = rec->isRecording();
+    bool paused = rec->isPaused();
+    bool busy = (m_state == RoomNoise || m_state == Processing);
 
-    bool isRecording = m_recordPage->recorder()->isRecording();
-    bool isPaused = m_recordPage->recorder()->isPaused();
-    bool isBusy = (m_state == RoomNoise || m_state == Processing);
-
-    // Recording controls — show only what's relevant
-    if (!isRecording && !isPaused && !isBusy) {
-        m_menu->addAction("Start Recording", this, [this]() {
-            m_recordPage->onStartClicked();
-        });
-    }
-    if (isRecording) {
-        m_menu->addAction("Pause", this, [this]() {
-            m_recordPage->onPauseClicked();
-        });
-    }
-    if (isPaused) {
-        m_menu->addAction("Resume", this, [this]() {
-            m_recordPage->onPauseClicked();
-        });
-    }
-    if (isRecording || isPaused) {
-        m_menu->addAction("Stop Recording", this, [this]() {
-            m_recordPage->onStopClicked();
-        });
-    }
-
-    m_menu->addSeparator();
-
-    // Presets
-    auto *presetMenu = m_menu->addMenu("Presets");
-    auto &cfg = Config::instance();
-    if (cfg.presets.isEmpty()) {
-        presetMenu->addAction("(no presets)")->setEnabled(false);
+    // Update primary action text and enabled state
+    if (recording) {
+        m_recordAction->setText("Pause");
+        m_recordAction->setEnabled(true);
+    } else if (paused) {
+        m_recordAction->setText("Resume");
+        m_recordAction->setEnabled(true);
+    } else if (busy) {
+        m_recordAction->setText("Processing...");
+        m_recordAction->setEnabled(false);
     } else {
-        for (const auto &name : cfg.presets.keys()) {
-            bool isActive = (name == cfg.activePreset);
-            QString display = isActive ? QString::fromUtf8("\u2713 ") + name : "   " + name;
-            presetMenu->addAction(display, this, [this, name]() {
-                m_recordPage->loadPreset(name);
-            });
-        }
+        m_recordAction->setText("Start Recording");
+        m_recordAction->setEnabled(true);
     }
 
-    m_menu->addSeparator();
-    m_menu->addAction("Open Window", this, [this]() {
-        QTimer::singleShot(50, m_mainWindow, [this]() {
-            m_mainWindow->showFromTray();
-        });
-    });
-    m_menu->addSeparator();
-    m_menu->addAction("Quit", this, [this]() {
-        m_trayIcon->hide();
-        m_mainWindow->setProperty("quitting", true);
-        QApplication::quit();
-    });
-
-    m_trayIcon->setContextMenu(m_menu);
-
-    if (oldMenu) {
-        oldMenu->deleteLater();
-    }
+    // Stop action: only enabled during recording or paused
+    m_stopAction->setEnabled(recording || paused);
 }
 
 void Tray::setState(State s) {
@@ -172,8 +179,7 @@ void Tray::setState(State s) {
     m_trayIcon->setIcon(icon);
     m_trayIcon->setToolTip(tooltip);
 
-    // Rebuild menu with correct actions for new state
-    rebuildMenu();
+    updateMenuState();
 }
 
 void Tray::startCountdown() {
@@ -195,5 +201,19 @@ void Tray::onCountdownTick() {
 }
 
 void Tray::refreshPresetMenu() {
-    rebuildMenu();
+    m_presetMenu->clear();
+    auto &cfg = Config::instance();
+
+    if (cfg.presets.isEmpty()) {
+        m_presetMenu->addAction("(no presets)")->setEnabled(false);
+        return;
+    }
+
+    for (const auto &name : cfg.presets.keys()) {
+        bool isActive = (name == cfg.activePreset);
+        QString display = isActive ? QString::fromUtf8("\u2713 ") + name : "   " + name;
+        m_presetMenu->addAction(display, this, [this, name]() {
+            m_recordPage->loadPreset(name);
+        });
+    }
 }
