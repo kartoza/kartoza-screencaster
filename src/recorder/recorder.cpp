@@ -20,13 +20,20 @@
 Recorder::Recorder(QObject *parent) : QObject(parent) {}
 
 Recorder::~Recorder() {
+    // Disconnect all signals to prevent delivery to destroyed slots
+    disconnect();
+
     if (m_recording) {
         m_recording = false;
         stopAllProcesses();
     }
-    if (m_processingThread && m_processingThread->isRunning()) {
-        m_processingThread->quit();
-        m_processingThread->wait(5000);
+    // Wait for processing thread to finish — it accesses our members
+    if (m_processingThread) {
+        if (m_processingThread->isRunning()) {
+            m_processingThread->wait(10000);
+        }
+        delete m_processingThread;
+        m_processingThread = nullptr;
     }
 }
 
@@ -528,8 +535,10 @@ void Recorder::stop() {
 
         processRecordings();
     });
-    connect(m_processingThread, &QThread::finished, m_processingThread, &QThread::deleteLater);
-    connect(m_processingThread, &QThread::finished, this, [this]() { m_processingThread = nullptr; });
+    connect(m_processingThread, &QThread::finished, this, [this]() {
+        m_processingThread->deleteLater();
+        m_processingThread = nullptr;
+    });
     m_processingThread->start();
 }
 
@@ -643,8 +652,10 @@ void Recorder::reprocess(const QString &folder) {
     m_processingThread = QThread::create([this]() {
         processRecordings();
     });
-    connect(m_processingThread, &QThread::finished, m_processingThread, &QThread::deleteLater);
-    connect(m_processingThread, &QThread::finished, this, [this]() { m_processingThread = nullptr; });
+    connect(m_processingThread, &QThread::finished, this, [this]() {
+        m_processingThread->deleteLater();
+        m_processingThread = nullptr;
+    });
     m_processingThread->start();
 }
 
