@@ -20,8 +20,8 @@ struct CanvasItemState {
     QString type;
     /** Human-readable label shown in the layer list. */
     QString label;
-    /** Position and size of the item on the canvas. */
-    int x = 0, y = 0, w = 0, h = 0;
+    /** Position and size as fractions of canvas dimensions (0.0-1.0). */
+    double rx = 0, ry = 0, rw = 0, rh = 0;
     /** Video4Linux device path (relevant for webcam items). */
     QString device;
     /** File path for image or GIF items. */

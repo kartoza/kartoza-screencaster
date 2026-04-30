@@ -597,9 +597,16 @@ void RecordPage::restoreCanvasState() {
     QSet<QString> availableMonitors;
     for (const auto &mon : m_monitors) availableMonitors.insert(mon.name);
 
+    int cw = m_canvas->canvasWidth();
+    int ch = m_canvas->canvasHeight();
+
     for (const auto &s : cfg.canvasState.items) {
+        int px = static_cast<int>(s.rx * cw);
+        int py = static_cast<int>(s.ry * ch);
+        int pw = static_cast<int>(s.rw * cw);
+        int ph = static_cast<int>(s.rh * ch);
+
         if (s.type == "screen") {
-            // Try exact label match first, then fallback to first available
             bool matched = false;
             for (const auto &mon : m_monitors) {
                 QString desc = mon.description.isEmpty() ? mon.name : mon.description;
@@ -613,24 +620,24 @@ void RecordPage::restoreCanvasState() {
                 addScreen(m_monitors.first());
             }
         } else if (s.type == "webcam") {
-            if (!availableWebcams.contains(s.device)) continue; // disconnected
+            if (!availableWebcams.contains(s.device)) continue;
             Canvas::ItemExport e;
             e.type = 1; e.label = s.label;
-            e.x = s.x; e.y = s.y; e.w = s.w; e.h = s.h;
+            e.x = px; e.y = py; e.w = pw; e.h = ph;
             e.device = s.device; e.shape = s.shape;
             m_canvas->importItem(e);
         } else if (s.type == "logo") {
-            if (s.filePath.isEmpty() || !QFile::exists(s.filePath)) continue; // deleted
+            if (s.filePath.isEmpty() || !QFile::exists(s.filePath)) continue;
             Canvas::ItemExport e;
             e.type = 2; e.label = s.label;
-            e.x = s.x; e.y = s.y; e.w = s.w; e.h = s.h;
+            e.x = px; e.y = py; e.w = pw; e.h = ph;
             e.filePath = s.filePath;
             e.gifLoop = s.gifLoop; e.gifLoopMax = s.gifLoopMax;
             m_canvas->importItem(e);
         } else if (s.type == "title") {
             Canvas::ItemExport e;
             e.type = 3; e.label = s.label;
-            e.x = s.x; e.y = s.y; e.w = s.w; e.h = s.h;
+            e.x = px; e.y = py; e.w = pw; e.h = ph;
             m_canvas->importItem(e);
         }
     }
@@ -692,7 +699,13 @@ CanvasState RecordPage::captureCurrentState() {
         default: s.type = "unknown"; break;
         }
         s.label = e.label;
-        s.x = e.x; s.y = e.y; s.w = e.w; s.h = e.h;
+        // Store as relative fractions of canvas size
+        double cw = m_canvas->canvasWidth();
+        double ch = m_canvas->canvasHeight();
+        s.rx = cw > 0 ? e.x / cw : 0;
+        s.ry = ch > 0 ? e.y / ch : 0;
+        s.rw = cw > 0 ? e.w / cw : 0;
+        s.rh = ch > 0 ? e.h / ch : 0;
         s.device = e.device; s.filePath = e.filePath;
         s.shape = e.shape; s.gifLoop = e.gifLoop; s.gifLoopMax = e.gifLoopMax;
         state.items.append(s);
@@ -715,7 +728,16 @@ void RecordPage::applyState(const CanvasState &state) {
     QSet<QString> availableWebcams;
     for (const auto &dev : m_webcams) availableWebcams.insert(dev.device);
 
+    int cw = m_canvas->canvasWidth();
+    int ch = m_canvas->canvasHeight();
+
     for (const auto &s : state.items) {
+        // Convert relative coords back to pixels
+        int px = static_cast<int>(s.rx * cw);
+        int py = static_cast<int>(s.ry * ch);
+        int pw = static_cast<int>(s.rw * cw);
+        int ph = static_cast<int>(s.rh * ch);
+
         if (s.type == "screen") {
             bool matched = false;
             for (const auto &mon : m_monitors) {
@@ -727,21 +749,21 @@ void RecordPage::applyState(const CanvasState &state) {
             if (!availableWebcams.contains(s.device)) continue;
             Canvas::ItemExport e;
             e.type = 1; e.label = s.label;
-            e.x = s.x; e.y = s.y; e.w = s.w; e.h = s.h;
+            e.x = px; e.y = py; e.w = pw; e.h = ph;
             e.device = s.device; e.shape = s.shape;
             m_canvas->importItem(e);
         } else if (s.type == "logo") {
             if (s.filePath.isEmpty() || !QFile::exists(s.filePath)) continue;
             Canvas::ItemExport e;
             e.type = 2; e.label = s.label;
-            e.x = s.x; e.y = s.y; e.w = s.w; e.h = s.h;
+            e.x = px; e.y = py; e.w = pw; e.h = ph;
             e.filePath = s.filePath;
             e.gifLoop = s.gifLoop; e.gifLoopMax = s.gifLoopMax;
             m_canvas->importItem(e);
         } else if (s.type == "title") {
             Canvas::ItemExport e;
             e.type = 3; e.label = s.label;
-            e.x = s.x; e.y = s.y; e.w = s.w; e.h = s.h;
+            e.x = px; e.y = py; e.w = pw; e.h = ph;
             m_canvas->importItem(e);
         }
     }

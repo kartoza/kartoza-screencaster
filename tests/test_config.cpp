@@ -59,8 +59,8 @@ private slots:
         CanvasItemState item;
         item.type = "webcam";
         item.label = "Test Webcam";
-        item.x = 100; item.y = 200;
-        item.w = 160; item.h = 120;
+        item.rx = 0.5; item.ry = 0.6;
+        item.rw = 0.3; item.rh = 0.4;
         item.device = "video0";
         item.shape = 1;
         item.gifLoop = 0;
