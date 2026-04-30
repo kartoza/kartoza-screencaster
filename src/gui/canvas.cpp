@@ -257,6 +257,7 @@ void Canvas::resumePreviews() {
 
 void Canvas::setSelectedItem(int index) {
     m_selected = index;
+    emit selectionChanged(index);
     update();
 }
 

@@ -126,6 +126,14 @@ if(Qt6Test_FOUND)
     add_unit_test(test_monitor tests/test_monitor.cpp)
     add_unit_test(test_pipeline tests/test_pipeline.cpp)
     add_unit_test(test_recorder tests/test_recorder.cpp)
+
+    # Canvas test needs GUI sources
+    add_executable(test_canvas tests/test_canvas.cpp
+        src/gui/canvas.cpp src/gui/canvas.h
+        ${TEST_SOURCES})
+    target_link_libraries(test_canvas PRIVATE Qt6::Core Qt6::Test Qt6::Multimedia Qt6::Widgets Qt6::Concurrent)
+    target_include_directories(test_canvas PRIVATE src)
+    add_test(NAME test_canvas COMMAND test_canvas)
 endif()
 
 # Doxygen documentation
