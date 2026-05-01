@@ -634,10 +634,12 @@ void Recorder::reprocess(const QString &folder) {
     }
     // Migration: old left_logo/right_logo/banner_logo format
     if (m_opts.logos.isEmpty()) {
-        auto addLegacy = [&](const QString &key) {
+        auto addLegacy = [&](const QString &key, double defX, double defY) {
             if (settings.contains(key)) {
                 RecordingOptions::LogoOpts logo;
                 logo.path = settings[key].toString();
+                logo.relX = defX;
+                logo.relY = defY;
                 if (key == "banner_logo") {
                     logo.gifLoop = settings["banner_gif_loop"].toInt(2);
                     logo.gifLoopMax = settings["banner_gif_loop_max"].toInt(3);
@@ -645,9 +647,9 @@ void Recorder::reprocess(const QString &folder) {
                 m_opts.logos.append(logo);
             }
         };
-        addLegacy("left_logo");
-        addLegacy("right_logo");
-        addLegacy("banner_logo");
+        addLegacy("left_logo", 0.01, 0.01);
+        addLegacy("right_logo", 0.85, 0.01);
+        addLegacy("banner_logo", 0.4, 0.85);
     }
 
     // Find source files in folder
