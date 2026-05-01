@@ -110,6 +110,24 @@ static QString testdataDir() {
 #endif
 }
 
+// Set webcam size/position matching canvas conventions:
+//   shape 0 (round):  1:1 aspect
+//   shape 1 (square corners): 4:3 aspect, smaller
+//   shape 2 (rect corners):   4:3 aspect, wider
+static void setWebcam(RecordingOptions &opts, int shape,
+                       double relX = 0.8, double relY = 0.7) {
+    opts.webcamShape = shape;
+    opts.webcamRelX = relX;
+    opts.webcamRelY = relY;
+    if (shape == 0) {
+        opts.webcamRelW = 0.15; opts.webcamRelH = 0.15; // 1:1 round
+    } else if (shape == 1) {
+        opts.webcamRelW = 0.12; opts.webcamRelH = 0.12 * 3.0 / 4.0; // 4:3 small
+    } else {
+        opts.webcamRelW = 0.20; opts.webcamRelH = 0.20 * 3.0 / 4.0; // 4:3 wide
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Test class
 // ---------------------------------------------------------------------------
@@ -237,9 +255,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = true;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 0; // round
-        in.opts.webcamRelX = 0.8; in.opts.webcamRelY = 0.75;
-        in.opts.webcamRelW = 0.15; in.opts.webcamRelH = 0.2;
+        setWebcam(in.opts, 0);
         runMerge("land_webcamRound", in, true, false, 0, 0);
     }
 
@@ -249,9 +265,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = true;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 1; // square
-        in.opts.webcamRelX = 0.8; in.opts.webcamRelY = 0.75;
-        in.opts.webcamRelW = 0.15; in.opts.webcamRelH = 0.2;
+        setWebcam(in.opts, 1);
         runMerge("land_webcamSquare", in, true, false, 0, 0);
     }
 
@@ -261,9 +275,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = true;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 2; // rectangle
-        in.opts.webcamRelX = 0.8; in.opts.webcamRelY = 0.75;
-        in.opts.webcamRelW = 0.15; in.opts.webcamRelH = 0.2;
+        setWebcam(in.opts, 2);
         runMerge("land_webcamRect", in, true, false, 0, 0);
     }
 
@@ -274,9 +286,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = false;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 0;
-        in.opts.webcamRelX = 0.8; in.opts.webcamRelY = 0.75;
-        in.opts.webcamRelW = 0.15; in.opts.webcamRelH = 0.2;
+        setWebcam(in.opts, 0);
         runMerge("land_audioWebcamRound", in, true, true, 0, 0);
     }
 
@@ -287,9 +297,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = false;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 1;
-        in.opts.webcamRelX = 0.8; in.opts.webcamRelY = 0.75;
-        in.opts.webcamRelW = 0.15; in.opts.webcamRelH = 0.2;
+        setWebcam(in.opts, 1);
         runMerge("land_audioWebcamSquare", in, true, true, 0, 0);
     }
 
@@ -300,9 +308,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = false;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 2;
-        in.opts.webcamRelX = 0.8; in.opts.webcamRelY = 0.75;
-        in.opts.webcamRelW = 0.15; in.opts.webcamRelH = 0.2;
+        setWebcam(in.opts, 2);
         runMerge("land_audioWebcamRect", in, true, true, 0, 0);
     }
 
@@ -400,9 +406,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = false;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 0; // round
-        in.opts.webcamRelX = 0.8; in.opts.webcamRelY = 0.75;
-        in.opts.webcamRelW = 0.15; in.opts.webcamRelH = 0.2;
+        setWebcam(in.opts, 0);
         RecordingOptions::LogoOpts lo1;
         lo1.path = m_staticLogo;
         lo1.relX = 0.01; lo1.relY = 0.01; lo1.relW = 0.1; lo1.relH = 0.1;
@@ -421,9 +425,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = false;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 1; // square
-        in.opts.webcamRelX = 0.8; in.opts.webcamRelY = 0.75;
-        in.opts.webcamRelW = 0.15; in.opts.webcamRelH = 0.2;
+        setWebcam(in.opts, 1);
         RecordingOptions::LogoOpts lo;
         lo.path = m_animGif;
         lo.gifLoop = 0; // first frame
@@ -438,9 +440,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = true;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 2; // rectangle
-        in.opts.webcamRelX = 0.8; in.opts.webcamRelY = 0.75;
-        in.opts.webcamRelW = 0.15; in.opts.webcamRelH = 0.2;
+        setWebcam(in.opts, 2);
         RecordingOptions::LogoOpts lo;
         lo.path = m_staticLogo;
         lo.relX = 0.01; lo.relY = 0.01; lo.relW = 0.1; lo.relH = 0.1;
@@ -479,9 +479,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = true;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 0;
-        in.opts.webcamRelX = 0.7; in.opts.webcamRelY = 0.5;
-        in.opts.webcamRelW = 0.2; in.opts.webcamRelH = 0.15;
+        setWebcam(in.opts, 0, 0.7, 0.5);
         in.opts.title = "Webcam Round";
         in.opts.titleColor = "#62A4C7";
         runMerge("vert_webcamRound", in, false, false, 1080, 1920);
@@ -493,9 +491,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = true;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 1;
-        in.opts.webcamRelX = 0.7; in.opts.webcamRelY = 0.5;
-        in.opts.webcamRelW = 0.2; in.opts.webcamRelH = 0.15;
+        setWebcam(in.opts, 1, 0.7, 0.5);
         in.opts.title = "Webcam Square";
         in.opts.titleColor = "#62A4C7";
         runMerge("vert_webcamSquare", in, false, false, 1080, 1920);
@@ -507,9 +503,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = true;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 2;
-        in.opts.webcamRelX = 0.7; in.opts.webcamRelY = 0.5;
-        in.opts.webcamRelW = 0.2; in.opts.webcamRelH = 0.15;
+        setWebcam(in.opts, 2, 0.7, 0.5);
         in.opts.title = "Webcam Rect";
         in.opts.titleColor = "#62A4C7";
         runMerge("vert_webcamRect", in, false, false, 1080, 1920);
@@ -522,9 +516,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = false;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 0;
-        in.opts.webcamRelX = 0.7; in.opts.webcamRelY = 0.5;
-        in.opts.webcamRelW = 0.2; in.opts.webcamRelH = 0.15;
+        setWebcam(in.opts, 0, 0.7, 0.5);
         in.opts.title = "Audio Webcam Round";
         in.opts.titleColor = "#62A4C7";
         runMerge("vert_audioWebcamRound", in, false, true, 1080, 1920);
@@ -537,9 +529,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = false;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 1;
-        in.opts.webcamRelX = 0.7; in.opts.webcamRelY = 0.5;
-        in.opts.webcamRelW = 0.2; in.opts.webcamRelH = 0.15;
+        setWebcam(in.opts, 1, 0.7, 0.5);
         in.opts.title = "Audio Webcam Square";
         in.opts.titleColor = "#62A4C7";
         runMerge("vert_audioWebcamSquare", in, false, true, 1080, 1920);
@@ -552,9 +542,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = false;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 2;
-        in.opts.webcamRelX = 0.7; in.opts.webcamRelY = 0.5;
-        in.opts.webcamRelW = 0.2; in.opts.webcamRelH = 0.15;
+        setWebcam(in.opts, 2, 0.7, 0.5);
         in.opts.title = "Audio Webcam Rect";
         in.opts.titleColor = "#62A4C7";
         runMerge("vert_audioWebcamRect", in, false, true, 1080, 1920);
@@ -666,9 +654,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = false;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 0;
-        in.opts.webcamRelX = 0.7; in.opts.webcamRelY = 0.5;
-        in.opts.webcamRelW = 0.2; in.opts.webcamRelH = 0.15;
+        setWebcam(in.opts, 0, 0.7, 0.5);
         in.opts.title = "Full Combo";
         in.opts.titleColor = "#62A4C7";
         RecordingOptions::LogoOpts lo1;
@@ -689,9 +675,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = false;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 1;
-        in.opts.webcamRelX = 0.7; in.opts.webcamRelY = 0.5;
-        in.opts.webcamRelW = 0.2; in.opts.webcamRelH = 0.15;
+        setWebcam(in.opts, 1, 0.7, 0.5);
         in.opts.title = "Logo Square Audio";
         in.opts.titleColor = "#62A4C7";
         RecordingOptions::LogoOpts lo;
@@ -708,9 +692,7 @@ private slots:
         in.webcamFile = m_webcam;
         in.opts.noAudio = true;
         in.opts.noWebcam = false;
-        in.opts.webcamShape = 2;
-        in.opts.webcamRelX = 0.7; in.opts.webcamRelY = 0.5;
-        in.opts.webcamRelW = 0.2; in.opts.webcamRelH = 0.15;
+        setWebcam(in.opts, 2, 0.7, 0.5);
         in.opts.title = "Logo Rect No Audio";
         in.opts.titleColor = "#62A4C7";
         RecordingOptions::LogoOpts lo;

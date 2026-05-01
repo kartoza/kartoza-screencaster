@@ -219,6 +219,7 @@
             alias cr='./build/kartoza-screencaster'
             alias cf='find src tests -name "*.cpp" -o -name "*.h" | xargs clang-format -i'
             alias cclean='rm -rf build/* && cd build && cmake .. -G Ninja && ninja && cd ..'
+            alias ctr='cd build && QT_QPA_PLATFORM=offscreen ctest --output-on-failure -R test_merger_exhaustive && cd .. && echo "Opening test renders..." && for f in $(ls tests/test_outputs/land_*.mp4 tests/test_outputs/vert_*.mp4 2>/dev/null | sort); do xdg-open "$f"; sleep 3; done'
 
             # Documentation aliases
             alias docs='mkdocs serve'
@@ -236,6 +237,7 @@
             echo "  cr   - Run the application"
             echo "  cclean - Clean rebuild from scratch"
             echo "  cf   - Format all C++ code (clang-format)"
+            echo "  ctr  - Run merger tests + play renders for visual review"
             echo ""
             echo "Documentation:"
             echo "  docs          - Serve mkdocs (localhost:8000)"
