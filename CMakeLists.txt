@@ -126,6 +126,8 @@ if(Qt6Test_FOUND)
     add_unit_test(test_monitor tests/test_monitor.cpp)
     add_unit_test(test_pipeline tests/test_pipeline.cpp)
     add_unit_test(test_recorder tests/test_recorder.cpp)
+    add_unit_test(test_merger_exhaustive tests/test_merger_exhaustive.cpp)
+    target_compile_definitions(test_merger_exhaustive PRIVATE SRCDIR="${CMAKE_SOURCE_DIR}")
 
     # Canvas test needs GUI sources
     add_executable(test_canvas tests/test_canvas.cpp
