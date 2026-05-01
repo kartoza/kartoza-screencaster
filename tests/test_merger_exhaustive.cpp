@@ -58,10 +58,21 @@ static ProbeResult probeFile(const QString &path) {
 // Synthetic media helpers
 // ---------------------------------------------------------------------------
 
-static bool createTestVideo(const QString &path, int w, int h, double secs = 5.0) {
+// Each element uses a distinct contrasting colour with a text label
+// so visual review can clearly identify what's what:
+//   Screen  = dark blue (#1a1a6e) with "SCREEN" label
+//   Webcam  = bright green (#00cc44) with "WEBCAM" label
+//   Logo    = bright yellow (#ffcc00) with "LOGO" label
+
+static bool createTestVideo(const QString &path, int w, int h, double secs,
+                             const QString &color, const QString &label) {
     QProcess p;
-    p.start("ffmpeg", {"-y", "-f", "lavfi",
-        "-i", QString("color=c=blue:s=%1x%2:d=%3").arg(w).arg(h).arg(secs, 0, 'f', 1),
+    int fontSize = qMax(12, h / 6);
+    QString filter = QString(
+        "color=c=%1:s=%2x%3:d=%4,drawtext=text='%5':"
+        "fontsize=%6:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2")
+        .arg(color).arg(w).arg(h).arg(secs, 0, 'f', 1).arg(label).arg(fontSize);
+    p.start("ffmpeg", {"-y", "-f", "lavfi", "-i", filter,
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
         "-pix_fmt", "yuv420p", path});
     p.waitForFinished(30000);
@@ -77,10 +88,15 @@ static bool createTestAudio(const QString &path, double secs = 5.0) {
     return p.exitCode() == 0 && QFile::exists(path);
 }
 
-static bool createTestLogo(const QString &path, int w = 100, int h = 100) {
+static bool createTestLogo(const QString &path, int w, int h,
+                            const QString &color, const QString &label) {
     QProcess p;
-    p.start("ffmpeg", {"-y", "-f", "lavfi",
-        "-i", QString("color=c=red:s=%1x%2:d=0.04").arg(w).arg(h),
+    int fontSize = qMax(10, h / 4);
+    QString filter = QString(
+        "color=c=%1:s=%2x%3:d=0.04,drawtext=text='%4':"
+        "fontsize=%5:fontcolor=black:x=(w-text_w)/2:y=(h-text_h)/2")
+        .arg(color).arg(w).arg(h).arg(label).arg(fontSize);
+    p.start("ffmpeg", {"-y", "-f", "lavfi", "-i", filter,
         "-frames:v", "1", path});
     p.waitForFinished(5000);
     return p.exitCode() == 0 && QFile::exists(path);
@@ -159,14 +175,14 @@ private slots:
         QDir().mkpath(m_outputDir);
         qInfo() << "Test outputs will be saved to:" << m_outputDir;
 
-        // Create synthetic source media in output dir
+        // Create synthetic source media with distinct colours and labels
         m_screen = m_outputDir + "/source_screen_640x360.mp4";
         if (!QFile::exists(m_screen))
-            QVERIFY(createTestVideo(m_screen, 640, 360, 2.0));
+            QVERIFY(createTestVideo(m_screen, 640, 360, 2.0, "#1a1a6e", "SCREEN"));
 
         m_webcam = m_outputDir + "/source_webcam_320x240.mp4";
         if (!QFile::exists(m_webcam))
-            QVERIFY(createTestVideo(m_webcam, 320, 240, 2.0));
+            QVERIFY(createTestVideo(m_webcam, 320, 240, 2.0, "#00cc44", "WEBCAM"));
 
         m_audio = m_outputDir + "/source_audio_440hz.wav";
         if (!QFile::exists(m_audio))
@@ -174,7 +190,7 @@ private slots:
 
         m_staticLogo = m_outputDir + "/source_static_logo.png";
         if (!QFile::exists(m_staticLogo))
-            QVERIFY(createTestLogo(m_staticLogo, 100, 100));
+            QVERIFY(createTestLogo(m_staticLogo, 100, 100, "#ffcc00", "LOGO"));
 
         // Copy anim_icon.gif from testdata
         m_animGif = m_outputDir + "/source_anim_icon.gif";
@@ -740,8 +756,8 @@ private slots:
     void util_concatenateTwoParts() {
         QString part0 = m_outputDir + "/util_concat_part0.mp4";
         QString part1 = m_outputDir + "/util_concat_part1.mp4";
-        QVERIFY(createTestVideo(part0, 640, 360, 2.0));
-        QVERIFY(createTestVideo(part1, 640, 360, 2.0));
+        QVERIFY(createTestVideo(part0, 640, 360, 2.0, "#1a1a6e", "PART0"));
+        QVERIFY(createTestVideo(part1, 640, 360, 2.0, "#1a1a6e", "PART1"));
 
         QString output = m_outputDir + "/util_concat_combined.mp4";
         QString result = Merger::concatenateParts({part0, part1}, output, "concat_exhaust");
