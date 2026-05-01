@@ -233,9 +233,17 @@ The recording can be in the following states:
     "left_split_enabled": true,
     "webcam_bubble_enabled": true,
     "logos_enabled": true,
-    "left_logo": "/path/to/logo.png",
-    "right_logo": "/path/to/logo.png",
-    "bottom_logo": "/path/to/banner.png"
+    "logos": [
+      {
+        "path": "/path/to/logo.png",
+        "gif_loop": 2,
+        "gif_loop_max": 3,
+        "rel_x": 0.01,
+        "rel_y": 0.01,
+        "rel_w": 0.15,
+        "rel_h": 0.15
+      }
+    ]
   },
   "processing": {
     "processed_at": "2024-01-15T10:35:00Z",

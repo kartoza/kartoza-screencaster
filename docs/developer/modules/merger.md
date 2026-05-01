@@ -115,18 +115,18 @@ ffmpeg -i input.mp4 -i logo.png \
     output.mp4
 ```
 
-### Multiple Logos
+### Multiple Logos (N overlays)
 
 ```bash
 ffmpeg -i input.mp4 \
-    -i left_logo.png -i right_logo.png -i bottom_logo.png \
+    -i logo0.png -i logo1.gif -i logo2.png \
     -filter_complex "\
-        [1:v]scale=80:-1[left];\
-        [2:v]scale=80:-1[right];\
-        [3:v]scale=120:-1[bottom];\
-        [0:v][left]overlay=20:20[v1];\
-        [v1][right]overlay=W-w-20:20[v2];\
-        [v2][bottom]overlay=(W-w)/2:H-h-20" \
+        [1:v]scale=80:-1[logo0];\
+        [2:v]scale=80:-1[logo1];\
+        [3:v]scale=120:-1[logo2];\
+        [0:v][logo0]overlay=20:20[v1];\
+        [v1][logo1]overlay=W-w-20:20[v2];\
+        [v2][logo2]overlay=(W-w)/2:H-h-20" \
     output.mp4
 ```
 
