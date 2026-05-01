@@ -76,6 +76,9 @@ docs/doxygen/
 build/
 @DEFAULT_SOURCE@
 
+# Test output renders (for visual review, regenerated each run)
+tests/test_outputs/
+
 # C++ build artifacts
 kartoza-screencaster
 compile_commands.json

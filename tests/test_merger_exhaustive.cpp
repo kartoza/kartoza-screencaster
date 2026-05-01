@@ -150,10 +150,11 @@ class TestMergerExhaustive : public QObject {
 private slots:
     void initTestCase() {
         // Create persistent output directory for visual review
+        // Lives at project root (not in build/) so it survives clean rebuilds
 #ifdef SRCDIR
-        m_outputDir = QString(SRCDIR) + "/build/test_outputs";
+        m_outputDir = QString(SRCDIR) + "/tests/test_outputs";
 #else
-        m_outputDir = QCoreApplication::applicationDirPath() + "/test_outputs";
+        m_outputDir = QCoreApplication::applicationDirPath() + "/../tests/test_outputs";
 #endif
         QDir().mkpath(m_outputDir);
         qInfo() << "Test outputs will be saved to:" << m_outputDir;
