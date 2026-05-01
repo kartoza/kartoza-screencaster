@@ -70,6 +70,48 @@
           pymdown-extensions
         ]);
 
+        # Dev shell commands (work in any shell: bash, fish, zsh)
+        devScripts = [
+          (pkgs.writeShellScriptBin "cb" ''
+            cd build && cmake .. -G Ninja && ninja && cd ..
+          '')
+          (pkgs.writeShellScriptBin "cbr" ''
+            cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja && cd ..
+          '')
+          (pkgs.writeShellScriptBin "ct" ''
+            cd build && ctest --output-on-failure && cd ..
+          '')
+          (pkgs.writeShellScriptBin "cr" ''
+            ./build/kartoza-screencaster
+          '')
+          (pkgs.writeShellScriptBin "cf" ''
+            find src tests -name "*.cpp" -o -name "*.h" | xargs clang-format -i
+          '')
+          (pkgs.writeShellScriptBin "cclean" ''
+            rm -rf build/* && cd build && cmake .. -G Ninja && ninja && cd ..
+          '')
+          (pkgs.writeShellScriptBin "ctr" ''
+            cd build && QT_QPA_PLATFORM=offscreen ctest --output-on-failure -R test_merger_exhaustive && cd ..
+            echo "Opening test renders..."
+            for f in $(ls tests/test_outputs/land_*.mp4 tests/test_outputs/vert_*.mp4 2>/dev/null | sort); do
+              xdg-open "$f"
+              sleep 3
+            done
+          '')
+          (pkgs.writeShellScriptBin "docs" ''
+            mkdocs serve
+          '')
+          (pkgs.writeShellScriptBin "docs-build" ''
+            mkdocs build
+          '')
+          (pkgs.writeShellScriptBin "doxygen-build" ''
+            cd build && ninja docs && cd ..
+          '')
+          (pkgs.writeShellScriptBin "doxygen-open" ''
+            cd build && ninja docs-open && cd ..
+          '')
+        ];
+
         # Runtime dependencies wrapped into PATH
         runtimeDeps = with pkgs; [
           wl-screenrec         # Wayland screen recording
@@ -201,7 +243,7 @@
             # Jailed AI Agents (sandboxed to project folder only)
             jailedClaude
             # jailedAntigravity  # disabled due to electron version mismatch
-          ];
+          ] ++ devScripts;
 
           shellHook = ''
             export EDITOR=nvim
@@ -211,21 +253,6 @@
 
             # Symlink compile_commands.json for clangd
             [ -f build/compile_commands.json ] && ln -sf build/compile_commands.json compile_commands.json
-
-            # C++ development aliases
-            alias cb='cd build && cmake .. -G Ninja && ninja && cd ..'
-            alias cbr='cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja && cd ..'
-            alias ct='cd build && ctest --output-on-failure && cd ..'
-            alias cr='./build/kartoza-screencaster'
-            alias cf='find src tests -name "*.cpp" -o -name "*.h" | xargs clang-format -i'
-            alias cclean='rm -rf build/* && cd build && cmake .. -G Ninja && ninja && cd ..'
-            alias ctr='cd build && QT_QPA_PLATFORM=offscreen ctest --output-on-failure -R test_merger_exhaustive && cd .. && echo "Opening test renders..." && for f in $(ls tests/test_outputs/land_*.mp4 tests/test_outputs/vert_*.mp4 2>/dev/null | sort); do xdg-open "$f"; sleep 3; done'
-
-            # Documentation aliases
-            alias docs='mkdocs serve'
-            alias docs-build='mkdocs build'
-            alias doxygen-build='cd build && ninja docs && cd ..'
-            alias doxygen-open='cd build && ninja docs-open && cd ..'
 
             echo ""
             echo "🎬 Kartoza Screencaster Development Environment (C++/Qt6)"
