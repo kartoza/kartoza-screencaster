@@ -40,7 +40,7 @@ private slots:
 
         QStringList args;
         Merger::appendLogoInputArgs(args, logo);
-        QCOMPARE(args, QStringList({"-ignore_loop", "0", "-i", "/tmp/anim.gif"}));
+        QCOMPARE(args, QStringList({"-i", "/tmp/anim.gif"}));
     }
 
     void testAppendLogoInputArgs_gifOnce() {

@@ -139,7 +139,8 @@ class TestMergerExhaustive : public QObject {
     QString m_screen;
     QString m_webcam;
     QString m_audio;
-    QString m_staticLogo;
+    QString m_staticLogo;  // PNG
+    QString m_jpgLogo;     // JPG
     QString m_animGif;
 
     // Helper: run a merge and validate the output via probe
@@ -155,8 +156,12 @@ class TestMergerExhaustive : public QObject {
             args = Merger::buildVerticalArgs(in, output);
         }
 
-        qint64 durUs = Merger::getVideoDurationUs(in.screenFile);
-        int exitCode = Merger::runFFmpegWithProgress(args, durUs);
+        // Run FFmpeg directly (not via runFFmpegWithProgress) to avoid
+        // QProcess resource accumulation over 46 sequential test runs
+        QProcess ffmpeg;
+        ffmpeg.start("ffmpeg", args);
+        ffmpeg.waitForFinished(60000);
+        int exitCode = ffmpeg.exitCode();
         QCOMPARE(exitCode, 0);
         QVERIFY2(QFile::exists(output), qPrintable("Output missing: " + output));
 
@@ -209,6 +214,10 @@ private slots:
         m_staticLogo = m_outputDir + "/source_static_logo.png";
         if (!QFile::exists(m_staticLogo))
             QVERIFY(createTestLogo(m_staticLogo, 100, 100, "#ffcc00", "LOGO"));
+
+        m_jpgLogo = m_outputDir + "/source_logo.jpg";
+        if (!QFile::exists(m_jpgLogo))
+            QVERIFY(createTestLogo(m_jpgLogo, 100, 100, "#ff6600", "JPG"));
 
         // Copy anim_icon.gif from testdata
         m_animGif = m_outputDir + "/source_anim_icon.gif";
@@ -322,6 +331,18 @@ private slots:
         lo.relX = 0.01; lo.relY = 0.01; lo.relW = 0.1; lo.relH = 0.1;
         in.opts.logos = {lo};
         runMerge("land_oneStaticLogo", in, true, false, 0, 0);
+    }
+
+    void landscape_oneJpgLogo() {
+        Merger::MergeInputs in;
+        in.screenFile = m_screen;
+        in.opts.noAudio = true;
+        in.opts.noWebcam = true;
+        RecordingOptions::LogoOpts lo;
+        lo.path = m_jpgLogo;
+        lo.relX = 0.01; lo.relY = 0.01; lo.relW = 0.1; lo.relH = 0.1;
+        in.opts.logos = {lo};
+        runMerge("land_oneJpgLogo", in, true, false, 0, 0);
     }
 
     void landscape_oneGifContinuous() {
