@@ -552,7 +552,6 @@ void RecordPage::onCountdownTick() {
         auto items = m_canvas->exportItems();
         double cw = m_canvas->canvasWidth();
         double ch = m_canvas->canvasHeight();
-        int logoIdx = 0;
         for (const auto &e : items) {
             if (e.type == 2) { // logo
                 RecordingOptions::LogoOpts lo;
@@ -564,10 +563,7 @@ void RecordPage::onCountdownTick() {
                 lo.relY = (e.y - e.h/2.0) / ch;
                 lo.relW = e.w / cw;
                 lo.relH = e.h / ch;
-                if (logoIdx == 0) opts.leftLogo = lo;
-                else if (logoIdx == 1) opts.rightLogo = lo;
-                else if (logoIdx == 2) opts.bannerLogo = lo;
-                logoIdx++;
+                opts.logos.append(lo);
             } else if (e.type == 1) { // webcam — capture placement and shape
                 opts.webcamRelX = (e.x - e.w/2.0) / cw;
                 opts.webcamRelY = (e.y - e.h/2.0) / ch;

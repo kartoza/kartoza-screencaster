@@ -261,12 +261,13 @@ private slots:
         Merger::MergeInputs in;
         in.screenFile = screen;
         in.opts.noAudio = true;
-        in.opts.leftLogo.path = leftLogo;
-        in.opts.leftLogo.relX = 0.01; in.opts.leftLogo.relY = 0.01;
-        in.opts.leftLogo.relW = 0.1; in.opts.leftLogo.relH = 0.1;
-        in.opts.rightLogo.path = rightLogo;
-        in.opts.rightLogo.relX = 0.89; in.opts.rightLogo.relY = 0.01;
-        in.opts.rightLogo.relW = 0.1; in.opts.rightLogo.relH = 0.1;
+        RecordingOptions::LogoOpts lo1;
+        lo1.path = leftLogo; lo1.relX = 0.01; lo1.relY = 0.01;
+        lo1.relW = 0.1; lo1.relH = 0.1;
+        RecordingOptions::LogoOpts lo2;
+        lo2.path = rightLogo; lo2.relX = 0.89; lo2.relY = 0.01;
+        lo2.relW = 0.1; lo2.relH = 0.1;
+        in.opts.logos = {lo1, lo2};
 
         QString output = tmp.filePath("merged.mp4");
         QStringList args = Merger::buildMergedArgs(in, output);

@@ -189,13 +189,21 @@ void Recorder::writeRecordingJson(const QString &status) {
     settings["screen_enabled"] = !m_opts.noScreen;
     settings["audio_enabled"] = !m_opts.noAudio;
     settings["webcam_enabled"] = !m_opts.noWebcam;
-    if (!m_opts.leftLogo.path.isEmpty()) settings["left_logo"] = m_opts.leftLogo.path;
-    if (!m_opts.rightLogo.path.isEmpty()) settings["right_logo"] = m_opts.rightLogo.path;
-    if (!m_opts.bannerLogo.path.isEmpty()) {
-        settings["banner_logo"] = m_opts.bannerLogo.path;
-        settings["banner_gif_loop"] = m_opts.bannerLogo.gifLoop;
-        settings["banner_gif_loop_max"] = m_opts.bannerLogo.gifLoopMax;
+    // Logos array
+    QJsonArray logosArr;
+    for (const auto &logo : m_opts.logos) {
+        if (logo.path.isEmpty()) continue;
+        QJsonObject lo;
+        lo["path"] = logo.path;
+        lo["gif_loop"] = logo.gifLoop;
+        lo["gif_loop_max"] = logo.gifLoopMax;
+        lo["rel_x"] = logo.relX;
+        lo["rel_y"] = logo.relY;
+        lo["rel_w"] = logo.relW;
+        lo["rel_h"] = logo.relH;
+        logosArr.append(lo);
     }
+    if (!logosArr.isEmpty()) settings["logos"] = logosArr;
     settings["title_color"] = m_opts.titleColor;
     settings["canvas_mode"] = m_opts.canvasMode;
     root["settings"] = settings;
@@ -607,16 +615,39 @@ void Recorder::reprocess(const QString &folder) {
     m_opts.titleColor = settings["title_color"].toString("#62A4C7");
     m_opts.canvasMode = settings["canvas_mode"].toInt(0);
 
-    if (settings.contains("left_logo")) {
-        m_opts.leftLogo.path = settings["left_logo"].toString();
+    // Read logos — new array format
+    m_opts.logos.clear();
+    if (settings.contains("logos")) {
+        auto logosArr = settings["logos"].toArray();
+        for (const auto &val : logosArr) {
+            auto lo = val.toObject();
+            RecordingOptions::LogoOpts logo;
+            logo.path = lo["path"].toString();
+            logo.gifLoop = lo["gif_loop"].toInt(2);
+            logo.gifLoopMax = lo["gif_loop_max"].toInt(3);
+            logo.relX = lo["rel_x"].toDouble(0);
+            logo.relY = lo["rel_y"].toDouble(0);
+            logo.relW = lo["rel_w"].toDouble(0.15);
+            logo.relH = lo["rel_h"].toDouble(0.15);
+            m_opts.logos.append(logo);
+        }
     }
-    if (settings.contains("right_logo")) {
-        m_opts.rightLogo.path = settings["right_logo"].toString();
-    }
-    if (settings.contains("banner_logo")) {
-        m_opts.bannerLogo.path = settings["banner_logo"].toString();
-        m_opts.bannerLogo.gifLoop = settings["banner_gif_loop"].toInt(2);
-        m_opts.bannerLogo.gifLoopMax = settings["banner_gif_loop_max"].toInt(3);
+    // Migration: old left_logo/right_logo/banner_logo format
+    if (m_opts.logos.isEmpty()) {
+        auto addLegacy = [&](const QString &key) {
+            if (settings.contains(key)) {
+                RecordingOptions::LogoOpts logo;
+                logo.path = settings[key].toString();
+                if (key == "banner_logo") {
+                    logo.gifLoop = settings["banner_gif_loop"].toInt(2);
+                    logo.gifLoopMax = settings["banner_gif_loop_max"].toInt(3);
+                }
+                m_opts.logos.append(logo);
+            }
+        };
+        addLegacy("left_logo");
+        addLegacy("right_logo");
+        addLegacy("banner_logo");
     }
 
     // Find source files in folder

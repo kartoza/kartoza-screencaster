@@ -229,11 +229,10 @@ static void finalizeFilter(QString &filter) {
 QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
     bool hasAudio = !in.audioFile.isEmpty() && QFile::exists(in.audioFile);
     bool hasWebcam = !in.webcamFile.isEmpty() && QFile::exists(in.webcamFile);
-    bool hasLeftLogo = !in.opts.leftLogo.path.isEmpty() && QFile::exists(in.opts.leftLogo.path);
-    bool hasRightLogo = !in.opts.rightLogo.path.isEmpty() && QFile::exists(in.opts.rightLogo.path);
-    bool hasBannerLogo = !in.opts.bannerLogo.path.isEmpty() && QFile::exists(in.opts.bannerLogo.path);
     bool mergeWebcam = hasWebcam && !in.opts.noScreen;
-    bool needsFilter = hasLeftLogo || hasRightLogo || hasBannerLogo || mergeWebcam;
+
+    // Collect valid logos and their FFmpeg input indices
+    QVector<int> logoInputs;
 
     QStringList args;
     args << "-y" << "-i" << in.screenFile;
@@ -241,10 +240,21 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
     int audioInput = -1, webcamInput = -1;
     if (hasAudio) { audioInput = nextInput++; args << "-i" << in.audioFile; }
     if (mergeWebcam) { webcamInput = nextInput++; args << "-i" << in.webcamFile; }
-    int leftLogoIn = -1, rightLogoIn = -1, bannerLogoIn = -1;
-    if (hasLeftLogo) { leftLogoIn = nextInput++; appendLogoInputArgs(args, in.opts.leftLogo); }
-    if (hasRightLogo) { rightLogoIn = nextInput++; appendLogoInputArgs(args, in.opts.rightLogo); }
-    if (hasBannerLogo) { bannerLogoIn = nextInput++; appendLogoInputArgs(args, in.opts.bannerLogo); }
+    for (int i = 0; i < in.opts.logos.size(); ++i) {
+        const auto &logo = in.opts.logos[i];
+        if (!logo.path.isEmpty() && QFile::exists(logo.path)) {
+            logoInputs.append(nextInput++);
+            appendLogoInputArgs(args, logo);
+        } else {
+            logoInputs.append(-1);
+        }
+    }
+
+    bool needsFilter = !logoInputs.isEmpty() || mergeWebcam;
+    // Check if any logo inputs are actually valid
+    bool hasAnyLogo = false;
+    for (int idx : logoInputs) { if (idx >= 0) { hasAnyLogo = true; break; } }
+    needsFilter = hasAnyLogo || mergeWebcam;
 
     if (needsFilter) {
         QString filter;
@@ -256,9 +266,12 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
         int cw = dim.width > 0 ? dim.width : 1920;
         int ch = dim.height > 0 ? dim.height : 1080;
 
-        if (hasLeftLogo) appendLogoFilter(filter, current, vIdx, leftLogoIn, in.opts.leftLogo, "ll", cw, ch, logoEnable);
-        if (hasRightLogo) appendLogoFilter(filter, current, vIdx, rightLogoIn, in.opts.rightLogo, "rl", cw, ch, logoEnable);
-        if (hasBannerLogo) appendLogoFilter(filter, current, vIdx, bannerLogoIn, in.opts.bannerLogo, "bl", cw, ch, logoEnable);
+        for (int i = 0; i < in.opts.logos.size(); ++i) {
+            if (i < logoInputs.size() && logoInputs[i] >= 0) {
+                QString tag = QString("logo%1").arg(i);
+                appendLogoFilter(filter, current, vIdx, logoInputs[i], in.opts.logos[i], tag, cw, ch, logoEnable);
+            }
+        }
         if (mergeWebcam) appendWebcamFilter(filter, current, vIdx, webcamInput, in.opts, cw, ch);
 
         finalizeFilter(filter);
@@ -281,9 +294,6 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
 QStringList buildVerticalArgs(const MergeInputs &in, const QString &outputFile) {
     bool hasAudio = !in.audioFile.isEmpty() && QFile::exists(in.audioFile);
     bool hasWebcam = !in.webcamFile.isEmpty() && QFile::exists(in.webcamFile);
-    bool hasLeftLogo = !in.opts.leftLogo.path.isEmpty() && QFile::exists(in.opts.leftLogo.path);
-    bool hasRightLogo = !in.opts.rightLogo.path.isEmpty() && QFile::exists(in.opts.rightLogo.path);
-    bool hasBannerLogo = !in.opts.bannerLogo.path.isEmpty() && QFile::exists(in.opts.bannerLogo.path);
 
     QString titleColor = in.opts.titleColor.isEmpty() ? "white" : in.opts.titleColor;
     QString escapedTitle = in.opts.title;
@@ -294,13 +304,21 @@ QStringList buildVerticalArgs(const MergeInputs &in, const QString &outputFile) 
     args << "-y" << "-i" << in.screenFile;
     int nextInput = 1;
     int webcamInput = -1, audioInput = -1;
-    int leftLogoIn = -1, rightLogoIn = -1, bannerLogoIn = -1;
 
     if (hasWebcam) { webcamInput = nextInput++; args << "-i" << in.webcamFile; }
     if (hasAudio) { audioInput = nextInput++; args << "-i" << in.audioFile; }
-    if (hasLeftLogo) { leftLogoIn = nextInput++; appendLogoInputArgs(args, in.opts.leftLogo); }
-    if (hasRightLogo) { rightLogoIn = nextInput++; appendLogoInputArgs(args, in.opts.rightLogo); }
-    if (hasBannerLogo) { bannerLogoIn = nextInput++; appendLogoInputArgs(args, in.opts.bannerLogo); }
+
+    // Register logo inputs
+    struct LogoInput { int inputIdx; int logoIdx; };
+    QVector<LogoInput> validLogos;
+    for (int i = 0; i < in.opts.logos.size(); ++i) {
+        const auto &logo = in.opts.logos[i];
+        if (!logo.path.isEmpty() && QFile::exists(logo.path)) {
+            int idx = nextInput++;
+            appendLogoInputArgs(args, logo);
+            validLogos.append({idx, i});
+        }
+    }
 
     QString f;
     f += "[0:v]scale=1080:-2,setsar=1[screen];";
@@ -312,29 +330,15 @@ QStringList buildVerticalArgs(const MergeInputs &in, const QString &outputFile) 
 
     if (hasWebcam) appendWebcamFilter(f, current, vIdx, webcamInput, in.opts, 1080, 1920);
 
-    // Logos at fixed vertical positions
-    if (hasLeftLogo) {
-        int lw = qMax(20, static_cast<int>(in.opts.leftLogo.relW * 1080));
-        int lx = static_cast<int>(in.opts.leftLogo.relX * 1080);
-        int ly = static_cast<int>(in.opts.leftLogo.relY * 1920);
-        f += QString("[%1:v]scale=%2:-1[ll];").arg(leftLogoIn).arg(lw);
-        f += QString("%1[ll]overlay=%2:%3[v%4];").arg(current).arg(lx).arg(ly).arg(++vIdx);
-        current = QString("[v%1]").arg(vIdx);
-    }
-    if (hasRightLogo) {
-        int rw = qMax(20, static_cast<int>(in.opts.rightLogo.relW * 1080));
-        int rx = static_cast<int>(in.opts.rightLogo.relX * 1080);
-        int ry = static_cast<int>(in.opts.rightLogo.relY * 1920);
-        f += QString("[%1:v]scale=%2:-1[rl];").arg(rightLogoIn).arg(rw);
-        f += QString("%1[rl]overlay=%2:%3[v%4];").arg(current).arg(rx).arg(ry).arg(++vIdx);
-        current = QString("[v%1]").arg(vIdx);
-    }
-    if (hasBannerLogo) {
-        int bw = qMax(20, static_cast<int>(in.opts.bannerLogo.relW * 1080));
-        int bx = static_cast<int>(in.opts.bannerLogo.relX * 1080);
-        int by = static_cast<int>(in.opts.bannerLogo.relY * 1920);
-        f += QString("[%1:v]scale=%2:-1[bl];").arg(bannerLogoIn).arg(bw);
-        f += QString("%1[bl]overlay=%2:%3[v%4];").arg(current).arg(bx).arg(by).arg(++vIdx);
+    // Logos at their relative positions
+    for (const auto &vl : validLogos) {
+        const auto &logo = in.opts.logos[vl.logoIdx];
+        int lw = qMax(20, static_cast<int>(logo.relW * 1080));
+        int lx = static_cast<int>(logo.relX * 1080);
+        int ly = static_cast<int>(logo.relY * 1920);
+        QString tag = QString("logo%1").arg(vl.logoIdx);
+        f += QString("[%1:v]scale=%2:-1[%3];").arg(vl.inputIdx).arg(lw).arg(tag);
+        f += QString("%1[%2]overlay=%3:%4[v%5];").arg(current).arg(tag).arg(lx).arg(ly).arg(++vIdx);
         current = QString("[v%1]").arg(vIdx);
     }
 

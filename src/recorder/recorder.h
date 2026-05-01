@@ -14,6 +14,7 @@
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QDir>
+#include <QVector>
 
 /**
  * @brief Configuration for a recording session.
@@ -67,9 +68,8 @@ struct RecordingOptions {
     double webcamRelH = 0.2;
     /** @brief Webcam shape: 0=round/bubble, 1=square, 2=rectangle. */
     int webcamShape = 0;
-    LogoOpts leftLogo;                            /**< Left-side logo overlay options. */
-    LogoOpts rightLogo;                           /**< Right-side logo overlay options. */
-    LogoOpts bannerLogo;                          /**< Banner logo overlay options. */
+    /** @brief Overlay logos/GIFs placed on the canvas (0..N). */
+    QVector<LogoOpts> logos;
     QString titleColor = "#62A4C7";               /**< Hex colour used when rendering the title. */
 };
 

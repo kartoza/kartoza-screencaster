@@ -1533,3 +1533,4 @@ there have been some regressions. Let's revisit the expectations of a user:
    - Updated recording_presets and settings examples
 
 ---
+Fri May  1 01:37:35 WEST 2026: Implement Tasks 2-6: Refactor logos from fixed fields (leftLogo/rightLogo/bannerLogo) to QVector<LogoOpts> and update all consumers (recorder.h, recorder.cpp, merger.cpp, recordpage.cpp, test_pipeline.cpp)
