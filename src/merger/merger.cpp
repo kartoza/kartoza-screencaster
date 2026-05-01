@@ -189,10 +189,16 @@ static void appendLogoFilter(QString &filter, QString &current, int &vIdx,
     filter += QString("[%1:v]scale=%2:-1[%3];").arg(inputIdx).arg(logoW).arg(tag);
 
     QString pos = QString("%1:%2").arg(logoX).arg(logoY);
+    // For continuous GIF loops (gifLoop==2, via -ignore_loop 0) the input is
+    // infinite. Use eof_action=pass so the overlay continues using the main
+    // stream's duration instead of waiting for the infinite GIF to end.
+    // For static images / single-play GIFs, use eof_action=pass so the overlay
+    // shows the last frame after the logo stream ends.
+    QString eof = ":eof_action=pass";
     if (enable.isEmpty()) {
-        filter += QString("%1[%2]overlay=%3[v%4];").arg(current, tag, pos).arg(++vIdx);
+        filter += QString("%1[%2]overlay=%3%4[v%5];").arg(current, tag, pos, eof).arg(++vIdx);
     } else {
-        filter += QString("%1[%2]overlay=%3:%4[v%5];").arg(current, tag, pos, enable).arg(++vIdx);
+        filter += QString("%1[%2]overlay=%3:%4%5[v%6];").arg(current, tag, pos, enable, eof).arg(++vIdx);
     }
     current = QString("[v%1]").arg(vIdx);
 }
@@ -209,13 +215,16 @@ static void appendWebcamFilter(QString &filter, QString &current, int &vIdx,
     filter += QString("[%1:v]scale=%2:%3,setsar=1[wcam];").arg(webcamInput).arg(wcW).arg(wcH);
     if (opts.webcamShape == 0) {
         int r = qMin(wcW, wcH) / 2;
-        filter += QString("color=black:%1x%2,geq=lum='if(lt(hypot(X-%3,Y-%4),%5),255,0)':cb=128:cr=128[cmask];")
+        // Use eof_action=pass so alphamerge stops consuming once mask ends.
+        // The color source produces 1 frame; alphamerge repeats it for
+        // the webcam stream length thanks to eof_action=repeat on alphamerge.
+        filter += QString("color=black:%1x%2:d=0.04,format=gray,geq=lum='if(lt(hypot(X-%3,Y-%4),%5),255,0)'[cmask];")
             .arg(wcW).arg(wcH).arg(wcW/2).arg(wcH/2).arg(r);
-        filter += "[wcam][cmask]alphamerge[wcam_shaped];";
+        filter += "[wcam][cmask]alphamerge=eof_action=repeat[wcam_shaped];";
     } else {
         filter += "[wcam]null[wcam_shaped];";
     }
-    filter += QString("%1[wcam_shaped]overlay=%2:%3[v%4];").arg(current).arg(wcX).arg(wcY).arg(++vIdx);
+    filter += QString("%1[wcam_shaped]overlay=%2:%3:eof_action=pass[v%4];").arg(current).arg(wcX).arg(wcY).arg(++vIdx);
     current = QString("[v%1]").arg(vIdx);
 }
 
@@ -281,10 +290,14 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
 
     args << "-c:v" << "libx264" << "-preset" << "medium" << "-crf" << "18" << "-r" << "30";
     if (hasAudio) {
-        args << "-c:a" << "aac" << "-b:a" << "320k" << "-shortest";
+        args << "-c:a" << "aac" << "-b:a" << "320k";
     } else {
         args << "-an";
     }
+    // Always add -shortest when filter graph is used: some inputs (continuous
+    // GIF loops, round-webcam mask) are infinite length and FFmpeg will hang
+    // without this flag.
+    if (needsFilter) args << "-shortest";
     args << outputFile;
     return args;
 }
@@ -338,7 +351,7 @@ QStringList buildVerticalArgs(const MergeInputs &in, const QString &outputFile) 
         int ly = static_cast<int>(logo.relY * 1920);
         QString tag = QString("logo%1").arg(vl.logoIdx);
         f += QString("[%1:v]scale=%2:-1[%3];").arg(vl.inputIdx).arg(lw).arg(tag);
-        f += QString("%1[%2]overlay=%3:%4[v%5];").arg(current).arg(tag).arg(lx).arg(ly).arg(++vIdx);
+        f += QString("%1[%2]overlay=%3:%4:eof_action=pass[v%5];").arg(current).arg(tag).arg(lx).arg(ly).arg(++vIdx);
         current = QString("[v%1]").arg(vIdx);
     }
 
@@ -349,10 +362,13 @@ QStringList buildVerticalArgs(const MergeInputs &in, const QString &outputFile) 
     args << "-filter_complex" << f << "-map" << "[outv]";
     if (hasAudio) {
         args << "-map" << QString("%1:a").arg(audioInput);
-        args << "-c:a" << "aac" << "-b:a" << "320k" << "-shortest";
+        args << "-c:a" << "aac" << "-b:a" << "320k";
     } else {
         args << "-an";
     }
+    // Always add -shortest: vertical filter graph always uses filter_complex
+    // and some inputs (continuous GIF, round-webcam mask) may be infinite.
+    args << "-shortest";
     args << "-c:v" << "libx264" << "-preset" << "medium" << "-crf" << "18" << "-r" << "30"
          << "-s" << "1080x1920" << outputFile;
     return args;
