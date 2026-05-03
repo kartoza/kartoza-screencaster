@@ -118,6 +118,8 @@ void Config::load() {
   for (auto it = presetsObj.begin(); it != presetsObj.end(); ++it) {
     presets[it.key()] = canvasStateFromJson(it.value().toObject());
   }
+
+  m_loaded = true;
 }
 
 int Config::nextRecordingNumber() const {
@@ -139,7 +141,14 @@ int Config::nextRecordingNumber() const {
 }
 
 void Config::save() {
+  // Read existing file to preserve data not held in memory (defensive merge)
   QJsonObject root;
+  QFile existing(configPath());
+  if (existing.open(QIODevice::ReadOnly)) {
+    root = QJsonDocument::fromJson(existing.readAll()).object();
+    existing.close();
+  }
+
   root["output_dir"] = outputDir;
   root["default_presenter"] = defaultPresenter;
   root["logo_directory"] = logoDirectory;
@@ -164,12 +173,15 @@ void Config::save() {
   // Active preset name
   root["active_preset"] = activePreset;
 
-  // Presets
-  QJsonObject presetsObj;
-  for (auto it = presets.begin(); it != presets.end(); ++it) {
-    presetsObj[it.key()] = canvasStateToJson(it.value());
+  // Presets: only write if load() was called (in-memory state is authoritative)
+  if (m_loaded) {
+    QJsonObject presetsObj;
+    for (auto it = presets.begin(); it != presets.end(); ++it) {
+      presetsObj[it.key()] = canvasStateToJson(it.value());
+    }
+    root["presets"] = presetsObj;
   }
-  root["presets"] = presetsObj;
+  // If never loaded, preserve whatever presets exist on disk (read above)
 
   QFile file(configPath());
   if (file.open(QIODevice::WriteOnly)) {

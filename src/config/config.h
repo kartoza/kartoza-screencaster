@@ -99,4 +99,6 @@ private:
     Config() = default;
     /** @brief Returns the absolute path to the JSON config file. */
     QString configPath() const;
+    /** @brief True after load() has been called at least once. */
+    bool m_loaded = false;
 };

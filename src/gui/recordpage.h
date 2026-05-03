@@ -47,6 +47,11 @@ public:
     /** @brief Load a preset by name (used by systray). */
     void loadPreset(const QString &name);
 
+    /** @brief Suspend all live previews (screen capture + webcam feeds). */
+    void suspendPreviews();
+    /** @brief Resume all live previews. */
+    void resumePreviews();
+
 protected:
     /** @brief Refresh layer list when page becomes visible. */
     void showEvent(QShowEvent *event) override;

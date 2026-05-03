@@ -177,6 +177,14 @@ private:
     QStringList m_audioParts;              /**< Ordered list of audio-part file paths. */
     QStringList m_webcamParts;             /**< Ordered list of webcam-part file paths. */
 
+    /** @brief Per-part stream start timestamps (ms since epoch) for sync alignment. */
+    struct PartTimestamps {
+        qint64 screenStartMs = 0;
+        qint64 audioStartMs = 0;
+        qint64 webcamStartMs = 0;
+    };
+    QVector<PartTimestamps> m_partTimestamps; /**< Start timestamps for each part. */
+
     RecordingOptions m_opts;               /**< Options for the active session. */
     QDateTime m_startTime;                 /**< Wall-clock time when the session started. */
     QString m_mergedFile;                  /**< Path to the final merged output file. */

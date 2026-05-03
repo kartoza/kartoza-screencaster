@@ -513,6 +513,14 @@ void RecordPage::showEvent(QShowEvent *event) {
     m_canvas->update();
 }
 
+void RecordPage::suspendPreviews() {
+    if (m_canvas) m_canvas->suspendPreviews();
+}
+
+void RecordPage::resumePreviews() {
+    if (m_canvas && !m_isRecording) m_canvas->resumePreviews();
+}
+
 void RecordPage::onStartClicked() {
     if (m_isRecording || m_countdownTimer->isActive()) return;
 

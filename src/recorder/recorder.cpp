@@ -56,6 +56,7 @@ void Recorder::start(const RecordingOptions &opts) {
     m_screenParts.clear();
     m_audioParts.clear();
     m_webcamParts.clear();
+    m_partTimestamps.clear();
 
     // Create output directory
     m_outputDir = opts.outputDir;
@@ -85,21 +86,28 @@ void Recorder::start(const RecordingOptions &opts) {
 void Recorder::startRecordersForPart() {
     QString partSuffix = QString("_part%1").arg(m_currentPart, 3, 10, QChar('0'));
 
+    PartTimestamps ts;
+
     if (!m_opts.noScreen && !m_opts.monitor.isEmpty()) {
         m_screenFile = m_outputDir + "/screen" + partSuffix + ".mp4";
         m_screenParts.append(m_screenFile);
         startScreenRecorder(m_opts);
+        ts.screenStartMs = QDateTime::currentMSecsSinceEpoch();
     }
     if (!m_opts.noAudio) {
         m_audioFile = m_outputDir + "/audio" + partSuffix + ".wav";
         m_audioParts.append(m_audioFile);
         startAudioRecorder(m_opts);
+        ts.audioStartMs = QDateTime::currentMSecsSinceEpoch();
     }
     if (!m_opts.noWebcam && !m_opts.webcamDevice.isEmpty()) {
         m_webcamFile = m_outputDir + "/webcam" + partSuffix + ".mp4";
         m_webcamParts.append(m_webcamFile);
         startWebcamRecorder(m_opts);
+        ts.webcamStartMs = QDateTime::currentMSecsSinceEpoch();
     }
+
+    m_partTimestamps.append(ts);
 }
 
 void Recorder::stopAllProcesses() {
@@ -156,6 +164,19 @@ void Recorder::writeRecordingJson(const QString &status) {
     if (!m_screenParts.isEmpty()) files["video_parts"] = toJsonArray(m_screenParts);
     if (!m_audioParts.isEmpty()) files["audio_parts"] = toJsonArray(m_audioParts);
     if (!m_webcamParts.isEmpty()) files["webcam_parts"] = toJsonArray(m_webcamParts);
+
+    // Stream start timestamps for sync alignment
+    if (!m_partTimestamps.isEmpty()) {
+        QJsonArray tsArr;
+        for (const auto &ts : m_partTimestamps) {
+            QJsonObject tsObj;
+            tsObj["screen_start_ms"] = ts.screenStartMs;
+            tsObj["audio_start_ms"] = ts.audioStartMs;
+            tsObj["webcam_start_ms"] = ts.webcamStartMs;
+            tsArr.append(tsObj);
+        }
+        files["part_timestamps"] = tsArr;
+    }
 
     if (QFile::exists(m_screenFile)) {
         files["video_file"] = m_screenFile;
@@ -677,6 +698,21 @@ void Recorder::reprocess(const QString &folder) {
     m_currentPart = 0;
     m_mergedFile.clear();
 
+    // Load sync timestamps from recording.json
+    m_partTimestamps.clear();
+    auto filesObj = root["files"].toObject();
+    if (filesObj.contains("part_timestamps")) {
+        auto tsArr = filesObj["part_timestamps"].toArray();
+        for (const auto &val : tsArr) {
+            auto tsObj = val.toObject();
+            PartTimestamps ts;
+            ts.screenStartMs = tsObj["screen_start_ms"].toInteger(0);
+            ts.audioStartMs = tsObj["audio_start_ms"].toInteger(0);
+            ts.webcamStartMs = tsObj["webcam_start_ms"].toInteger(0);
+            m_partTimestamps.append(ts);
+        }
+    }
+
     // Update status
     writeRecordingJson("processing");
     // Note: do NOT emit recordingStopped() here — the caller (mainwindow reprocess handler)
@@ -755,6 +791,20 @@ void Recorder::processRecordings() {
         emit processingStepDone(1, "Normalizing audio", true);
     }
 
+    // Compute sync offsets from the first part's timestamps (screen is reference)
+    double audioOffsetSec = 0.0;
+    double webcamOffsetSec = 0.0;
+    if (!m_partTimestamps.isEmpty()) {
+        const auto &ts = m_partTimestamps.first();
+        if (ts.screenStartMs > 0 && ts.audioStartMs > 0) {
+            audioOffsetSec = (ts.audioStartMs - ts.screenStartMs) / 1000.0;
+        }
+        if (ts.screenStartMs > 0 && ts.webcamStartMs > 0) {
+            webcamOffsetSec = (ts.webcamStartMs - ts.screenStartMs) / 1000.0;
+        }
+    }
+    qDebug() << "Sync offsets: audio=" << audioOffsetSec << "s, webcam=" << webcamOffsetSec << "s";
+
     // Render based on canvas mode:
     // Mode 0 (landscape) = merged video only
     // Mode 1/2/3 (vertical/left split/right split) = vertical video only
@@ -766,7 +816,7 @@ void Recorder::processRecordings() {
         m_mergedFile = m_outputDir + "/" + Merger::outputFileName(m_opts.number, m_opts.title);
         qint64 durationUs = Merger::getVideoDurationUs(m_screenFile);
 
-        Merger::MergeInputs in{m_screenFile, audioToUse, m_webcamFile, m_opts};
+        Merger::MergeInputs in{m_screenFile, audioToUse, m_webcamFile, m_opts, audioOffsetSec, webcamOffsetSec};
         QStringList args = Merger::buildMergedArgs(in, m_mergedFile);
 
         int exitCode = Merger::runFFmpegWithProgress(args, durationUs, [this](int pct) {
@@ -788,7 +838,7 @@ void Recorder::processRecordings() {
         QString vertFile = m_outputDir + "/" + Merger::outputFileName(m_opts.number, m_opts.title, "vertical");
         qint64 durationUs = Merger::getVideoDurationUs(m_screenFile);
 
-        Merger::MergeInputs in{m_screenFile, audioToUse, m_webcamFile, m_opts};
+        Merger::MergeInputs in{m_screenFile, audioToUse, m_webcamFile, m_opts, audioOffsetSec, webcamOffsetSec};
         QStringList args = Merger::buildVerticalArgs(in, vertFile);
 
         int exitCode = Merger::runFFmpegWithProgress(args, durationUs, [this](int pct) {

@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QLoggingCategory>
 #include "gui/mainwindow.h"
 #include "config/config.h"
 
@@ -7,6 +8,7 @@
 #endif
 
 int main(int argc, char *argv[]) {
+    QLoggingCategory::setFilterRules("qt.text.emojisegmenter=false");
     QApplication app(argc, argv);
     app.setApplicationName("Kartoza Screencaster");
     app.setApplicationVersion(APP_VERSION);

@@ -118,6 +118,10 @@ struct MergeInputs {
     QString audioFile;        /**< Path to the audio capture file. */
     QString webcamFile;       /**< Path to the webcam capture file. */
     RecordingOptions opts;    /**< Recording options (logos, layout, etc.). */
+    /** @brief Audio start offset relative to screen in seconds (positive = audio started later). */
+    double audioOffsetSec = 0.0;
+    /** @brief Webcam start offset relative to screen in seconds (positive = webcam started later). */
+    double webcamOffsetSec = 0.0;
 };
 
 /**

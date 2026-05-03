@@ -242,8 +242,21 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
     args << "-y" << "-i" << in.screenFile;
     int nextInput = 1;
     int audioInput = -1, webcamInput = -1;
-    if (hasAudio) { audioInput = nextInput++; args << "-i" << in.audioFile; }
-    if (mergeWebcam) { webcamInput = nextInput++; args << "-i" << in.webcamFile; }
+    if (hasAudio) {
+        // Positive itsoffset delays audio to align with screen (audio started later)
+        if (qAbs(in.audioOffsetSec) > 0.01) {
+            args << "-itsoffset" << QString::number(in.audioOffsetSec, 'f', 3);
+        }
+        audioInput = nextInput++;
+        args << "-i" << in.audioFile;
+    }
+    if (mergeWebcam) {
+        if (qAbs(in.webcamOffsetSec) > 0.01) {
+            args << "-itsoffset" << QString::number(in.webcamOffsetSec, 'f', 3);
+        }
+        webcamInput = nextInput++;
+        args << "-i" << in.webcamFile;
+    }
     for (int i = 0; i < in.opts.logos.size(); ++i) {
         const auto &logo = in.opts.logos[i];
         if (!logo.path.isEmpty() && QFile::exists(logo.path)) {
@@ -309,8 +322,20 @@ QStringList buildVerticalArgs(const MergeInputs &in, const QString &outputFile) 
     int nextInput = 1;
     int webcamInput = -1, audioInput = -1;
 
-    if (hasWebcam) { webcamInput = nextInput++; args << "-i" << in.webcamFile; }
-    if (hasAudio) { audioInput = nextInput++; args << "-i" << in.audioFile; }
+    if (hasWebcam) {
+        if (qAbs(in.webcamOffsetSec) > 0.01) {
+            args << "-itsoffset" << QString::number(in.webcamOffsetSec, 'f', 3);
+        }
+        webcamInput = nextInput++;
+        args << "-i" << in.webcamFile;
+    }
+    if (hasAudio) {
+        if (qAbs(in.audioOffsetSec) > 0.01) {
+            args << "-itsoffset" << QString::number(-in.audioOffsetSec, 'f', 3);
+        }
+        audioInput = nextInput++;
+        args << "-i" << in.audioFile;
+    }
 
     // Register logo inputs
     struct LogoInput { int inputIdx; int logoIdx; };
