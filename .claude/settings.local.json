@@ -47,7 +47,13 @@
       "Bash(pkill -9 -f ./build/kartoza-screencaster)",
       "Bash(python3:*)",
       "Bash(pidof kartoza-screencaster:*)",
-      "Bash(wl-screenrec --output=FAKE --filename=/tmp/test.mp4)"
+      "Bash(wl-screenrec --output=FAKE --filename=/tmp/test.mp4)",
+      "Bash(mkdir -p /home/timlinux/dev/go/kartoza-screencaster/tests/testdata)",
+      "Bash(cp /home/timlinux/Syncthing/KartozaInternal/AnimatedIcons/Castle.gif /home/timlinux/dev/go/kartoza-screencaster/tests/testdata/anim_icon.gif)",
+      "Bash(pkill -9 -f \"ffmpeg.*geq\")",
+      "Bash(xargs -r kill -9)",
+      "Bash(ls /home/timlinux/dev/go/kartoza-screencaster/tests/test_outputs/land_*.mp4)",
+      "Bash(gh release:*)"
     ],
     "deny": [],
     "ask": []

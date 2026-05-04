@@ -2,10 +2,27 @@
 Name=Kartoza Screencaster
 Comment=Screen recording tool for Wayland
 GenericName=Screen Recorder
-Exec=kartoza-screencaster systray
+Exec=kartoza-screencaster
 Icon=kartoza-screencaster
 Terminal=false
 Type=Application
 Categories=AudioVideo;Video;Recorder;
 Keywords=screen;recording;video;wayland;hyprland;capture;
 StartupNotify=false
+Actions=start;stop;toggle;pause;
+
+[Desktop Action start]
+Name=Start Recording
+Exec=kartoza-screencaster --start
+
+[Desktop Action stop]
+Name=Stop Recording
+Exec=kartoza-screencaster --stop
+
+[Desktop Action toggle]
+Name=Toggle Recording
+Exec=kartoza-screencaster --toggle
+
+[Desktop Action pause]
+Name=Pause/Resume Recording
+Exec=kartoza-screencaster --pause
