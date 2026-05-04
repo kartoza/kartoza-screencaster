@@ -36,6 +36,9 @@ public:
     /** @brief Identifiers for the navigable content pages. */
     enum Page { PageRecord = 0, PageHistory, PageSettings, PageProcessing };
 
+    /** @brief Access the record page (for D-Bus service registration). */
+    RecordPage *recordPage() { return m_recordPage; }
+
 public slots:
     /**
      * @brief Switch the visible content page.

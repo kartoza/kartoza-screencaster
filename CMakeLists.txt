@@ -43,6 +43,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Multimedia
     MultimediaWidgets
     Concurrent
+    DBus
 )
 
 set(SOURCES
@@ -73,6 +74,8 @@ set(SOURCES
     src/config/config.h
     src/platform/platform.cpp
     src/platform/platform.h
+    src/dbus/dbusservice.cpp
+    src/dbus/dbusservice.h
 )
 
 qt6_add_resources(RESOURCES resources/resources.qrc)
@@ -84,6 +87,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Multimedia
     Qt6::MultimediaWidgets
     Qt6::Concurrent
+    Qt6::DBus
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE src)
