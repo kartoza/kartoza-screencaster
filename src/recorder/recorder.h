@@ -188,6 +188,7 @@ private:
     RecordingOptions m_opts;               /**< Options for the active session. */
     QDateTime m_startTime;                 /**< Wall-clock time when the session started. */
     QString m_mergedFile;                  /**< Path to the final merged output file. */
+    QString m_verticalFile;                /**< Path to the vertical format output file. */
 
     /** @brief Stop all running FFmpeg sub-processes. */
     void stopAllProcesses();

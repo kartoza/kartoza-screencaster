@@ -258,6 +258,10 @@ private:
     int m_dragOffX = 0;
     /** @brief Drag offset Y from item origin. */
     int m_dragOffY = 0;
+    /** @brief X offset to center the 16:9 canvas within the widget. */
+    int m_offsetX = 0;
+    /** @brief Y offset to center the 16:9 canvas within the widget. */
+    int m_offsetY = 0;
 
     /** @brief Timer driving periodic screen capture refresh. */
     QTimer *m_refreshTimer;

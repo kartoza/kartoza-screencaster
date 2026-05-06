@@ -12,8 +12,7 @@
 #include <QUrl>
 #include <QTimer>
 #include <QProcess>
-#include <QPixmap>
-#include <QThreadPool>
+#include <QVideoWidget>
 #include <algorithm>
 
 HistoryPage::HistoryPage(QWidget *parent) : QWidget(parent) {
@@ -66,28 +65,16 @@ void HistoryPage::setupUI() {
     rightLayout->setSpacing(6);
     rightLayout->setContentsMargins(0, 0, 0, 0);
 
-    // Video display — using QLabel + QVideoSink to avoid QVideoWidget Wayland positioning issues
-    m_videoLabel = new QLabel;
-    m_videoLabel->setFixedSize(400, 225);
-    m_videoLabel->setAlignment(Qt::AlignCenter);
-    m_videoLabel->setScaledContents(true);
-    m_videoLabel->setStyleSheet("background: #000; border-radius: 4px;");
-    rightLayout->addWidget(m_videoLabel);
+    // Video display using QVideoWidget (native Qt6 video rendering)
+    m_videoWidget = new QVideoWidget;
+    m_videoWidget->setFixedSize(400, 225);
+    m_videoWidget->setStyleSheet("background: #000; border-radius: 4px;");
+    rightLayout->addWidget(m_videoWidget);
 
     m_player = new QMediaPlayer(this);
     m_audioOutput = new QAudioOutput(this);
-    m_videoSink = new QVideoSink(this);
     m_player->setAudioOutput(m_audioOutput);
-    m_player->setVideoOutput(m_videoSink);
-
-    // Render video frames to the QLabel
-    connect(m_videoSink, &QVideoSink::videoFrameChanged, this, [this](const QVideoFrame &frame) {
-        QImage img = frame.toImage();
-        if (!img.isNull()) {
-            m_videoLabel->setPixmap(QPixmap::fromImage(img).scaled(
-                m_videoLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-        }
-    });
+    m_player->setVideoOutput(m_videoWidget);
 
     // Debug: log media status changes
     connect(m_player, &QMediaPlayer::mediaStatusChanged, this, [](QMediaPlayer::MediaStatus status) {
@@ -190,6 +177,21 @@ void HistoryPage::setupUI() {
         }
     });
 
+    auto *openFolderBtn = new QPushButton("Open Folder");
+    openFolderBtn->setStyleSheet("QPushButton { background: #89b4fa; color: #1e1e2e; border: none; border-radius: 4px; padding: 5px 10px; font-weight: bold; } QPushButton:hover { background: #74c7ec; } QPushButton:disabled { background: #45475a; color: #6c7086; }");
+    openFolderBtn->setEnabled(false);
+    openFolderBtn->setToolTip("Open the recording folder in your file manager.");
+    connect(openFolderBtn, &QPushButton::clicked, this, [this]() {
+        int row = m_list->currentRow();
+        if (row < 0 || row >= m_recordings.size()) return;
+        QProcess::startDetached("xdg-open", {m_recordings[row].folder});
+    });
+    rightLayout->addWidget(openFolderBtn);
+
+    connect(m_list, &QListWidget::currentRowChanged, openFolderBtn, [this, openFolderBtn](int row) {
+        openFolderBtn->setEnabled(row >= 0 && row < m_recordings.size());
+    });
+
     auto *btnRow = new QHBoxLayout;
 
     auto *reprocessBtn = new QPushButton("Reprocess");
@@ -253,6 +255,7 @@ void HistoryPage::loadRecordings() {
 
             auto files = root["files"].toObject();
             rec.mergedFile = files["merged_file"].toString();
+            rec.verticalFile = files["vertical_file"].toString();
             rec.screenFile = files["video_file"].toString();
             rec.audioFile = files["audio_file"].toString();
             rec.webcamFile = files["webcam_file"].toString();
@@ -278,15 +281,24 @@ void HistoryPage::loadRecordings() {
         QDir recDir(folder);
         if (rec.mergedFile.isEmpty() || !QFile::exists(rec.mergedFile)) {
             for (const auto &f : recDir.entryInfoList({"*.mp4"}, QDir::Files)) {
-                if (!f.fileName().startsWith("screen_") && !f.fileName().startsWith("webcam_")) {
+                QString name = f.fileName();
+                if (!name.startsWith("screen_") && !name.startsWith("webcam_") && !name.contains("-vertical")) {
                     rec.mergedFile = f.absoluteFilePath();
                     break;
                 }
             }
         }
+        if (rec.verticalFile.isEmpty() || !QFile::exists(rec.verticalFile)) {
+            for (const auto &f : recDir.entryInfoList({"*-vertical.mp4"}, QDir::Files)) {
+                rec.verticalFile = f.absoluteFilePath();
+                break;
+            }
+        }
         if (rec.screenFile.isEmpty() || !QFile::exists(rec.screenFile)) {
-            for (const auto &f : recDir.entryInfoList({"screen_*.mp4"}, QDir::Files))
-                { rec.screenFile = f.absoluteFilePath(); break; }
+            for (const auto &f : recDir.entryInfoList({"screen_*.mp4"}, QDir::Files)) {
+                rec.screenFile = f.absoluteFilePath();
+                break;
+            }
         }
         if (rec.totalSize == 0) {
             for (const auto &f : recDir.entryInfoList(QDir::Files))
@@ -348,6 +360,7 @@ void HistoryPage::onRecordingSelected(int row) {
 
     QStringList fl;
     if (!rec.mergedFile.isEmpty() && QFile::exists(rec.mergedFile)) fl << "Merged";
+    if (!rec.verticalFile.isEmpty() && QFile::exists(rec.verticalFile)) fl << "Vertical";
     if (!rec.screenFile.isEmpty() && QFile::exists(rec.screenFile)) fl << "Screen";
     if (!rec.audioFile.isEmpty() && QFile::exists(rec.audioFile)) fl << "Audio";
     m_filesLabel->setText("Files: " + (fl.isEmpty() ? "none" : fl.join(", ")));
@@ -365,38 +378,16 @@ void HistoryPage::onRecordingSelected(int row) {
     m_playBtn->setText("Play");
     m_deleteBtn->setEnabled(true);
 
-    // Extract thumbnail asynchronously
+    // Show first frame as thumbnail by briefly loading the video
     if (!video.isEmpty()) {
-        QString thumbPath = rec.folder + "/.thumbnail.jpg";
-        QSize labelSize = m_videoLabel->size();
-        QLabel *label = m_videoLabel;
-
-        if (QFile::exists(thumbPath)) {
-            QPixmap thumb(thumbPath);
-            if (!thumb.isNull())
-                label->setPixmap(thumb.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-        } else {
-            QString videoPath = video;
-            QThreadPool::globalInstance()->start([thumbPath, videoPath, label, labelSize]() {
-                QProcess ffmpeg;
-                ffmpeg.start("ffmpeg", {"-y", "-i", videoPath, "-vf", "thumbnail,scale=400:-1",
-                                        "-frames:v", "1", thumbPath});
-                ffmpeg.waitForFinished(10000);
-                if (QFile::exists(thumbPath)) {
-                    QPixmap thumb(thumbPath);
-                    if (!thumb.isNull()) {
-                        QMetaObject::invokeMethod(label, [label, thumb, labelSize]() {
-                            label->setPixmap(thumb.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-                        }, Qt::QueuedConnection);
-                    }
-                }
-            });
-        }
+        m_player->setSource(QUrl::fromLocalFile(video));
     }
 }
 
 QString HistoryPage::findBestVideo(const RecordingEntry &rec) {
+    // Prefer merged landscape, then vertical, then raw screen capture
     if (!rec.mergedFile.isEmpty() && QFile::exists(rec.mergedFile)) return rec.mergedFile;
+    if (!rec.verticalFile.isEmpty() && QFile::exists(rec.verticalFile)) return rec.verticalFile;
     if (!rec.screenFile.isEmpty() && QFile::exists(rec.screenFile)) return rec.screenFile;
     return {};
 }
@@ -413,13 +404,10 @@ void HistoryPage::onPlayClicked() {
         return;
     }
 
-    int row = m_list->currentRow();
-    if (row < 0 || row >= m_recordings.size()) return;
+    // Source was pre-loaded by onRecordingSelected; just start playback
+    if (m_player->source().isEmpty()) return;
 
-    QString video = findBestVideo(m_recordings[row]);
-    if (video.isEmpty()) return;
-
-    m_player->setSource(QUrl::fromLocalFile(video));
+    qDebug() << "Playing video:" << m_player->source();
     m_player->play();
     m_playing = true;
     m_playBtn->setText("Pause");

@@ -1,16 +1,14 @@
 #include <QApplication>
 #include <QLoggingCategory>
-#include <QDBusInterface>
-#include <QDBusReply>
 #include <QCommandLineParser>
 #include <QTextStream>
 #include "gui/mainwindow.h"
 #include "config/config.h"
-#include "dbus/dbusservice.h"
 
-#ifndef APP_VERSION
-#define APP_VERSION "dev"
-#endif
+#ifdef HAS_DBUS
+#include <QDBusInterface>
+#include <QDBusReply>
+#include "dbus/dbusservice.h"
 
 static const char *DBUS_SERVICE = "org.kartoza.Screencaster";
 static const char *DBUS_PATH = "/Screencaster";
@@ -43,6 +41,7 @@ static bool handleRemoteCommand(const QString &command) {
     }
     return true;
 }
+#endif
 
 int main(int argc, char *argv[]) {
     QLoggingCategory::setFilterRules("qt.text.emojisegmenter=false");
@@ -58,6 +57,7 @@ int main(int argc, char *argv[]) {
     parser.addHelpOption();
     parser.addVersionOption();
 
+#ifdef HAS_DBUS
     QCommandLineOption startOpt("start", "Start recording (sends to running instance)");
     QCommandLineOption stopOpt("stop", "Stop recording (sends to running instance)");
     QCommandLineOption pauseOpt("pause", "Pause/resume recording (sends to running instance)");
@@ -68,23 +68,27 @@ int main(int argc, char *argv[]) {
     parser.addOption(pauseOpt);
     parser.addOption(toggleOpt);
     parser.addOption(statusOpt);
+#endif
 
     parser.process(app);
 
+#ifdef HAS_DBUS
     // Handle remote commands — send D-Bus message to running instance and exit
     if (parser.isSet(startOpt)) { handleRemoteCommand("start"); return 0; }
     if (parser.isSet(stopOpt)) { handleRemoteCommand("stop"); return 0; }
     if (parser.isSet(pauseOpt)) { handleRemoteCommand("pause"); return 0; }
     if (parser.isSet(toggleOpt)) { handleRemoteCommand("toggle"); return 0; }
     if (parser.isSet(statusOpt)) { handleRemoteCommand("status"); return 0; }
+#endif
 
     Config::instance().load();
 
     MainWindow window(APP_VERSION);
-    window.show();
 
+#ifdef HAS_DBUS
     // Register D-Bus service for remote control
     new DBusService(window.recordPage(), &window);
+#endif
 
     return app.exec();
 }

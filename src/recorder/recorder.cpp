@@ -194,6 +194,10 @@ void Recorder::writeRecordingJson(const QString &status) {
         files["merged_file"] = m_mergedFile;
         files["merged_size"] = QFileInfo(m_mergedFile).size();
     }
+    if (!m_verticalFile.isEmpty() && QFile::exists(m_verticalFile)) {
+        files["vertical_file"] = m_verticalFile;
+        files["vertical_size"] = QFileInfo(m_verticalFile).size();
+    }
 
     // Calculate total size
     qint64 totalSize = 0;
@@ -442,6 +446,7 @@ void Recorder::renameOutputFolder() {
     updatePath(m_audioFile);
     updatePath(m_webcamFile);
     updatePath(m_mergedFile);
+    updatePath(m_verticalFile);
 
     for (auto &p : m_screenParts) updatePath(p);
     for (auto &p : m_audioParts) updatePath(p);
@@ -697,6 +702,7 @@ void Recorder::reprocess(const QString &folder) {
     m_webcamFile = m_webcamParts.isEmpty() ? QString() : m_webcamParts.first();
     m_currentPart = 0;
     m_mergedFile.clear();
+    m_verticalFile.clear();
 
     // Load sync timestamps from recording.json
     m_partTimestamps.clear();
@@ -835,7 +841,8 @@ void Recorder::processRecordings() {
     // Step 3: Vertical video
     emit processingProgress(3, 0, "Creating vertical video");
     if (hasScreen && isVerticalMode) {
-        QString vertFile = m_outputDir + "/" + Merger::outputFileName(m_opts.number, m_opts.title, "vertical");
+        m_verticalFile = m_outputDir + "/" + Merger::outputFileName(m_opts.number, m_opts.title, "vertical");
+        QString vertFile = m_verticalFile;
         qint64 durationUs = Merger::getVideoDurationUs(m_screenFile);
 
         Merger::MergeInputs in{m_screenFile, audioToUse, m_webcamFile, m_opts, audioOffsetSec, webcamOffsetSec};
