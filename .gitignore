@@ -87,3 +87,6 @@ compile_commands.json
 *.moc
 moc_*.cpp
 *_autogen/
+git.sh
+log.txt
+docs/superpowers
