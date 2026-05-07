@@ -1015,6 +1015,7 @@ private slots:
 
   void testCanvasMaintains16x9OnExactResize() {
     Canvas c;
+    c.show();
     c.resize(800, 450); // exactly 16:9
     QApplication::processEvents();
     double ar = double(c.canvasWidth()) / c.canvasHeight();
@@ -1026,6 +1027,7 @@ private slots:
   void testCanvasMaintains16x9OnTallResize() {
     // Widget is taller than 16:9 - canvas should pillarbox vertically
     Canvas c;
+    c.show();
     c.resize(800, 800); // very tall, not 16:9
     QApplication::processEvents();
     double ar = double(c.canvasWidth()) / c.canvasHeight();
@@ -1037,6 +1039,7 @@ private slots:
   void testCanvasMaintains16x9OnWideResize() {
     // Widget is wider than 16:9 - canvas should letterbox horizontally
     Canvas c;
+    c.show();
     c.resize(1200, 400); // very wide, not 16:9
     QApplication::processEvents();
     double ar = double(c.canvasWidth()) / c.canvasHeight();
@@ -1047,6 +1050,7 @@ private slots:
 
   void testCanvasSmallerThanWidgetWhenNotMatching() {
     Canvas c;
+    c.show();
     c.resize(800, 800); // very tall
     QApplication::processEvents();
     // Canvas height should be less than widget height (letterboxed)
@@ -1059,6 +1063,7 @@ private slots:
 
   void testCanvasWidthConstrainedByHeight() {
     Canvas c;
+    c.show();
     c.resize(1200, 400); // very wide
     QApplication::processEvents();
     // Canvas height should use full widget height
@@ -1075,6 +1080,7 @@ private slots:
     QVERIFY(dir.isValid());
     QString path = createTestImage(200, 100, dir.path());
     Canvas c;
+    c.show();
     c.addLogo(path);
     auto before = c.exportItems()[0];
     double arBefore = double(before.w) / before.h;
@@ -1092,6 +1098,7 @@ private slots:
 
   void testCanvasAspectRatioAfterMultipleResizes() {
     Canvas c;
+    c.show();
     QList<QSize> sizes = {{800, 450}, {600, 600}, {1200, 400}, {400, 225}, {1000, 1000}};
     for (const auto &sz : sizes) {
       c.resize(sz);
@@ -1105,6 +1112,7 @@ private slots:
 
   void testWebcamAspectRatioAfterNon16x9Resize() {
     Canvas c;
+    c.show();
     c.addWebcam("v0", "Cam", 2); // rect webcam, 4:3
     auto before = c.exportItems()[0];
 
