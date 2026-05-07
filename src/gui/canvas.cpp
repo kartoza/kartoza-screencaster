@@ -119,6 +119,8 @@ void Canvas::setMode(int mode) {
             item.w = std::max(10, int(relW * newFrame.width()));
             if (item.type == 1) {
                 item.h = (item.shape == 0) ? item.w : item.w * 3 / 4;
+            } else if (item.type == 2 && !item.pixmap.isNull() && item.pixmap.width() > 0) {
+                item.h = std::max(10, item.w * item.pixmap.height() / item.pixmap.width());
             } else {
                 item.h = std::max(10, int(relH * newFrame.height()));
             }
@@ -457,8 +459,21 @@ QRect Canvas::frameRect() const {
 }
 
 void Canvas::resizeEvent(QResizeEvent *event) {
-    m_cw = event->size().width();
-    m_ch = event->size().height();
+    int widgetW = event->size().width();
+    int widgetH = event->size().height();
+
+    // Maintain 16:9 aspect ratio — fit largest 16:9 rect inside widget
+    int targetW = widgetW;
+    int targetH = targetW * 9 / 16;
+    if (targetH > widgetH) {
+        targetH = widgetH;
+        targetW = targetH * 16 / 9;
+    }
+
+    m_offsetX = (widgetW - targetW) / 2;
+    m_offsetY = (widgetH - targetH) / 2;
+    m_cw = targetW;
+    m_ch = targetH;
 
     // Rescale all items from old frame to new frame
     QRect newFrame = frameRect();
@@ -478,6 +493,8 @@ void Canvas::resizeEvent(QResizeEvent *event) {
             item.w = std::max(10, int(relW * newFrame.width()));
             if (item.type == 1) {
                 item.h = (item.shape == 0) ? item.w : item.w * 3 / 4;
+            } else if (item.type == 2 && !item.pixmap.isNull() && item.pixmap.width() > 0) {
+                item.h = std::max(10, item.w * item.pixmap.height() / item.pixmap.width());
             } else {
                 item.h = std::max(10, int(relH * newFrame.height()));
             }
@@ -502,7 +519,7 @@ bool Canvas::hitTest(const CanvasItem &item, int mx, int my) const {
 // === Input events ===
 
 void Canvas::mousePressEvent(QMouseEvent *event) {
-    int mx = event->pos().x(), my = event->pos().y();
+    int mx = event->pos().x() - m_offsetX, my = event->pos().y() - m_offsetY;
     int hit = -1;
     for (int i = m_items.size()-1; i >= 0; i--) {
         if (!m_items[i].visible || m_items[i].type == 0) continue;
@@ -523,8 +540,8 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
 void Canvas::mouseMoveEvent(QMouseEvent *event) {
     if (m_dragging < 0) return;
     auto &item = m_items[m_dragging];
-    int nx = event->pos().x() - m_dragOffX;
-    int ny = event->pos().y() - m_dragOffY;
+    int nx = event->pos().x() - m_offsetX - m_dragOffX;
+    int ny = event->pos().y() - m_offsetY - m_dragOffY;
     item.x = std::clamp(nx, item.w/2, m_cw - item.w/2);
     item.y = std::clamp(ny, item.h/2, m_ch - item.h/2);
 
@@ -546,8 +563,8 @@ void Canvas::mouseReleaseEvent(QMouseEvent *) {
 }
 
 void Canvas::wheelEvent(QWheelEvent *event) {
-    int mx = event->position().toPoint().x();
-    int my = event->position().toPoint().y();
+    int mx = event->position().toPoint().x() - m_offsetX;
+    int my = event->position().toPoint().y() - m_offsetY;
     for (int i = m_items.size()-1; i >= 0; i--) {
         auto &item = m_items[i];
         if (!item.visible || item.type == 0) continue;
@@ -558,6 +575,9 @@ void Canvas::wheelEvent(QWheelEvent *event) {
                 // Webcam: maintain aspect ratio
                 if (item.shape == 0) item.h = item.w; // round: square
                 else item.h = item.w * 3 / 4; // 4:3 aspect
+            } else if (item.type == 2 && !item.pixmap.isNull() && item.pixmap.width() > 0) {
+                // Logo: maintain original image aspect ratio
+                item.h = std::max(10, item.w * item.pixmap.height() / item.pixmap.width());
             } else {
                 item.h = std::max(15, item.h + delta);
             }
@@ -590,7 +610,10 @@ void Canvas::keyPressEvent(QKeyEvent *event) {
 
 void Canvas::paintEvent(QPaintEvent *) {
     QPainter painter(this);
+    // Fill entire widget with background (letterbox/pillarbox margins)
     painter.fillRect(rect(), QColor(17, 17, 27));
+    // Translate to the 16:9 canvas area
+    painter.translate(m_offsetX, m_offsetY);
     drawScreen(painter);
 
     // Draw items (skip screen)
@@ -674,10 +697,11 @@ void Canvas::paintEvent(QPaintEvent *) {
 void Canvas::drawScreen(QPainter &painter) {
     bool hasScreen = !m_screenPixmap.isNull();
 
+    QRect canvasRect(0, 0, m_cw, m_ch);
     if (m_mode == 0) {
-        if (hasScreen) painter.drawPixmap(rect(), m_screenPixmap);
+        if (hasScreen) painter.drawPixmap(canvasRect, m_screenPixmap);
         else {
-            painter.fillRect(rect(), QColor(30, 30, 46));
+            painter.fillRect(canvasRect, QColor(30, 30, 46));
             painter.setPen(QColor(108, 112, 134));
             painter.drawText(QPoint(m_cw/2-20, m_ch/2), "Screen");
         }

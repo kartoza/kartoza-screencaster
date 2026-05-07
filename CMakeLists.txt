@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(kartoza-screencaster VERSION 1.3.0 LANGUAGES CXX)
+project(kartoza-screencaster VERSION 1.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,8 +43,13 @@ find_package(Qt6 REQUIRED COMPONENTS
     Multimedia
     MultimediaWidgets
     Concurrent
-    DBus
 )
+
+# D-Bus is optional (Linux only — not available on Windows)
+find_package(Qt6 COMPONENTS DBus QUIET)
+if(Qt6DBus_FOUND)
+    add_compile_definitions(HAS_DBUS)
+endif()
 
 set(SOURCES
     src/main.cpp
@@ -74,9 +79,11 @@ set(SOURCES
     src/config/config.h
     src/platform/platform.cpp
     src/platform/platform.h
-    src/dbus/dbusservice.cpp
-    src/dbus/dbusservice.h
 )
+
+if(Qt6DBus_FOUND)
+    list(APPEND SOURCES src/dbus/dbusservice.cpp src/dbus/dbusservice.h)
+endif()
 
 qt6_add_resources(RESOURCES resources/resources.qrc)
 add_executable(${PROJECT_NAME} ${SOURCES} ${RESOURCES})
@@ -87,8 +94,11 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Multimedia
     Qt6::MultimediaWidgets
     Qt6::Concurrent
-    Qt6::DBus
 )
+
+if(Qt6DBus_FOUND)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::DBus)
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE src)
 
@@ -132,6 +142,14 @@ if(Qt6Test_FOUND)
     add_unit_test(test_recorder tests/test_recorder.cpp)
     add_unit_test(test_merger_exhaustive tests/test_merger_exhaustive.cpp)
     target_compile_definitions(test_merger_exhaustive PRIVATE SRCDIR="${CMAKE_SOURCE_DIR}")
+
+    # History test needs historypage source
+    add_executable(test_history tests/test_history.cpp
+        src/gui/historypage.cpp src/gui/historypage.h
+        ${TEST_SOURCES})
+    target_link_libraries(test_history PRIVATE Qt6::Core Qt6::Test Qt6::Multimedia Qt6::MultimediaWidgets Qt6::Widgets Qt6::Concurrent)
+    target_include_directories(test_history PRIVATE src)
+    add_test(NAME test_history COMMAND test_history)
 
     # Canvas test needs GUI sources
     add_executable(test_canvas tests/test_canvas.cpp

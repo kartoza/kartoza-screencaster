@@ -13,8 +13,7 @@
 #include <QSlider>
 #include <QMediaPlayer>
 #include <QAudioOutput>
-#include <QVideoSink>
-#include <QVideoFrame>
+#include <QVideoWidget>
 
 /**
  * @struct RecordingEntry
@@ -53,6 +52,14 @@ public:
     explicit HistoryPage(QWidget *parent = nullptr);
     /** @brief Reload the recording list from disk. */
     void refresh();
+    /**
+     * @brief Find the best available video file for playback.
+     * @param rec The recording entry to search.
+     * @return Path to the preferred video file.
+     *
+     * Static so it can be unit-tested without a full HistoryPage widget.
+     */
+    static QString findBestVideo(const RecordingEntry &rec);
 
 signals:
     /**
@@ -84,12 +91,6 @@ private:
     void setupUI();
     /** @brief Scan the output directory and populate the recording list. */
     void loadRecordings();
-    /**
-     * @brief Find the best available video file for playback.
-     * @param rec The recording entry to search.
-     * @return Path to the preferred video file.
-     */
-    QString findBestVideo(const RecordingEntry &rec);
 
     /** @brief List widget displaying available recordings. */
     QListWidget *m_list;
@@ -97,10 +98,8 @@ private:
     QLineEdit *m_searchInput;
 
     // -- Player widgets --
-    /** @brief Label used as the video rendering surface. */
-    QLabel *m_videoLabel;
-    /** @brief Video sink receiving decoded frames for display. */
-    QVideoSink *m_videoSink;
+    /** @brief Video display widget for inline playback. */
+    QVideoWidget *m_videoWidget;
     /** @brief Media player instance for inline playback. */
     QMediaPlayer *m_player;
     /** @brief Audio output device for playback. */

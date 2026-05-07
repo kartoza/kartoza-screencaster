@@ -172,6 +172,18 @@ QWidget *MainWindow::createSidebar() {
 
   layout->addStretch();
 
+  auto *quitBtn = new QPushButton("Quit");
+  quitBtn->setToolTip("Quit the application completely.");
+  quitBtn->setStyleSheet(R"(
+        QPushButton { background-color: transparent; color: #f38ba8; border: none; padding: 12px 20px; text-align: left; font-size: 14px; }
+        QPushButton:hover { background-color: #313244; }
+    )");
+  connect(quitBtn, &QPushButton::clicked, this, [this]() {
+    setProperty("quitting", true);
+    QApplication::quit();
+  });
+  layout->addWidget(quitBtn);
+
   auto *sep = new QFrame;
   sep->setFrameShape(QFrame::HLine);
   sep->setStyleSheet("color: #313244;");

@@ -10,6 +10,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QWheelEvent>
+#include <QImage>
+#include <QPainter>
 #include "gui/canvas.h"
 #include "config/config.h"
 
@@ -20,6 +23,23 @@ class TestCanvas : public QObject {
   void addWebcams(Canvas &c, int n) {
     for (int i = 0; i < n; i++)
       c.addWebcam(QString("video%1").arg(i), QString("Cam%1").arg(i), i % 3);
+  }
+
+  // Helper: create a temporary PNG with given dimensions, returns path
+  QString createTestImage(int width, int height, const QString &dir) {
+    QString path = dir + "/test_logo.png";
+    QImage img(width, height, QImage::Format_ARGB32);
+    img.fill(Qt::red);
+    img.save(path, "PNG");
+    return path;
+  }
+
+  // Helper: send a wheel scroll event to a canvas at a given position
+  void sendWheelEvent(Canvas &c, QPoint pos, int angleDelta) {
+    QWheelEvent event(QPointF(pos), QPointF(pos), QPoint(0, 0),
+                      QPoint(0, angleDelta), Qt::NoButton,
+                      Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(&c, &event);
   }
 
 private slots:
@@ -783,6 +803,326 @@ private slots:
     QVERIFY(e.y >= fr.y() - e.h);
   }
 
+  // =========================================================================
+  // 13. LOGO ASPECT RATIO PRESERVATION (10 tests)
+  // =========================================================================
+
+  void testLogoInitialAspectRatio() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    // Create a 200x100 image (2:1 aspect ratio)
+    QString path = createTestImage(200, 100, dir.path());
+    Canvas c;
+    c.addLogo(path);
+    auto e = c.exportItems()[0];
+    // The initial aspect ratio should match the image (2:1)
+    double ar = double(e.w) / e.h;
+    QVERIFY2(qAbs(ar - 2.0) < 0.1,
+             qPrintable(QString("Expected ~2.0 aspect ratio, got %1 (w=%2 h=%3)")
+                        .arg(ar).arg(e.w).arg(e.h)));
+  }
+
+  void testLogoAspectRatioPreservedOnWheelUp() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    // Create a 200x100 image (2:1 aspect ratio)
+    QString path = createTestImage(200, 100, dir.path());
+    Canvas c;
+    c.addLogo(path);
+    auto before = c.exportItems()[0];
+    double arBefore = double(before.w) / before.h;
+
+    // Send wheel-up event at the logo's center position
+    QPoint logoCenter(before.x, before.y);
+    sendWheelEvent(c, logoCenter, 120); // scroll up = enlarge
+
+    auto after = c.exportItems()[0];
+    QVERIFY2(after.w > before.w, "Logo should have grown");
+    double arAfter = double(after.w) / after.h;
+    QVERIFY2(qAbs(arAfter - arBefore) < 0.15,
+             qPrintable(QString("Aspect ratio changed from %1 to %2 (w=%3 h=%4)")
+                        .arg(arBefore).arg(arAfter).arg(after.w).arg(after.h)));
+  }
+
+  void testLogoAspectRatioPreservedOnWheelDown() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    // Create a 300x100 image (3:1 aspect ratio)
+    QString path = createTestImage(300, 100, dir.path());
+    Canvas c;
+    c.addLogo(path);
+    auto before = c.exportItems()[0];
+    double arBefore = double(before.w) / before.h;
+
+    QPoint logoCenter(before.x, before.y);
+    sendWheelEvent(c, logoCenter, -120); // scroll down = shrink
+
+    auto after = c.exportItems()[0];
+    QVERIFY2(after.w < before.w, "Logo should have shrunk");
+    double arAfter = double(after.w) / after.h;
+    QVERIFY2(qAbs(arAfter - arBefore) < 0.15,
+             qPrintable(QString("Aspect ratio changed from %1 to %2")
+                        .arg(arBefore).arg(arAfter)));
+  }
+
+  void testLogoAspectRatioAfterMultipleWheelEvents() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    // Create a 400x100 image (4:1 aspect ratio)
+    QString path = createTestImage(400, 100, dir.path());
+    Canvas c;
+    c.addLogo(path);
+    auto initial = c.exportItems()[0];
+    double arInitial = double(initial.w) / initial.h;
+
+    QPoint logoCenter(initial.x, initial.y);
+    // Scroll up 10 times
+    for (int i = 0; i < 10; i++) {
+      auto cur = c.exportItems()[0];
+      sendWheelEvent(c, QPoint(cur.x, cur.y), 120);
+    }
+
+    auto after = c.exportItems()[0];
+    double arAfter = double(after.w) / after.h;
+    QVERIFY2(qAbs(arAfter - arInitial) < 0.2,
+             qPrintable(QString("After 10 wheel events, aspect ratio drifted from %1 to %2")
+                        .arg(arInitial).arg(arAfter)));
+  }
+
+  void testLogoTallAspectRatioPreserved() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    // Create a 100x400 image (0.25:1 tall aspect ratio)
+    QString path = createTestImage(100, 400, dir.path());
+    Canvas c;
+    c.addLogo(path);
+    auto before = c.exportItems()[0];
+    double arBefore = double(before.w) / before.h;
+
+    QPoint logoCenter(before.x, before.y);
+    for (int i = 0; i < 5; i++) {
+      auto cur = c.exportItems()[0];
+      sendWheelEvent(c, QPoint(cur.x, cur.y), 120);
+    }
+
+    auto after = c.exportItems()[0];
+    double arAfter = double(after.w) / after.h;
+    QVERIFY2(qAbs(arAfter - arBefore) < 0.15,
+             qPrintable(QString("Tall logo aspect ratio changed from %1 to %2")
+                        .arg(arBefore).arg(arAfter)));
+  }
+
+  void testLogoSquareAspectRatioPreserved() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    // Create a 200x200 image (1:1 square aspect ratio)
+    QString path = createTestImage(200, 200, dir.path());
+    Canvas c;
+    c.addLogo(path);
+    auto before = c.exportItems()[0];
+
+    QPoint logoCenter(before.x, before.y);
+    for (int i = 0; i < 5; i++) {
+      auto cur = c.exportItems()[0];
+      sendWheelEvent(c, QPoint(cur.x, cur.y), 120);
+    }
+
+    auto after = c.exportItems()[0];
+    double arAfter = double(after.w) / after.h;
+    QVERIFY2(qAbs(arAfter - 1.0) < 0.15,
+             qPrintable(QString("Square logo aspect ratio drifted to %1 (w=%2 h=%3)")
+                        .arg(arAfter).arg(after.w).arg(after.h)));
+  }
+
+  void testLogoAspectRatioOnModeChange() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString path = createTestImage(200, 100, dir.path());
+    Canvas c;
+    c.addLogo(path);
+    auto before = c.exportItems()[0];
+    double arBefore = double(before.w) / before.h;
+
+    // Switch to vertical mode
+    c.setMode(1);
+    auto after = c.exportItems()[0];
+    double arAfter = double(after.w) / after.h;
+    QVERIFY2(qAbs(arAfter - arBefore) < 0.3,
+             qPrintable(QString("Mode change broke aspect ratio from %1 to %2")
+                        .arg(arBefore).arg(arAfter)));
+  }
+
+  void testLogoAspectRatioOnResize() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString path = createTestImage(200, 100, dir.path());
+    Canvas c;
+    c.addLogo(path);
+    auto before = c.exportItems()[0];
+    double arBefore = double(before.w) / before.h;
+
+    // Simulate a resize event
+    c.resize(800, 450);
+    QApplication::processEvents();
+
+    auto after = c.exportItems()[0];
+    double arAfter = double(after.w) / after.h;
+    QVERIFY2(qAbs(arAfter - arBefore) < 0.3,
+             qPrintable(QString("Resize broke aspect ratio from %1 to %2")
+                        .arg(arBefore).arg(arAfter)));
+  }
+
+  void testLogoWheelDoesNotShrinkBelowMinimum() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString path = createTestImage(200, 100, dir.path());
+    Canvas c;
+    c.addLogo(path);
+    auto e = c.exportItems()[0];
+
+    // Scroll down many times to hit minimum
+    for (int i = 0; i < 50; i++) {
+      auto cur = c.exportItems()[0];
+      sendWheelEvent(c, QPoint(cur.x, cur.y), -120);
+    }
+
+    auto after = c.exportItems()[0];
+    QVERIFY2(after.w >= 20, qPrintable(QString("Width below minimum: %1").arg(after.w)));
+    QVERIFY2(after.h >= 1, qPrintable(QString("Height below minimum: %1").arg(after.h)));
+  }
+
+  void testLogoWidensNotSquashes() {
+    // Regression test: a wide logo (e.g. 400x50) should stay wide when resized
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString path = createTestImage(400, 50, dir.path());
+    Canvas c;
+    c.addLogo(path);
+    auto before = c.exportItems()[0];
+
+    QPoint logoCenter(before.x, before.y);
+    sendWheelEvent(c, logoCenter, 120);
+
+    auto after = c.exportItems()[0];
+    // Width should always be greater than height for an 8:1 logo
+    QVERIFY2(after.w > after.h,
+             qPrintable(QString("Wide logo became taller than wide! w=%1 h=%2")
+                        .arg(after.w).arg(after.h)));
+  }
+  // =========================================================================
+  // 14. CANVAS ASPECT RATIO ON WINDOW RESIZE (8 tests)
+  // =========================================================================
+
+  void testCanvasMaintains16x9OnExactResize() {
+    Canvas c;
+    c.show();
+    c.resize(800, 450); // exactly 16:9
+    QApplication::processEvents();
+    double ar = double(c.canvasWidth()) / c.canvasHeight();
+    QVERIFY2(qAbs(ar - 16.0/9.0) < 0.05,
+             qPrintable(QString("Canvas AR should be 16:9 (~1.78), got %1 (w=%2 h=%3)")
+                        .arg(ar).arg(c.canvasWidth()).arg(c.canvasHeight())));
+  }
+
+  void testCanvasMaintains16x9OnTallResize() {
+    // Widget is taller than 16:9 - canvas should pillarbox vertically
+    Canvas c;
+    c.show();
+    c.resize(800, 800); // very tall, not 16:9
+    QApplication::processEvents();
+    double ar = double(c.canvasWidth()) / c.canvasHeight();
+    QVERIFY2(qAbs(ar - 16.0/9.0) < 0.05,
+             qPrintable(QString("Tall widget: canvas AR should be 16:9, got %1 (w=%2 h=%3)")
+                        .arg(ar).arg(c.canvasWidth()).arg(c.canvasHeight())));
+  }
+
+  void testCanvasMaintains16x9OnWideResize() {
+    // Widget is wider than 16:9 - canvas should letterbox horizontally
+    Canvas c;
+    c.show();
+    c.resize(1200, 400); // very wide, not 16:9
+    QApplication::processEvents();
+    double ar = double(c.canvasWidth()) / c.canvasHeight();
+    QVERIFY2(qAbs(ar - 16.0/9.0) < 0.05,
+             qPrintable(QString("Wide widget: canvas AR should be 16:9, got %1 (w=%2 h=%3)")
+                        .arg(ar).arg(c.canvasWidth()).arg(c.canvasHeight())));
+  }
+
+  void testCanvasSmallerThanWidgetWhenNotMatching() {
+    Canvas c;
+    c.show();
+    c.resize(800, 800); // very tall
+    QApplication::processEvents();
+    // Canvas height should be less than widget height (letterboxed)
+    QVERIFY2(c.canvasHeight() < 800,
+             qPrintable(QString("Canvas height %1 should be less than widget height 800")
+                        .arg(c.canvasHeight())));
+    // Canvas width should use full widget width (constrained by height)
+    QCOMPARE(c.canvasWidth(), 800);
+  }
+
+  void testCanvasWidthConstrainedByHeight() {
+    Canvas c;
+    c.show();
+    c.resize(1200, 400); // very wide
+    QApplication::processEvents();
+    // Canvas height should use full widget height
+    QCOMPARE(c.canvasHeight(), 400);
+    // Canvas width should be less than widget width (pillarboxed)
+    int expectedW = 400 * 16 / 9;
+    QVERIFY2(c.canvasWidth() <= expectedW + 1 && c.canvasWidth() >= expectedW - 1,
+             qPrintable(QString("Canvas width %1 should be ~%2 for 16:9")
+                        .arg(c.canvasWidth()).arg(expectedW)));
+  }
+
+  void testLogoAspectRatioOnNon16x9Resize() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString path = createTestImage(200, 100, dir.path());
+    Canvas c;
+    c.show();
+    c.addLogo(path);
+    auto before = c.exportItems()[0];
+    double arBefore = double(before.w) / before.h;
+
+    // Resize to a very non-16:9 shape
+    c.resize(600, 600);
+    QApplication::processEvents();
+
+    auto after = c.exportItems()[0];
+    double arAfter = double(after.w) / after.h;
+    QVERIFY2(qAbs(arAfter - arBefore) < 0.3,
+             qPrintable(QString("Non-16:9 resize broke logo AR from %1 to %2")
+                        .arg(arBefore).arg(arAfter)));
+  }
+
+  void testCanvasAspectRatioAfterMultipleResizes() {
+    Canvas c;
+    c.show();
+    QList<QSize> sizes = {{800, 450}, {600, 600}, {1200, 400}, {400, 225}, {1000, 1000}};
+    for (const auto &sz : sizes) {
+      c.resize(sz);
+      QApplication::processEvents();
+      double ar = double(c.canvasWidth()) / c.canvasHeight();
+      QVERIFY2(qAbs(ar - 16.0/9.0) < 0.05,
+               qPrintable(QString("After resize to %1x%2: canvas AR %3 != 16:9")
+                          .arg(sz.width()).arg(sz.height()).arg(ar)));
+    }
+  }
+
+  void testWebcamAspectRatioAfterNon16x9Resize() {
+    Canvas c;
+    c.show();
+    c.addWebcam("v0", "Cam", 2); // rect webcam, 4:3
+    auto before = c.exportItems()[0];
+
+    c.resize(600, 600); // non-16:9
+    QApplication::processEvents();
+
+    auto after = c.exportItems()[0];
+    // 4:3 webcam: h should be w * 3/4
+    QCOMPARE(after.h, after.w * 3 / 4);
+  }
 };
 
 QTEST_MAIN(TestCanvas)
