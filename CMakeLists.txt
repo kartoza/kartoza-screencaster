@@ -43,6 +43,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Multimedia
     MultimediaWidgets
     Concurrent
+    Svg
 )
 
 # D-Bus is optional (Linux only — not available on Windows)
@@ -94,6 +95,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Multimedia
     Qt6::MultimediaWidgets
     Qt6::Concurrent
+    Qt6::Svg
 )
 
 if(Qt6DBus_FOUND)

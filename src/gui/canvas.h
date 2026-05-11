@@ -99,6 +99,8 @@ public:
     bool isVertical() const { return m_mode >= 1; }
     /** @brief Return the total number of overlay items. */
     int itemCount() const { return m_items.size(); }
+    /** @brief Check whether an item at the given index is the screen layer. */
+    bool isScreenItem(int index) const { return index >= 0 && index < m_items.size() && m_items[index].type == 0; }
     /** @brief Return the logical canvas width in pixels. */
     int canvasWidth() const { return m_cw; }
     /** @brief Return the logical canvas height in pixels. */

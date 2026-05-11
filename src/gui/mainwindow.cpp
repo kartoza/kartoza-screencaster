@@ -5,10 +5,49 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHideEvent>
+#include <QPainter>
 #include <QShowEvent>
+#include <QSvgRenderer>
 #include <QTimer>
 #include <QVBoxLayout>
 #include "gui/canvas.h"
+
+/**
+ * @brief A large circular stop button matching the systray recording icon.
+ *
+ * Renders the ready.svg at large size with a red dot in the center.
+ * Clicking stops the recording.
+ */
+class StopCircleButton : public QWidget {
+    Q_OBJECT
+public:
+    explicit StopCircleButton(QWidget *parent = nullptr) : QWidget(parent) {
+        setFixedSize(200, 200);
+        setCursor(Qt::PointingHandCursor);
+        setToolTip("Click to stop recording");
+        m_renderer = new QSvgRenderer(QString(":/icons/ready.svg"), this);
+    }
+signals:
+    void clicked();
+protected:
+    void paintEvent(QPaintEvent *) override {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        // Render the SVG icon scaled to fill the widget
+        m_renderer->render(&p, rect());
+        // Red recording dot in center
+        int inset = 70;
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor("#f38ba8"));
+        p.drawEllipse(rect().adjusted(inset, inset, -inset, -inset));
+    }
+    void mousePressEvent(QMouseEvent *event) override {
+        Q_UNUSED(event);
+        emit clicked();
+    }
+private:
+    QSvgRenderer *m_renderer;
+};
 
 MainWindow::MainWindow(const QString &version, QWidget *parent)
     : QMainWindow(parent), m_version(version) {
@@ -60,6 +99,43 @@ void MainWindow::setupUI() {
   m_content->addWidget(m_settingsPage);
   m_content->addWidget(m_processingPage);
 
+  // Recording-in-progress page: large stop button + elapsed timer
+  m_recordingPage = new QWidget;
+  m_recordingPage->setStyleSheet("background-color: #1e1e2e;");
+  auto *recLayout = new QVBoxLayout(m_recordingPage);
+  recLayout->setAlignment(Qt::AlignCenter);
+  auto *recLabel = new QLabel("Recording in progress");
+  recLabel->setStyleSheet("color: #f38ba8; font-size: 20px; font-weight: bold;");
+  recLabel->setAlignment(Qt::AlignCenter);
+  recLayout->addWidget(recLabel);
+  recLayout->addSpacing(20);
+  auto *stopCircle = new StopCircleButton;
+  recLayout->addWidget(stopCircle, 0, Qt::AlignCenter);
+  recLayout->addSpacing(20);
+  m_recordingElapsed = new QLabel("00:00:00");
+  m_recordingElapsed->setStyleSheet("color: #cdd6f4; font-size: 28px; font-weight: bold; font-family: monospace;");
+  m_recordingElapsed->setAlignment(Qt::AlignCenter);
+  recLayout->addWidget(m_recordingElapsed);
+  auto *stopHint = new QLabel("Click the circle to stop");
+  stopHint->setStyleSheet("color: #6c7086; font-size: 12px;");
+  stopHint->setAlignment(Qt::AlignCenter);
+  recLayout->addWidget(stopHint);
+  m_content->addWidget(m_recordingPage);
+
+  connect(stopCircle, &StopCircleButton::clicked, m_recordPage, &RecordPage::onStopClicked);
+
+  m_recordingTimer = new QTimer(this);
+  connect(m_recordingTimer, &QTimer::timeout, this, [this]() {
+    qint64 ms = m_recordPage->recorder()->elapsedMs();
+    int h = ms / 3600000;
+    int m = (ms / 60000) % 60;
+    int s = (ms / 1000) % 60;
+    m_recordingElapsed->setText(QString("%1:%2:%3")
+        .arg(h, 2, 10, QChar('0'))
+        .arg(m, 2, 10, QChar('0'))
+        .arg(s, 2, 10, QChar('0')));
+  });
+
   topLayout->addWidget(m_content, 1);
   mainLayout->addWidget(topArea, 1);
   mainLayout->addWidget(createFooter());
@@ -72,11 +148,13 @@ void MainWindow::setupUI() {
 
   // Connect recorder signals — this is native Qt signals/slots, works across threads!
   connect(m_recordPage, &RecordPage::recordingStarted, this, [this]() {
-    hideToTray();
+    navigateTo(PageRecording);
+    m_recordingTimer->start(200);
     QMainWindow::statusBar()->showMessage("Recording...");
   });
   connect(m_recordPage, &RecordPage::recordingStopped, this, [this]() {
-    showFromTray();
+    m_recordingTimer->stop();
+    m_recordingElapsed->setText("00:00:00");
     navigateTo(PageProcessing);
     m_processingPage->startMonitoring(m_recordPage->recorder());
   });
@@ -92,6 +170,10 @@ void MainWindow::setupUI() {
   connect(m_processingPage, &ProcessingPage::backToHistory, this, [this]() {
     m_historyPage->refresh();
     navigateTo(PageHistory);
+  });
+  connect(m_processingPage, &ProcessingPage::processingCancelled, this, [this]() {
+    navigateTo(PageRecord);
+    QMainWindow::statusBar()->showMessage("Processing cancelled");
   });
 
   // Reprocess from history
@@ -294,3 +376,5 @@ void MainWindow::navigateTo(Page page) {
   else if (prev != PageRecord && page == PageRecord)
     m_recordPage->resumePreviews();
 }
+
+#include "mainwindow.moc"

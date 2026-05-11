@@ -346,6 +346,37 @@ private slots:
     QVERIFY(r.isPaused());
   }
 
+  void testCancelProcessingDoesNotCrash() {
+    QTemporaryDir tmp;
+    auto *r = new Recorder;
+
+    RecordingOptions opts;
+    opts.outputDir = tmp.path();
+    opts.noScreen = true;
+    opts.noAudio = true;
+    opts.noWebcam = true;
+    opts.title = "cancel-test";
+
+    r->start(opts);
+
+    QSignalSpy finishedSpy(r, &Recorder::processingFinished);
+    r->stop(); // starts processing thread
+
+    // Cancel immediately — processing may already be done (no inputs = fast)
+    r->cancelProcessing();
+
+    // Wait for processing to finish (either cancelled or completed)
+    finishedSpy.wait(10000);
+    QVERIFY(finishedSpy.count() >= 1);
+
+    // Allow event loop to process thread cleanup
+    QTest::qWait(200);
+    // Main assertion: no crash
+    QVERIFY(true);
+
+    delete r;
+  }
+
   void testSignalsFiredOnStartAndPause() {
     QTemporaryDir tmp;
     Recorder r;

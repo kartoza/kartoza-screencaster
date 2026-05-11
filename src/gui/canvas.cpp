@@ -1,5 +1,6 @@
 #include "gui/canvas.h"
 #include "config/config.h"
+#include "monitor/monitor.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <QMouseEvent>
@@ -428,10 +429,16 @@ void Canvas::captureScreen() {
     if (!wayland.isEmpty()) {
         proc.start("grim", {"-o", m_monitorName, "-t", "png", "-l", "0", path});
     } else {
-        // X11: use ffmpeg to grab a single frame
+        // X11: use ffmpeg to grab a single frame at monitor geometry
         QString display = qEnvironmentVariable("DISPLAY", ":0");
-        proc.start("ffmpeg", {"-y", "-f", "x11grab", "-video_size", "1920x1080",
-                              "-i", display, "-frames:v", "1", path});
+        int monW = m_monitor.width > 0 ? m_monitor.width : 1920;
+        int monH = m_monitor.height > 0 ? m_monitor.height : 1080;
+        int monX = m_monitor.x;
+        int monY = m_monitor.y;
+        proc.start("ffmpeg", {"-y", "-f", "x11grab",
+                              "-video_size", QString("%1x%2").arg(monW).arg(monH),
+                              "-i", QString("%1+%2,%3").arg(display).arg(monX).arg(monY),
+                              "-frames:v", "1", path});
     }
 #elif defined(Q_OS_MACOS)
     proc.start("screencapture", {"-x", path});

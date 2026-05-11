@@ -8,6 +8,7 @@
  */
 #pragma once
 
+#include <atomic>
 #include <QObject>
 #include <QProcess>
 #include <QString>
@@ -111,6 +112,8 @@ public slots:
     void resume();
     /** @brief Re-run post-processing on an existing recording folder. */
     void reprocess(const QString &folder);
+    /** @brief Cancel in-progress post-processing. */
+    void cancelProcessing();
 
 signals:
     /** @brief Emitted when recording has successfully started. */
@@ -203,5 +206,6 @@ private:
     void writeRecordingJson(const QString &status);
 
     bool m_processing = false;             /**< True while post-processing is running. */
+    std::atomic<bool> m_cancelRequested{false}; /**< Set to true to abort processing between steps. */
     QThread *m_processingThread = nullptr; /**< Worker thread for post-processing. */
 };

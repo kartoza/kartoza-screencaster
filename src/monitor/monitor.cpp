@@ -1,4 +1,5 @@
 #include "monitor/monitor.h"
+#include "platform/platform.h"
 #include <QProcess>
 #include <QRegularExpression>
 #include <QJsonDocument>
@@ -7,17 +8,23 @@
 #include <QDebug>
 
 QList<MonitorInfo> Monitor::listMonitors() {
-    // Try cosmic-randr first
-    auto monitors = listMonitorsCosmic();
-    if (!monitors.isEmpty()) return monitors;
+    QList<MonitorInfo> monitors;
 
-    // Try hyprctl
-    monitors = listMonitorsHyprland();
-    if (!monitors.isEmpty()) return monitors;
+    if (Platform::isWayland()) {
+        // Try Wayland compositor tools
+        monitors = listMonitorsCosmic();
+        if (!monitors.isEmpty()) return monitors;
 
-    // Try swaymsg
-    monitors = listMonitorsSway();
-    if (!monitors.isEmpty()) return monitors;
+        monitors = listMonitorsHyprland();
+        if (!monitors.isEmpty()) return monitors;
+
+        monitors = listMonitorsSway();
+        if (!monitors.isEmpty()) return monitors;
+    } else {
+        // Try X11
+        monitors = listMonitorsX11();
+        if (!monitors.isEmpty()) return monitors;
+    }
 
     // Fallback
     MonitorInfo fallback;
@@ -135,6 +142,36 @@ QList<MonitorInfo> Monitor::listMonitorsSway() {
 
         monitors.append(mon);
     }
+    return monitors;
+}
+
+QList<MonitorInfo> Monitor::listMonitorsX11() {
+    QProcess proc;
+    proc.start("xrandr", {"--query"});
+    if (!proc.waitForFinished(3000)) return {};
+
+    QString output = proc.readAllStandardOutput();
+    QList<MonitorInfo> monitors;
+
+    // Pattern: "DP-0 connected primary 1920x1080+0+0 ..."
+    // or:      "HDMI-0 connected 1920x1080+1920+0 ..."
+    QRegularExpression re(
+        R"(^(\S+)\s+connected\s+(primary\s+)?(\d+)x(\d+)\+(\d+)\+(\d+))",
+        QRegularExpression::MultilineOption);
+
+    auto it = re.globalMatch(output);
+    while (it.hasNext()) {
+        auto match = it.next();
+        MonitorInfo mon;
+        mon.name = match.captured(1);
+        mon.focused = !match.captured(2).isEmpty(); // primary = focused
+        mon.width = match.captured(3).toInt();
+        mon.height = match.captured(4).toInt();
+        mon.x = match.captured(5).toInt();
+        mon.y = match.captured(6).toInt();
+        monitors.append(mon);
+    }
+
     return monitors;
 }
 

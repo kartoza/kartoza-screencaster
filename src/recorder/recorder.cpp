@@ -1,5 +1,6 @@
 #include "recorder/recorder.h"
 #include "merger/merger.h"
+#include "monitor/monitor.h"
 #include "platform/platform.h"
 #include <QCoreApplication>
 #include <QDebug>
@@ -258,19 +259,27 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
             // ffmpeg x11grab for X11
             cmd = "ffmpeg";
             QString display = qEnvironmentVariable("DISPLAY", ":0");
+
+            // Look up monitor geometry by name via xrandr
+            int monW = 1920, monH = 1080, monX = 0, monY = 0;
+            if (!opts.monitor.isEmpty()) {
+                auto monitors = Monitor::listMonitors();
+                for (const auto &mon : monitors) {
+                    if (mon.name == opts.monitor) {
+                        monW = mon.width;
+                        monH = mon.height;
+                        monX = mon.x;
+                        monY = mon.y;
+                        break;
+                    }
+                }
+            }
+
             args << "-y" << "-f" << "x11grab"
                  << "-framerate" << "30"
-                 << "-video_size" << QString("%1x%2").arg(
-                        opts.monitor.isEmpty() ? "1920" : QString::number(0),
-                        opts.monitor.isEmpty() ? "1080" : QString::number(0));
-            // If monitor name looks like a geometry (e.g. "1920x1080+0+0"), use it
-            // Otherwise capture the full default display
-            if (opts.monitor.contains('+')) {
-                args << "-i" << (display + "+" + opts.monitor.split('+').mid(1).join("+"));
-            } else {
-                args << "-i" << display;
-            }
-            args << "-c:v" << "libx264" << "-preset" << "ultrafast"
+                 << "-video_size" << QString("%1x%2").arg(monW).arg(monH)
+                 << "-i" << QString("%1+%2,%3").arg(display).arg(monX).arg(monY)
+                 << "-c:v" << "libx264" << "-preset" << "ultrafast"
                  << "-crf" << "18" << "-pix_fmt" << "yuv420p"
                  << m_screenFile;
         }
@@ -734,8 +743,16 @@ void Recorder::reprocess(const QString &folder) {
     m_processingThread->start();
 }
 
+void Recorder::cancelProcessing() {
+    m_cancelRequested = true;
+    if (m_processingThread && m_processingThread->isRunning()) {
+        m_processingThread->requestInterruption();
+    }
+}
+
 void Recorder::processRecordings() {
     m_processing = true;
+    m_cancelRequested = false;
     emit processingStarted();
 
     // Concatenate parts if we had pause/resume cycles
@@ -783,6 +800,8 @@ void Recorder::processRecordings() {
         emit processingStepDone(0, "Analyzing audio", true);
     }
 
+    if (m_cancelRequested) { m_processing = false; emit processingFinished(false); return; }
+
     // Step 1: Normalize audio
     emit processingProgress(1, 0, "Normalizing audio");
     if (hasAudio && loudnorm.valid) {
@@ -816,6 +835,8 @@ void Recorder::processRecordings() {
     // Mode 1/2/3 (vertical/left split/right split) = vertical video only
     bool isVerticalMode = m_opts.canvasMode >= 1;
 
+    if (m_cancelRequested) { m_processing = false; emit processingFinished(false); return; }
+
     // Step 2: Merged landscape video
     emit processingProgress(2, 0, "Merging video & audio");
     if (hasScreen && !isVerticalMode) {
@@ -837,6 +858,8 @@ void Recorder::processRecordings() {
     } else {
         emit processingStepDone(2, "Merging video & audio", !isVerticalMode ? true : true);
     }
+
+    if (m_cancelRequested) { m_processing = false; emit processingFinished(false); return; }
 
     // Step 3: Vertical video
     emit processingProgress(3, 0, "Creating vertical video");

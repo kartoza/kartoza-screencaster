@@ -206,7 +206,7 @@ void RecordPage::setupUI() {
 
     m_presetList = new QListWidget;
     m_presetList->setMaximumHeight(80);
-    m_presetList->setStyleSheet("QListWidget { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #45475a; }");
+    m_presetList->setStyleSheet("QListWidget { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #45475a; } QListWidget QLineEdit { background: #45475a; color: #cdd6f4; border: 1px solid #89b4fa; padding: 2px; }");
     leftLayout->addWidget(m_presetList);
 
     // Name input row (hidden until "New" is clicked)
@@ -236,6 +236,46 @@ void RecordPage::setupUI() {
     delPresetBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 3px; font-size: 10px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }");
     presetBtnRow->addWidget(delPresetBtn);
     leftLayout->addLayout(presetBtnRow);
+
+    // Double-click preset -> rename it inline
+    connect(m_presetList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+        if (!item) return;
+        QString text = item->text();
+        if (text.startsWith("* ")) text = text.mid(2);
+        item->setFlags(item->flags() | Qt::ItemIsEditable);
+        m_presetList->blockSignals(true);
+        item->setData(Qt::UserRole, text); // stash original name
+        item->setText(text); // remove the "* " prefix for editing
+        m_presetList->blockSignals(false);
+        m_presetList->editItem(item);
+    });
+
+    connect(m_presetList, &QListWidget::itemChanged, this, [this](QListWidgetItem *item) {
+        if (m_restoring || !item) return;
+        QString oldName = item->data(Qt::UserRole).toString();
+        if (oldName.isEmpty()) return; // not a rename
+        QString newName = item->text().trimmed();
+        item->setData(Qt::UserRole, QVariant()); // clear stash
+        item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+
+        if (newName.isEmpty() || newName == oldName) {
+            refreshPresetList(); // revert display
+            return;
+        }
+
+        auto &cfg = Config::instance();
+        if (cfg.presets.contains(newName)) {
+            refreshPresetList(); // name collision, revert
+            return;
+        }
+
+        CanvasState state = cfg.presets.take(oldName);
+        cfg.presets[newName] = state;
+        if (cfg.activePreset == oldName) cfg.activePreset = newName;
+        cfg.save();
+        refreshPresetList();
+        emit presetChanged();
+    });
 
     // Click preset in list -> load it
     connect(m_presetList, &QListWidget::currentRowChanged, this, [this](int row) {
@@ -752,6 +792,7 @@ void RecordPage::restoreCanvasState() {
 void RecordPage::refreshPresetList() {
     auto &cfg = Config::instance();
     m_restoring = true;
+    m_presetList->blockSignals(true);
     m_presetList->clear();
     int activeRow = -1;
     int row = 0;
@@ -763,6 +804,7 @@ void RecordPage::refreshPresetList() {
         row++;
     }
     if (activeRow >= 0) m_presetList->setCurrentRow(activeRow);
+    m_presetList->blockSignals(false);
     m_restoring = false;
 }
 

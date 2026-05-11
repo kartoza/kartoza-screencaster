@@ -29,14 +29,14 @@ struct MonitorInfo {
 };
 
 /**
- * @brief Utility class for detecting monitors across Wayland compositors.
+ * @brief Utility class for detecting monitors across display servers.
  *
- * Supports Hyprland, Sway, and COSMIC desktop environments.
+ * Supports Wayland compositors (Hyprland, Sway, COSMIC) and X11 (xrandr).
  */
 class Monitor {
 public:
     /**
-     * @brief Detects all connected monitors using the active compositor.
+     * @brief Detects all connected monitors using the active display server.
      * @return List of MonitorInfo structs, one per display.
      */
     static QList<MonitorInfo> listMonitors();
@@ -55,4 +55,6 @@ private:
     static QList<MonitorInfo> listMonitorsHyprland();
     /** @brief Lists monitors via swaymsg (Sway / wlroots). */
     static QList<MonitorInfo> listMonitorsSway();
+    /** @brief Lists monitors via xrandr (X11). */
+    static QList<MonitorInfo> listMonitorsX11();
 };

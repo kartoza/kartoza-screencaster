@@ -65,6 +65,15 @@ ProcessingPage::ProcessingPage(QWidget *parent) : QWidget(parent) {
     auto *btnRow = new QHBoxLayout;
     btnRow->setSpacing(8);
 
+    m_cancelBtn = new QPushButton("Cancel Processing");
+    m_cancelBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }");
+    connect(m_cancelBtn, &QPushButton::clicked, this, [this]() {
+        if (m_recorder) m_recorder->cancelProcessing();
+        m_cancelBtn->hide();
+        emit processingCancelled();
+    });
+    btnRow->addWidget(m_cancelBtn);
+
     m_openFolderBtn = new QPushButton("Open Folder");
     m_openFolderBtn->setStyleSheet("QPushButton { background: #89b4fa; color: #1e1e2e; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; } QPushButton:hover { background: #74c7ec; }");
     m_openFolderBtn->hide();
@@ -116,6 +125,7 @@ void ProcessingPage::startMonitoring(Recorder *recorder) {
         lbl->hide();
     }
     m_summaryLabel->hide();
+    m_cancelBtn->show();
     m_backBtn->hide();
     m_openFolderBtn->hide();
 
@@ -174,6 +184,7 @@ void ProcessingPage::startMonitoring(Recorder *recorder) {
     // Processing finished
     connect(recorder, &Recorder::processingFinished, this, [this](bool success) {
         m_elapsedTimer->stop();
+        m_cancelBtn->hide();
 
         if (success) {
             m_summaryLabel->setText("Processing complete!");
