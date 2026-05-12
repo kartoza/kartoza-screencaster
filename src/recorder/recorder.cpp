@@ -30,7 +30,10 @@ Recorder::~Recorder() {
     }
     // Wait for processing thread to finish — it accesses our members
     if (m_processingThread) {
+        // Disconnect the thread's finished signal to prevent deleteLater conflict
+        m_processingThread->disconnect(this);
         if (m_processingThread->isRunning()) {
+            m_cancelRequested = true;
             m_processingThread->wait(10000);
         }
         delete m_processingThread;
