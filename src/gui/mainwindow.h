@@ -34,7 +34,7 @@ public:
     explicit MainWindow(const QString &version, QWidget *parent = nullptr);
 
     /** @brief Identifiers for the navigable content pages. */
-    enum Page { PageRecord = 0, PageHistory, PageSettings, PageProcessing };
+    enum Page { PageRecord = 0, PageHistory, PageSettings, PageProcessing, PageRecording };
 
     /** @brief Access the record page (for D-Bus service registration). */
     RecordPage *recordPage() { return m_recordPage; }
@@ -97,6 +97,13 @@ private:
 
     /** @brief Timer that polls for help-text updates. */
     QTimer *m_helpPoller;
+
+    /** @brief Full-window recording indicator with stop button. */
+    QWidget *m_recordingPage = nullptr;
+    /** @brief Elapsed time label on the recording page. */
+    QLabel *m_recordingElapsed = nullptr;
+    /** @brief Timer to update elapsed display on recording page. */
+    QTimer *m_recordingTimer = nullptr;
 
     /** @brief True when window is conceptually hidden to systray. */
     bool m_hiddenToTray = false;

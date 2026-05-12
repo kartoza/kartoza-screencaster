@@ -41,6 +41,8 @@ signals:
     void processingDone(bool success);
     /** @brief Emitted when the user requests navigation back to the history page. */
     void backToHistory();
+    /** @brief Emitted when the user cancels processing. */
+    void processingCancelled();
 
 private:
     /** @brief Progress bars for each processing task. */
@@ -55,6 +57,8 @@ private:
     QLabel *m_summaryLabel;
     /** @brief Button to navigate back to the history page. */
     QPushButton *m_backBtn;
+    /** @brief Button to cancel processing. */
+    QPushButton *m_cancelBtn;
     /** @brief Button to open the output folder in the file manager. */
     QPushButton *m_openFolderBtn;
     /** @brief Timer updating the elapsed time display. */

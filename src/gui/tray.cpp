@@ -3,12 +3,15 @@
 #include "config/config.h"
 #include <QApplication>
 #include <QIcon>
+#include <QPainter>
+#include <QPixmap>
 #include <QDebug>
 
 Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     : QObject(mainWindow), m_mainWindow(mainWindow), m_recordPage(recordPage) {
 
     m_trayIcon = new QSystemTrayIcon(this);
+    m_svgRenderer = new QSvgRenderer(QString(":/icons/ready.svg"), this);
     m_countdownTimer = new QTimer(this);
     connect(m_countdownTimer, &QTimer::timeout, this, &Tray::onCountdownTick);
 
@@ -84,7 +87,6 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     // Track recorder state changes
     connect(m_recordPage, &RecordPage::recordingStarted, this, [this]() {
         setState(Recording);
-        m_mainWindow->hideToTray();
     });
     connect(m_recordPage, &RecordPage::recordingStopped, this, [this]() {
         setState(Processing);
@@ -110,6 +112,16 @@ Tray::Tray(MainWindow *mainWindow, RecordPage *recordPage)
     });
     connect(m_recordPage, &RecordPage::presetChanged, this, [this]() {
         refreshPresetMenu();
+    });
+
+    // Countdown numbers in systray icon
+    connect(m_recordPage, &RecordPage::countdownStarted, this, [this]() {
+        m_state = Countdown;
+        updateMenuState();
+    });
+    connect(m_recordPage, &RecordPage::countdownTick, this, [this](int secs) {
+        m_trayIcon->setIcon(buildCountdownIcon(secs));
+        m_trayIcon->setToolTip(QString("Starting in %1...").arg(secs));
     });
 
     setState(Idle);
@@ -198,6 +210,27 @@ void Tray::onCountdownTick() {
     } else {
         m_trayIcon->setToolTip(QString("Starting in %1...").arg(m_countdownVal));
     }
+}
+
+QIcon Tray::buildCountdownIcon(int number) {
+    QPixmap pix(64, 64);
+    pix.fill(Qt::transparent);
+    QPainter p(&pix);
+    p.setRenderHint(QPainter::Antialiasing);
+
+    // Render the base SVG
+    m_svgRenderer->render(&p, QRectF(0, 0, 64, 64));
+
+    // Draw the number in the center
+    QFont font;
+    font.setPixelSize(28);
+    font.setBold(true);
+    p.setFont(font);
+    p.setPen(QColor("#cdd6f4"));
+    p.drawText(QRect(0, 0, 64, 64), Qt::AlignCenter, QString::number(number));
+
+    p.end();
+    return QIcon(pix);
 }
 
 void Tray::refreshPresetMenu() {

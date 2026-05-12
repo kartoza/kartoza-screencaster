@@ -3,13 +3,6 @@ set -euo pipefail
 
 VERSION="v1.4.0"
 
-# 1. Merge the PR
-gh pr merge --merge
-
-# 2. Switch to main and pull
-git checkout main
-git pull origin main
-
 # 3. Tag and push
 git tag -a "$VERSION" -m "Release $VERSION"
 git push origin "$VERSION"
@@ -17,7 +10,8 @@ git push origin "$VERSION"
 # 4. Create GitHub release (triggers release.yml to build all OS binaries)
 gh release create "$VERSION" \
   --title "Kartoza Screencaster $VERSION" \
-  --notes "$(cat <<'NOTES'
+  --notes "$(
+    cat <<'NOTES'
 ## What's New in 1.4.0
 
 ### History Page Playback
@@ -45,7 +39,7 @@ gh release create "$VERSION" \
 ---
 Made with :heart: by [Kartoza](https://kartoza.com) | [Donate](https://github.com/sponsors/kartoza) | [GitHub](https://github.com/kartoza/kartoza-screencaster)
 NOTES
-)"
+  )"
 
 echo ""
 echo "Release $VERSION created!"

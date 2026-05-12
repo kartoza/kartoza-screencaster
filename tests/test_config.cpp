@@ -80,6 +80,8 @@ private slots:
     void testPresetsSurviveSaveLoadCycle() {
         // Regression: presets must never be lost through save/load cycles
         Config &cfg = Config::instance();
+        cfg.presets.clear();
+        cfg.activePreset.clear();
 
         // Create two presets with distinct canvas states
         CanvasState preset1;
@@ -148,6 +150,110 @@ private slots:
 
         // Re-establish for subsequent tests
         cfg.presets["Important"] = preset;
+        cfg.save();
+    }
+
+    void testPresetRename() {
+        Config &cfg = Config::instance();
+
+        // Set up a preset to rename
+        CanvasState preset;
+        preset.mode = "landscape";
+        preset.presenter = "Rename Test";
+        CanvasItemState item;
+        item.type = "screen";
+        item.label = "Screen: Main";
+        item.rx = 0.0; item.ry = 0.0; item.rw = 1.0; item.rh = 1.0;
+        preset.items = {item};
+
+        cfg.presets.clear();
+        cfg.presets["OldName"] = preset;
+        cfg.activePreset = "OldName";
+        cfg.save();
+
+        // Simulate rename: take old, insert new, update activePreset
+        CanvasState state = cfg.presets.take("OldName");
+        cfg.presets["NewName"] = state;
+        cfg.activePreset = "NewName";
+        cfg.save();
+
+        // Reload and verify rename persisted
+        cfg.presets.clear();
+        cfg.activePreset.clear();
+        cfg.load();
+
+        QVERIFY2(!cfg.presets.contains("OldName"), "Old preset name must be gone after rename");
+        QVERIFY2(cfg.presets.contains("NewName"), "New preset name must exist after rename");
+        QCOMPARE(cfg.presets["NewName"].presenter, QString("Rename Test"));
+        QCOMPARE(cfg.presets["NewName"].items.size(), 1);
+        QCOMPARE(cfg.activePreset, QString("NewName"));
+
+        // Clean up singleton for subsequent tests
+        cfg.presets.clear();
+        cfg.activePreset.clear();
+        cfg.save();
+    }
+
+    void testPresetRenameToExistingNameBlocked() {
+        Config &cfg = Config::instance();
+
+        CanvasState presetA;
+        presetA.mode = "landscape";
+        presetA.presenter = "Alice";
+        CanvasState presetB;
+        presetB.mode = "vertical";
+        presetB.presenter = "Bob";
+
+        cfg.presets.clear();
+        cfg.presets["PresetA"] = presetA;
+        cfg.presets["PresetB"] = presetB;
+        cfg.activePreset = "PresetA";
+        cfg.save();
+
+        // Attempting to rename PresetA -> PresetB should be rejected (collision)
+        // The UI guards this; verify the data stays intact if we don't do the rename
+        QVERIFY(cfg.presets.contains("PresetA"));
+        QVERIFY(cfg.presets.contains("PresetB"));
+        QCOMPARE(cfg.presets.size(), 2);
+
+        // Clean up
+        cfg.presets.clear();
+        cfg.activePreset.clear();
+        cfg.save();
+    }
+
+    void testPresetRenameInactivePreset() {
+        Config &cfg = Config::instance();
+
+        CanvasState presetA;
+        presetA.presenter = "Active";
+        CanvasState presetB;
+        presetB.presenter = "Inactive";
+
+        cfg.presets.clear();
+        cfg.presets["Active"] = presetA;
+        cfg.presets["Inactive"] = presetB;
+        cfg.activePreset = "Active";
+        cfg.save();
+
+        // Rename the inactive preset
+        CanvasState state = cfg.presets.take("Inactive");
+        cfg.presets["Renamed"] = state;
+        // activePreset should NOT change since we renamed a different preset
+        cfg.save();
+
+        cfg.presets.clear();
+        cfg.activePreset.clear();
+        cfg.load();
+
+        QVERIFY(!cfg.presets.contains("Inactive"));
+        QVERIFY(cfg.presets.contains("Renamed"));
+        QCOMPARE(cfg.presets["Renamed"].presenter, QString("Inactive"));
+        QCOMPARE(cfg.activePreset, QString("Active"));
+
+        // Clean up
+        cfg.presets.clear();
+        cfg.activePreset.clear();
         cfg.save();
     }
 

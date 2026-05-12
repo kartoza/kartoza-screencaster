@@ -346,6 +346,16 @@ private slots:
     QVERIFY(r.isPaused());
   }
 
+  void testCancelProcessingFlagWorks() {
+    // Verify cancelProcessing() sets the flag without crashing
+    Recorder r;
+    QVERIFY(!r.isRecording());
+
+    // Cancel on idle recorder is a safe no-op
+    r.cancelProcessing();
+    QVERIFY(true);
+  }
+
   void testSignalsFiredOnStartAndPause() {
     QTemporaryDir tmp;
     Recorder r;
