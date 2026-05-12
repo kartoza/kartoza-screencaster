@@ -6,6 +6,7 @@
 #include <QSystemTrayIcon>
 #include <QMenu>
 #include <QTimer>
+#include <QSvgRenderer>
 #include "gui/recordpage.h"
 
 class MainWindow;
@@ -32,6 +33,8 @@ private:
     void startCountdown();
     void onCountdownTick();
     void refreshPresetMenu();
+    /** @brief Build icon from SVG with a number overlay in the center. */
+    QIcon buildCountdownIcon(int number);
 
     QSystemTrayIcon *m_trayIcon;
     QMenu *m_menu = nullptr;
@@ -46,4 +49,5 @@ private:
 
     QTimer *m_countdownTimer = nullptr;
     int m_countdownVal = 0;
+    QSvgRenderer *m_svgRenderer = nullptr;
 };

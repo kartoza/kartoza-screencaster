@@ -146,9 +146,13 @@ void MainWindow::setupUI() {
 
   setCentralWidget(central);
 
+  // Hide window when countdown starts
+  connect(m_recordPage, &RecordPage::countdownStarted, this, [this]() {
+    hideToTray();
+  });
+
   // Connect recorder signals — this is native Qt signals/slots, works across threads!
   connect(m_recordPage, &RecordPage::recordingStarted, this, [this]() {
-    navigateTo(PageRecording);
     m_recordingTimer->start(200);
     QMainWindow::statusBar()->showMessage("Recording...");
   });

@@ -57,6 +57,10 @@ protected:
     void showEvent(QShowEvent *event) override;
 
 signals:
+    /** @brief Emitted when the pre-recording countdown begins. */
+    void countdownStarted();
+    /** @brief Emitted each second during countdown with remaining seconds. */
+    void countdownTick(int secondsRemaining);
     /** @brief Emitted when a recording session begins. */
     void recordingStarted();
     /** @brief Emitted when a recording session ends. */

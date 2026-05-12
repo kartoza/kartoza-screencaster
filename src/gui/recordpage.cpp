@@ -573,6 +573,8 @@ void RecordPage::onStartClicked() {
     m_statusLabel->setText("Starting in 5...");
     m_statusLabel->setStyleSheet("QLabel { color: #fab387; font-size: 13px; font-weight: bold; }");
     m_startBtn->setEnabled(false);
+    emit countdownStarted();
+    emit countdownTick(5);
     m_countdownTimer->start(1000);
 }
 
@@ -632,6 +634,7 @@ void RecordPage::onCountdownTick() {
         m_recorder->start(opts);
     } else {
         m_statusLabel->setText(QString("Starting in %1...").arg(m_countdownVal));
+        emit countdownTick(m_countdownVal);
     }
 }
 
