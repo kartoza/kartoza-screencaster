@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(kartoza-screencaster VERSION 1.5.0 LANGUAGES CXX)
+project(kartoza-screencaster VERSION 1.6.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,6 +44,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     MultimediaWidgets
     Concurrent
     Svg
+    Network
 )
 
 # D-Bus is optional (Linux only — not available on Windows)
@@ -80,6 +81,8 @@ set(SOURCES
     src/config/config.h
     src/platform/platform.cpp
     src/platform/platform.h
+    src/youtube/youtube.cpp
+    src/youtube/youtube.h
 )
 
 if(Qt6DBus_FOUND)
@@ -96,6 +99,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::MultimediaWidgets
     Qt6::Concurrent
     Qt6::Svg
+    Qt6::Network
 )
 
 if(Qt6DBus_FOUND)
@@ -128,11 +132,13 @@ if(Qt6Test_FOUND)
         src/webcam/webcam.h
         src/platform/platform.cpp
         src/platform/platform.h
+        src/youtube/youtube.cpp
+        src/youtube/youtube.h
     )
 
     macro(add_unit_test name source)
         add_executable(${name} ${source} ${TEST_SOURCES})
-        target_link_libraries(${name} PRIVATE Qt6::Core Qt6::Test Qt6::Multimedia Qt6::Widgets)
+        target_link_libraries(${name} PRIVATE Qt6::Core Qt6::Test Qt6::Multimedia Qt6::Widgets Qt6::Network)
         target_include_directories(${name} PRIVATE src)
         add_test(NAME ${name} COMMAND ${name})
     endmacro()
@@ -142,6 +148,7 @@ if(Qt6Test_FOUND)
     add_unit_test(test_monitor tests/test_monitor.cpp)
     add_unit_test(test_pipeline tests/test_pipeline.cpp)
     add_unit_test(test_recorder tests/test_recorder.cpp)
+    add_unit_test(test_youtube tests/test_youtube.cpp)
     add_unit_test(test_merger_exhaustive tests/test_merger_exhaustive.cpp)
     target_compile_definitions(test_merger_exhaustive PRIVATE SRCDIR="${CMAKE_SOURCE_DIR}")
 

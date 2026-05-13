@@ -12,6 +12,9 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QLabel>
+#include <QProgressBar>
+
+class YouTube;
 
 /**
  * @class SettingsPage
@@ -68,6 +71,16 @@ private:
     QLineEdit *m_topicInput;
     /** @brief Label showing YouTube API connection status. */
     QLabel *m_ytStatusLabel;
+    /** @brief Input for YouTube OAuth Client ID. */
+    QLineEdit *m_ytClientIdInput;
+    /** @brief Input for YouTube OAuth Client Secret. */
+    QLineEdit *m_ytClientSecretInput;
+    /** @brief Label showing the connected YouTube channel name. */
+    QLabel *m_ytChannelLabel;
+    /** @brief YouTube API instance. */
+    YouTube *m_youtube = nullptr;
+    /** @brief Update the YouTube status display based on current state. */
+    void refreshYouTubeStatus();
 
     /** @brief Current title colour value. */
     QString m_titleColor;

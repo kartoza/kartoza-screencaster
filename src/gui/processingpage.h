@@ -61,6 +61,12 @@ private:
     QPushButton *m_cancelBtn;
     /** @brief Button to open the output folder in the file manager. */
     QPushButton *m_openFolderBtn;
+    /** @brief Button to upload the processed video to YouTube. */
+    QPushButton *m_uploadBtn;
+    /** @brief Progress bar for YouTube upload. */
+    QProgressBar *m_uploadBar;
+    /** @brief Label showing YouTube link after upload. */
+    QLabel *m_ytLinkLabel;
     /** @brief Timer updating the elapsed time display. */
     QTimer *m_elapsedTimer;
     /** @brief Elapsed timer tracking processing wall-clock time. */

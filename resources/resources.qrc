@@ -4,5 +4,6 @@
     <file alias="recording.png">icon_recording.png</file>
     <file alias="paused.png">icon_paused.png</file>
     <file alias="ready.svg">icon_ready.svg</file>
+    <file alias="kartoza.svg">kartoza_symbol.svg</file>
   </qresource>
 </RCC>

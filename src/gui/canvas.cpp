@@ -21,7 +21,7 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
     setMinimumSize(400, 225);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
-    setStyleSheet("background: #11111b; border-radius: 8px;");
+    setStyleSheet("background: #0f0f20; border-radius: 8px;");
 
     m_refreshTimer = new QTimer(this);
     m_refreshTimer->setInterval(2000);
@@ -618,7 +618,7 @@ void Canvas::keyPressEvent(QKeyEvent *event) {
 void Canvas::paintEvent(QPaintEvent *) {
     QPainter painter(this);
     // Fill entire widget with background (letterbox/pillarbox margins)
-    painter.fillRect(rect(), QColor(17, 17, 27));
+    painter.fillRect(rect(), QColor(15, 15, 32));
     // Translate to the 16:9 canvas area
     painter.translate(m_offsetX, m_offsetY);
     drawScreen(painter);
@@ -635,12 +635,12 @@ void Canvas::paintEvent(QPaintEvent *) {
                 painter.drawPixmap(QRect(item.x-item.w/2, item.y-item.h/2, item.w, item.h), item.pixmap);
             }
             if (isDragging || isSelected) {
-                painter.setPen(isSelected ? QColor(249, 226, 175) : QColor(137, 180, 250));
+                painter.setPen(isSelected ? QColor(232, 184, 74) : QColor(86, 159, 198));
                 painter.setBrush(Qt::NoBrush);
                 painter.drawRect(item.x-item.w/2, item.y-item.h/2, item.w, item.h);
             }
         } else if (item.type == 1) { // Webcam
-            QPen pen(isDragging ? QColor(137, 180, 250) : QColor(205, 214, 244));
+            QPen pen(isDragging ? QColor(86, 159, 198) : QColor(232, 232, 236));
             painter.setPen(pen);
 
             bool hasFrame = !item.webcamPixmap.isNull();
@@ -655,7 +655,7 @@ void Canvas::paintEvent(QPaintEvent *) {
                     painter.drawPixmap(QRect(item.x-r, item.y-r, item.w, item.h), item.webcamPixmap);
                     painter.restore();
                 } else {
-                    painter.setBrush(QColor(166, 227, 161));
+                    painter.setBrush(QColor(6, 150, 154));
                 }
                 painter.setBrush(Qt::NoBrush);
                 painter.drawEllipse(item.x-r, item.y-r, item.w, item.h);
@@ -664,7 +664,7 @@ void Canvas::paintEvent(QPaintEvent *) {
                 if (hasFrame) {
                     painter.drawPixmap(rect, item.webcamPixmap);
                 } else {
-                    painter.setBrush(QColor(166, 227, 161));
+                    painter.setBrush(QColor(6, 150, 154));
                     painter.drawRect(rect);
                 }
                 painter.setBrush(Qt::NoBrush);
@@ -672,11 +672,11 @@ void Canvas::paintEvent(QPaintEvent *) {
             }
 
             // Label
-            painter.setPen(QColor(205, 214, 244));
+            painter.setPen(QColor(232, 232, 236));
             painter.drawText(QPoint(item.x - item.w/3, item.y + item.h/2 + 12), item.label.left(10));
 
             if (isSelected) {
-                painter.setPen(QColor(249, 226, 175));
+                painter.setPen(QColor(232, 184, 74));
                 painter.setBrush(Qt::NoBrush);
                 painter.drawRect(item.x-item.w/2-3, item.y-item.h/2-3, item.w+6, item.h+6);
             }
@@ -684,10 +684,10 @@ void Canvas::paintEvent(QPaintEvent *) {
             painter.save();
             int fontSize = std::max(6, item.h * 2 / 3);
             painter.setFont(QFont("Sans", fontSize));
-            painter.setPen(isDragging ? QColor(137, 180, 250) : QColor(m_titleColor));
+            painter.setPen(isDragging ? QColor(86, 159, 198) : QColor(m_titleColor));
             painter.drawText(QPoint(item.x - item.w/2, item.y + item.h/4), item.label);
             if (isDragging || isSelected) {
-                painter.setPen(isSelected ? QColor(249, 226, 175) : QColor(137, 180, 250));
+                painter.setPen(isSelected ? QColor(232, 184, 74) : QColor(86, 159, 198));
                 painter.setBrush(Qt::NoBrush);
                 painter.drawRect(item.x-item.w/2-2, item.y-item.h/2-2, item.w+4, item.h+4);
             }
@@ -696,7 +696,7 @@ void Canvas::paintEvent(QPaintEvent *) {
     }
 
     // Mode label
-    painter.setPen(QColor(108, 112, 134));
+    painter.setPen(QColor(138, 139, 139));
     QStringList names = {"Landscape 16:9", "Vertical 9:16", "9:16 (Left Split)", "9:16 (Right Split)"};
     painter.drawText(QPoint(5, m_ch - 5), names.value(m_mode, ""));
 }
@@ -708,8 +708,8 @@ void Canvas::drawScreen(QPainter &painter) {
     if (m_mode == 0) {
         if (hasScreen) painter.drawPixmap(canvasRect, m_screenPixmap);
         else {
-            painter.fillRect(canvasRect, QColor(30, 30, 46));
-            painter.setPen(QColor(108, 112, 134));
+            painter.fillRect(canvasRect, QColor(26, 26, 46));
+            painter.setPen(QColor(138, 139, 139));
             painter.drawText(QPoint(m_cw/2-20, m_ch/2), "Screen");
         }
     } else {
@@ -743,7 +743,7 @@ void Canvas::drawScreen(QPainter &painter) {
         if (screenH < fh)
             painter.fillRect(QRect(fx, fy+screenH, fw, fh-screenH), Qt::white);
 
-        painter.setPen(QColor(137, 180, 250));
+        painter.setPen(QColor(86, 159, 198));
         painter.setBrush(Qt::NoBrush);
         painter.drawRect(fx, fy, fw, fh);
 
@@ -751,7 +751,7 @@ void Canvas::drawScreen(QPainter &painter) {
         painter.drawText(QPoint(fx+5, fy+fh+14), modeNames.value(m_mode, ""));
     }
 
-    painter.setPen(QColor(69, 71, 90));
+    painter.setPen(QColor(61, 61, 86));
     painter.setBrush(Qt::NoBrush);
     painter.drawRect(0, 0, m_cw-1, m_ch-1);
 }

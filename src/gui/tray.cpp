@@ -226,7 +226,7 @@ QIcon Tray::buildCountdownIcon(int number) {
     font.setPixelSize(28);
     font.setBold(true);
     p.setFont(font);
-    p.setPen(QColor("#cdd6f4"));
+    p.setPen(QColor("#e8e8ec"));
     p.drawText(QRect(0, 0, 64, 64), Qt::AlignCenter, QString::number(number));
 
     p.end();
