@@ -169,6 +169,27 @@ if(Qt6Test_FOUND)
     add_test(NAME test_canvas COMMAND test_canvas)
 endif()
 
+# --- CPack / Debian package ---
+set(CPACK_PACKAGE_NAME "kartoza-screencaster")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Screen recording tool with WYSIWYG canvas and YouTube upload")
+set(CPACK_PACKAGE_CONTACT "info@kartoza.com")
+set(CPACK_PACKAGE_VENDOR "Kartoza")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/kartoza/kartoza-screencaster")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+
+set(CPACK_GENERATOR "DEB")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Kartoza <info@kartoza.com>")
+set(CPACK_DEBIAN_PACKAGE_SECTION "video")
+set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS
+    "libqt6core6 (>= 6.2), libqt6widgets6 (>= 6.2), libqt6multimedia6 (>= 6.2), libqt6network6 (>= 6.2), libqt6svg6 (>= 6.2), ffmpeg, grim, wl-screenrec | xdg-utils")
+set(CPACK_DEBIAN_PACKAGE_DESCRIPTION
+    "Kartoza Screencaster - Professional screen recording tool.\n Features include WYSIWYG canvas layout, webcam overlay, logo placement,\n pause/resume, post-processing with audio normalization, and YouTube upload.\n Made with love by Kartoza (https://kartoza.com).")
+
+include(CPack)
+
 # Doxygen documentation
 find_package(Doxygen QUIET)
 if(DOXYGEN_FOUND)
