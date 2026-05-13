@@ -438,7 +438,8 @@ void Canvas::captureScreen() {
         proc.start("ffmpeg", {"-y", "-f", "x11grab",
                               "-video_size", QString("%1x%2").arg(monW).arg(monH),
                               "-i", QString("%1+%2,%3").arg(display).arg(monX).arg(monY),
-                              "-frames:v", "1", path});
+                              "-frames:v", "1",
+                              "-update", "1", path});
     }
 #elif defined(Q_OS_MACOS)
     proc.start("screencapture", {"-x", path});

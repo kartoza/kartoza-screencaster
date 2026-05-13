@@ -92,7 +92,7 @@ void Recorder::startRecordersForPart() {
 
     PartTimestamps ts;
 
-    if (!m_opts.noScreen && !m_opts.monitor.isEmpty()) {
+    if (!m_opts.noScreen) {
         m_screenFile = m_outputDir + "/screen" + partSuffix + ".mp4";
         m_screenParts.append(m_screenFile);
         startScreenRecorder(m_opts);
@@ -265,16 +265,14 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
 
             // Look up monitor geometry by name via xrandr
             int monW = 1920, monH = 1080, monX = 0, monY = 0;
-            if (!opts.monitor.isEmpty()) {
-                auto monitors = Monitor::listMonitors();
-                for (const auto &mon : monitors) {
-                    if (mon.name == opts.monitor) {
-                        monW = mon.width;
-                        monH = mon.height;
-                        monX = mon.x;
-                        monY = mon.y;
-                        break;
-                    }
+            auto monitors = Monitor::listMonitors();
+            for (const auto &mon : monitors) {
+                if (mon.name == opts.monitor || opts.monitor == "default") {
+                    monW = mon.width;
+                    monH = mon.height;
+                    monX = mon.x;
+                    monY = mon.y;
+                    break;
                 }
             }
 
