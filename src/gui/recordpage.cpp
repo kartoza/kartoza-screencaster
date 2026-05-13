@@ -51,8 +51,8 @@ void RecordPage::setupUI() {
     layout->setSpacing(10);
     layout->setContentsMargins(10, 10, 10, 10);
 
-    QString labelStyle = "QLabel { color: #cdd6f4; font-size: 12px; }";
-    QString inputStyle = "QLineEdit { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px; font-size: 12px; }";
+    QString labelStyle = "QLabel { color: #e8e8ec; font-size: 12px; }";
+    QString inputStyle = "QLineEdit { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; padding: 5px; font-size: 12px; }";
 
     // === Left sidebar ===
     auto *leftCol = new QWidget;
@@ -61,7 +61,7 @@ void RecordPage::setupUI() {
     leftLayout->setSpacing(6);
 
     auto *metaLabel = new QLabel("Recording");
-    metaLabel->setStyleSheet("QLabel { color: #89b4fa; font-size: 14px; font-weight: bold; }");
+    metaLabel->setStyleSheet("QLabel { color: #569FC6; font-size: 14px; font-weight: bold; }");
     leftLayout->addWidget(metaLabel);
 
     // Title
@@ -108,27 +108,27 @@ void RecordPage::setupUI() {
 
     // Description
     auto *descLbl = new QLabel("Description:");
-    descLbl->setStyleSheet("QLabel { color: #89b4fa; font-size: 12px; font-weight: bold; padding-top: 4px; }");
+    descLbl->setStyleSheet("QLabel { color: #569FC6; font-size: 12px; font-weight: bold; padding-top: 4px; }");
     leftLayout->addWidget(descLbl);
     m_descInput = new QTextEdit;
     m_descInput->setPlaceholderText("Optional description...");
-    m_descInput->setStyleSheet("QTextEdit { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 4px; font-size: 12px; }");
+    m_descInput->setStyleSheet("QTextEdit { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; padding: 4px; font-size: 12px; }");
     m_descInput->setMaximumHeight(60);
     m_descInput->setToolTip("Optional description for the recording.");
     leftLayout->addWidget(m_descInput);
 
     m_audioCheck = new QCheckBox("Record Audio");
     m_audioCheck->setChecked(true);
-    m_audioCheck->setStyleSheet("QCheckBox { color: #cdd6f4; font-size: 12px; }");
+    m_audioCheck->setStyleSheet("QCheckBox { color: #e8e8ec; font-size: 12px; }");
     m_audioCheck->setToolTip("Record microphone audio.");
     leftLayout->addWidget(m_audioCheck);
 
     // Canvas mode
     auto *modeLabel = new QLabel("Canvas Mode");
-    modeLabel->setStyleSheet("QLabel { color: #89b4fa; font-size: 12px; font-weight: bold; padding-top: 6px; }");
+    modeLabel->setStyleSheet("QLabel { color: #569FC6; font-size: 12px; font-weight: bold; padding-top: 6px; }");
     leftLayout->addWidget(modeLabel);
 
-    QString radioStyle = "QRadioButton { color: #cdd6f4; font-size: 12px; }";
+    QString radioStyle = "QRadioButton { color: #e8e8ec; font-size: 12px; }";
     m_modeGroup = new QButtonGroup(this);
 
     auto *landscapeRadio = new QRadioButton("Landscape 16:9");
@@ -158,40 +158,47 @@ void RecordPage::setupUI() {
 
     // Layer list
     auto *layerLabel = new QLabel("Layers");
-    layerLabel->setStyleSheet("QLabel { color: #89b4fa; font-size: 12px; font-weight: bold; padding-top: 6px; }");
+    layerLabel->setStyleSheet("QLabel { color: #569FC6; font-size: 12px; font-weight: bold; padding-top: 6px; }");
     layerLabel->setToolTip("Canvas elements in draw order.\nArrow keys to nudge. Delete to remove.");
     leftLayout->addWidget(layerLabel);
 
     m_layerList = new QListWidget;
     m_layerList->setMaximumHeight(120);
-    m_layerList->setStyleSheet("QListWidget { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #45475a; }");
+    m_layerList->setStyleSheet("QListWidget { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #3d3d56; }");
     connect(m_layerList, &QListWidget::currentRowChanged, m_canvas, &Canvas::setSelectedItem);
     leftLayout->addWidget(m_layerList);
 
     auto *layerBtnRow = new QHBoxLayout;
     layerBtnRow->setSpacing(4);
 
-    auto *upBtn = new QPushButton("Up");
-    upBtn->setFixedHeight(22);
-    upBtn->setStyleSheet("QPushButton { background: #45475a; color: #cdd6f4; border: none; border-radius: 3px; font-size: 10px; } QPushButton:hover { background: #585b70; }");
+    QString iconBtnStyle = "QPushButton { background: #3d3d56; color: #e8e8ec; border: none; border-radius: 3px; font-size: 14px; } QPushButton:hover { background: #4d4d68; }";
+    QString iconDelStyle = "QPushButton { background: #CC0403; color: #ffffff; border: none; border-radius: 3px; font-size: 14px; } QPushButton:hover { background: #E03030; }";
+
+    auto *upBtn = new QPushButton(QString::fromUtf8("\u25B2")); // up triangle
+    upBtn->setFixedSize(28, 24);
+    upBtn->setStyleSheet(iconBtnStyle);
+    upBtn->setToolTip("Move layer up");
     connect(upBtn, &QPushButton::clicked, this, [this]() {
         int r = m_layerList->currentRow();
         if (r > 0) { m_canvas->swapItems(r, r-1); refreshLayerList(); m_layerList->setCurrentRow(r-1); }
     });
     layerBtnRow->addWidget(upBtn);
 
-    auto *downBtn = new QPushButton("Down");
-    downBtn->setFixedHeight(22);
-    downBtn->setStyleSheet("QPushButton { background: #45475a; color: #cdd6f4; border: none; border-radius: 3px; font-size: 10px; } QPushButton:hover { background: #585b70; }");
+    auto *downBtn = new QPushButton(QString::fromUtf8("\u25BC")); // down triangle
+    downBtn->setFixedSize(28, 24);
+    downBtn->setStyleSheet(iconBtnStyle);
+    downBtn->setToolTip("Move layer down");
     connect(downBtn, &QPushButton::clicked, this, [this]() {
         int r = m_layerList->currentRow();
         if (r >= 0 && r < m_layerList->count()-1) { m_canvas->swapItems(r, r+1); refreshLayerList(); m_layerList->setCurrentRow(r+1); }
     });
     layerBtnRow->addWidget(downBtn);
+    layerBtnRow->addStretch(); // push destructive action right
 
-    auto *delBtn = new QPushButton("Del");
-    delBtn->setFixedHeight(22);
-    delBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 3px; font-size: 10px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }");
+    auto *delBtn = new QPushButton(QString::fromUtf8("\u2716")); // X mark
+    delBtn->setFixedSize(28, 24);
+    delBtn->setStyleSheet(iconDelStyle);
+    delBtn->setToolTip("Remove layer");
     connect(delBtn, &QPushButton::clicked, this, [this]() {
         int r = m_layerList->currentRow();
         if (r >= 0) { m_canvas->removeItem(r); refreshLayerList(); }
@@ -201,12 +208,12 @@ void RecordPage::setupUI() {
 
     // Preset management
     auto *presetLabel = new QLabel("Presets");
-    presetLabel->setStyleSheet("QLabel { color: #89b4fa; font-size: 12px; font-weight: bold; padding-top: 6px; }");
+    presetLabel->setStyleSheet("QLabel { color: #569FC6; font-size: 12px; font-weight: bold; padding-top: 6px; }");
     leftLayout->addWidget(presetLabel);
 
     m_presetList = new QListWidget;
     m_presetList->setMaximumHeight(80);
-    m_presetList->setStyleSheet("QListWidget { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #45475a; } QListWidget QLineEdit { background: #45475a; color: #cdd6f4; border: 1px solid #89b4fa; padding: 2px; }");
+    m_presetList->setStyleSheet("QListWidget { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #3d3d56; } QListWidget QLineEdit { background: #3d3d56; color: #e8e8ec; border: 1px solid #569FC6; padding: 2px; }");
     leftLayout->addWidget(m_presetList);
 
     // Name input row (hidden until "New" is clicked)
@@ -218,22 +225,26 @@ void RecordPage::setupUI() {
     m_presetNameInput->setPlaceholderText("New preset name...");
     m_presetNameInput->setStyleSheet(inputStyle);
     nameRowLayout->addWidget(m_presetNameInput);
-    auto *createBtn = new QPushButton("Create");
-    createBtn->setFixedHeight(24);
-    createBtn->setStyleSheet("QPushButton { background: #a6e3a1; color: #1e1e2e; border: none; border-radius: 3px; font-size: 10px; font-weight: bold; } QPushButton:hover { background: #94e2d5; }");
+    auto *createBtn = new QPushButton(QString::fromUtf8("\u2714")); // check mark
+    createBtn->setFixedSize(28, 24);
+    createBtn->setStyleSheet("QPushButton { background: #06969A; color: #ffffff; border: none; border-radius: 3px; font-size: 14px; } QPushButton:hover { background: #058084; }");
+    createBtn->setToolTip("Create preset");
     nameRowLayout->addWidget(createBtn);
     m_presetNameRow->hide();
     leftLayout->addWidget(m_presetNameRow);
 
     auto *presetBtnRow = new QHBoxLayout;
     presetBtnRow->setSpacing(4);
-    auto *newPresetBtn = new QPushButton("New");
-    newPresetBtn->setFixedHeight(22);
-    newPresetBtn->setStyleSheet("QPushButton { background: #45475a; color: #cdd6f4; border: none; border-radius: 3px; font-size: 10px; } QPushButton:hover { background: #585b70; }");
+    auto *newPresetBtn = new QPushButton(QString::fromUtf8("\u002B")); // plus
+    newPresetBtn->setFixedSize(28, 24);
+    newPresetBtn->setStyleSheet(iconBtnStyle);
+    newPresetBtn->setToolTip("New preset");
     presetBtnRow->addWidget(newPresetBtn);
-    auto *delPresetBtn = new QPushButton("Delete");
-    delPresetBtn->setFixedHeight(22);
-    delPresetBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 3px; font-size: 10px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }");
+    presetBtnRow->addStretch(); // push destructive action right
+    auto *delPresetBtn = new QPushButton(QString::fromUtf8("\u2716")); // X mark
+    delPresetBtn->setFixedSize(28, 24);
+    delPresetBtn->setStyleSheet(iconDelStyle);
+    delPresetBtn->setToolTip("Delete preset");
     presetBtnRow->addWidget(delPresetBtn);
     leftLayout->addLayout(presetBtnRow);
 
@@ -368,10 +379,10 @@ void RecordPage::setupUI() {
     addRow->setSpacing(8);
 
     auto *addBtn = new QPushButton("+ Add Element");
-    addBtn->setStyleSheet("QPushButton { background: #89b4fa; color: #1e1e2e; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: bold; } QPushButton:hover { background: #74c7ec; }");
+    addBtn->setStyleSheet("QPushButton { background: #569FC6; color: #ffffff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: bold; } QPushButton:hover { background: #4889B0; }");
 
     auto *addMenu = new QMenu(this);
-    addMenu->setStyleSheet("QMenu { background: #1e1e2e; color: #cdd6f4; border: 1px solid #45475a; } QMenu::item { padding: 6px 20px; } QMenu::item:selected { background: #45475a; }");
+    addMenu->setStyleSheet("QMenu { background: #1a1a2e; color: #e8e8ec; border: 1px solid #3d3d56; } QMenu::item { padding: 6px 20px; } QMenu::item:selected { background: #3d3d56; }");
 
     auto *screenMenu = addMenu->addMenu("Screen");
     for (const auto &mon : m_monitors) {
@@ -418,10 +429,10 @@ void RecordPage::setupUI() {
     gifLayout->setContentsMargins(0, 0, 0, 0);
     gifLayout->setSpacing(4);
 
-    QString smallBtnStyle = "QPushButton { background: #45475a; color: #cdd6f4; border: none; border-radius: 3px; padding: 4px 8px; font-size: 10px; } QPushButton:hover { background: #585b70; } QPushButton:checked { background: #89b4fa; color: #1e1e2e; }";
+    QString smallBtnStyle = "QPushButton { background: #3d3d56; color: #e8e8ec; border: none; border-radius: 3px; padding: 4px 8px; font-size: 10px; } QPushButton:hover { background: #4d4d68; } QPushButton:checked { background: #569FC6; color: #ffffff; }";
 
     auto *loopLabel = new QLabel("GIF:");
-    loopLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 10px; }");
+    loopLabel->setStyleSheet("QLabel { color: #8A8B8B; font-size: 10px; }");
     gifLayout->addWidget(loopLabel);
 
     auto *btnCont = new QPushButton("Loop");
@@ -441,7 +452,7 @@ void RecordPage::setupUI() {
     loopCountSpin->setValue(3);
     loopCountSpin->setPrefix("x");
     loopCountSpin->setFixedWidth(55);
-    loopCountSpin->setStyleSheet("QSpinBox { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 3px; padding: 2px; font-size: 10px; }");
+    loopCountSpin->setStyleSheet("QSpinBox { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 3px; padding: 2px; font-size: 10px; }");
     gifLayout->addWidget(loopCountSpin);
 
     auto *btnNTimes = new QPushButton("N times");
@@ -495,12 +506,12 @@ void RecordPage::setupUI() {
     addRow->addStretch();
 
     m_statusLabel = new QLabel("Ready");
-    m_statusLabel->setStyleSheet("QLabel { color: #a6e3a1; font-size: 13px; font-weight: bold; }");
+    m_statusLabel->setStyleSheet("QLabel { color: #06969A; font-size: 13px; font-weight: bold; }");
     m_statusLabel->setWordWrap(true);
     addRow->addWidget(m_statusLabel);
 
     m_elapsedLabel = new QLabel("00:00:00");
-    m_elapsedLabel->setStyleSheet("QLabel { color: #cdd6f4; font-size: 16px; font-weight: bold; font-family: monospace; }");
+    m_elapsedLabel->setStyleSheet("QLabel { color: #e8e8ec; font-size: 16px; font-weight: bold; font-family: monospace; }");
     addRow->addWidget(m_elapsedLabel);
 
     centerLayout->addLayout(addRow);
@@ -510,18 +521,18 @@ void RecordPage::setupUI() {
     btnRow->setSpacing(8);
 
     m_startBtn = new QPushButton("Start Recording");
-    m_startBtn->setStyleSheet("QPushButton { background: #a6e3a1; color: #1e1e2e; border: none; border-radius: 6px; padding: 10px 24px; font-size: 14px; font-weight: bold; } QPushButton:hover { background: #94e2d5; } QPushButton:disabled { background: #45475a; color: #6c7086; }");
+    m_startBtn->setStyleSheet("QPushButton { background: #06969A; color: #ffffff; border: none; border-radius: 6px; padding: 10px 24px; font-size: 14px; font-weight: bold; } QPushButton:hover { background: #058084; } QPushButton:disabled { background: #3d3d56; color: #8A8B8B; }");
     connect(m_startBtn, &QPushButton::clicked, this, &RecordPage::onStartClicked);
     btnRow->addWidget(m_startBtn);
 
     m_pauseBtn = new QPushButton("Pause");
-    m_pauseBtn->setStyleSheet("QPushButton { background: #fab387; color: #1e1e2e; border: none; border-radius: 6px; padding: 10px 16px; font-size: 13px; font-weight: bold; } QPushButton:hover { background: #f9e2af; }");
+    m_pauseBtn->setStyleSheet("QPushButton { background: #DF9E2F; color: #ffffff; border: none; border-radius: 6px; padding: 10px 16px; font-size: 13px; font-weight: bold; } QPushButton:hover { background: #E8B84A; }");
     m_pauseBtn->hide();
     connect(m_pauseBtn, &QPushButton::clicked, this, &RecordPage::onPauseClicked);
     btnRow->addWidget(m_pauseBtn);
 
     m_stopBtn = new QPushButton("Stop");
-    m_stopBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 6px; padding: 10px 16px; font-size: 13px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }");
+    m_stopBtn->setStyleSheet("QPushButton { background: #CC0403; color: #ffffff; border: none; border-radius: 6px; padding: 10px 16px; font-size: 13px; font-weight: bold; } QPushButton:hover { background: #E03030; }");
     m_stopBtn->hide();
     connect(m_stopBtn, &QPushButton::clicked, this, &RecordPage::onStopClicked);
     btnRow->addWidget(m_stopBtn);
@@ -571,7 +582,7 @@ void RecordPage::onStartClicked() {
 
     m_countdownVal = 5;
     m_statusLabel->setText("Starting in 5...");
-    m_statusLabel->setStyleSheet("QLabel { color: #fab387; font-size: 13px; font-weight: bold; }");
+    m_statusLabel->setStyleSheet("QLabel { color: #DF9E2F; font-size: 13px; font-weight: bold; }");
     m_startBtn->setEnabled(false);
     emit countdownStarted();
     emit countdownTick(5);
@@ -642,7 +653,7 @@ void RecordPage::onRecorderStarted() {
     // This slot is called via signal/slot — guaranteed on the main thread!
     m_isRecording = true;
     m_statusLabel->setText("Recording");
-    m_statusLabel->setStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }");
+    m_statusLabel->setStyleSheet("QLabel { color: #CC0403; font-size: 13px; font-weight: bold; }");
     m_startBtn->hide();
     m_pauseBtn->setText("Pause");
     m_pauseBtn->show();
@@ -679,14 +690,14 @@ void RecordPage::onRecorderStopped() {
     m_numberInput->setText(QString("%1").arg(num, 3, 10, QChar('0')));
 
     m_statusLabel->setText("Ready");
-    m_statusLabel->setStyleSheet("QLabel { color: #a6e3a1; font-size: 13px; font-weight: bold; }");
+    m_statusLabel->setStyleSheet("QLabel { color: #06969A; font-size: 13px; font-weight: bold; }");
 
     emit recordingStopped(); // MainWindow shows + navigates to processing
 }
 
 void RecordPage::onRecorderError(const QString &error) {
     m_statusLabel->setText("Error: " + error);
-    m_statusLabel->setStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }");
+    m_statusLabel->setStyleSheet("QLabel { color: #CC0403; font-size: 13px; font-weight: bold; }");
     m_startBtn->show();
     m_startBtn->setEnabled(true);
     m_pauseBtn->hide();
@@ -924,11 +935,11 @@ void RecordPage::onPauseClicked() {
         m_recorder->resume();
         m_pauseBtn->setText("Pause");
         m_statusLabel->setText("Recording");
-        m_statusLabel->setStyleSheet("QLabel { color: #f38ba8; font-size: 13px; font-weight: bold; }");
+        m_statusLabel->setStyleSheet("QLabel { color: #CC0403; font-size: 13px; font-weight: bold; }");
     } else {
         m_recorder->pause();
         m_pauseBtn->setText("Resume");
         m_statusLabel->setText("Paused");
-        m_statusLabel->setStyleSheet("QLabel { color: #fab387; font-size: 13px; font-weight: bold; }");
+        m_statusLabel->setStyleSheet("QLabel { color: #DF9E2F; font-size: 13px; font-weight: bold; }");
     }
 }

@@ -57,7 +57,9 @@
       "Bash(QT_QPA_PLATFORM=offscreen ctest --output-on-failure --test-dir build)",
       "Bash(ninja test_config)",
       "Bash(QT_QPA_PLATFORM=offscreen ctest --output-on-failure -R test_config)",
-      "Bash(QT_QPA_PLATFORM=offscreen ctest --output-on-failure)"
+      "Bash(QT_QPA_PLATFORM=offscreen ctest --output-on-failure)",
+      "Bash(ninja test_youtube)",
+      "Bash(ninja)"
     ],
     "deny": [],
     "ask": []

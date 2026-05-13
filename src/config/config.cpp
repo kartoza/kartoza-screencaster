@@ -102,6 +102,8 @@ void Config::load() {
   auto yt = root["youtube"].toObject();
   youtubeClientId = yt["client_id"].toString();
   youtubeClientSecret = yt["client_secret"].toString();
+  youtubeLastPlaylistId = yt["last_playlist_id"].toString();
+  youtubeLastPlaylistName = yt["last_playlist_name"].toString();
 
   // Canvas state
   auto cs = root["canvas_state"].toObject();
@@ -165,6 +167,8 @@ void Config::save() {
   QJsonObject yt;
   yt["client_id"] = youtubeClientId;
   yt["client_secret"] = youtubeClientSecret;
+  yt["last_playlist_id"] = youtubeLastPlaylistId;
+  yt["last_playlist_name"] = youtubeLastPlaylistName;
   root["youtube"] = yt;
 
   // Canvas state

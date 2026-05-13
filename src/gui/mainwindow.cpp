@@ -38,7 +38,7 @@ protected:
         // Red recording dot in center
         int inset = 70;
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor("#f38ba8"));
+        p.setBrush(QColor("#CC0403"));
         p.drawEllipse(rect().adjusted(inset, inset, -inset, -inset));
     }
     void mousePressEvent(QMouseEvent *event) override {
@@ -58,16 +58,18 @@ MainWindow::MainWindow(const QString &version, QWidget *parent)
   setStyleSheet(R"(
         QToolTip { border:0; padding:0; background:transparent; color:transparent; max-height:0; max-width:0; }
         QDialog, QFileDialog, QColorDialog, QInputDialog, QMessageBox {
-            background-color: #1e1e2e; color: #cdd6f4;
+            background-color: #1a1a2e; color: #e8e8ec;
         }
-        QDialog QLabel { color: #cdd6f4; }
-        QDialog QLineEdit, QDialog QSpinBox { background: #313244; color: #cdd6f4; border: 1px solid #45475a; padding: 4px; }
-        QDialog QPushButton { background: #45475a; color: #cdd6f4; border: 1px solid #585b70; border-radius: 3px; padding: 4px 12px; }
-        QDialog QPushButton:hover { background: #585b70; }
-        QDialog QComboBox { background: #313244; color: #cdd6f4; border: 1px solid #45475a; padding: 4px; }
-        QDialog QTreeView, QDialog QListView { background: #1e1e2e; color: #cdd6f4; border: 1px solid #45475a; }
-        QDialog QHeaderView::section { background: #313244; color: #cdd6f4; border: 1px solid #45475a; padding: 4px; }
-        QDialog QGroupBox { color: #cdd6f4; font-weight: bold; }
+        QDialog QLabel { color: #e8e8ec; }
+        QDialog QLineEdit, QDialog QSpinBox { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; padding: 4px; }
+        QDialog QPushButton { background: #3d3d56; color: #e8e8ec; border: 1px solid #4d4d68; border-radius: 3px; padding: 4px 12px; }
+        QDialog QPushButton:hover { background: #4d4d68; }
+        QDialog QComboBox { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; padding: 4px 24px 4px 8px; }
+        QDialog QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: center right; width: 20px; border: none; }
+        QDialog QComboBox::down-arrow { image: none; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #8A8B8B; margin-right: 6px; }
+        QDialog QTreeView, QDialog QListView { background: #1a1a2e; color: #e8e8ec; border: 1px solid #3d3d56; }
+        QDialog QHeaderView::section { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; padding: 4px; }
+        QDialog QGroupBox { color: #e8e8ec; font-weight: bold; }
     )");
 
   setupUI();
@@ -87,7 +89,7 @@ void MainWindow::setupUI() {
   topLayout->addWidget(createSidebar());
 
   m_content = new QStackedWidget;
-  m_content->setStyleSheet("background-color: #1e1e2e;");
+  m_content->setStyleSheet("background-color: #1a1a2e;");
 
   m_recordPage = new RecordPage;
   m_historyPage = new HistoryPage;
@@ -101,11 +103,11 @@ void MainWindow::setupUI() {
 
   // Recording-in-progress page: large stop button + elapsed timer
   m_recordingPage = new QWidget;
-  m_recordingPage->setStyleSheet("background-color: #1e1e2e;");
+  m_recordingPage->setStyleSheet("background-color: #1a1a2e;");
   auto *recLayout = new QVBoxLayout(m_recordingPage);
   recLayout->setAlignment(Qt::AlignCenter);
   auto *recLabel = new QLabel("Recording in progress");
-  recLabel->setStyleSheet("color: #f38ba8; font-size: 20px; font-weight: bold;");
+  recLabel->setStyleSheet("color: #CC0403; font-size: 20px; font-weight: bold;");
   recLabel->setAlignment(Qt::AlignCenter);
   recLayout->addWidget(recLabel);
   recLayout->addSpacing(20);
@@ -113,11 +115,11 @@ void MainWindow::setupUI() {
   recLayout->addWidget(stopCircle, 0, Qt::AlignCenter);
   recLayout->addSpacing(20);
   m_recordingElapsed = new QLabel("00:00:00");
-  m_recordingElapsed->setStyleSheet("color: #cdd6f4; font-size: 28px; font-weight: bold; font-family: monospace;");
+  m_recordingElapsed->setStyleSheet("color: #e8e8ec; font-size: 28px; font-weight: bold; font-family: monospace;");
   m_recordingElapsed->setAlignment(Qt::AlignCenter);
   recLayout->addWidget(m_recordingElapsed);
   auto *stopHint = new QLabel("Click the circle to stop");
-  stopHint->setStyleSheet("color: #6c7086; font-size: 12px;");
+  stopHint->setStyleSheet("color: #8A8B8B; font-size: 12px;");
   stopHint->setAlignment(Qt::AlignCenter);
   recLayout->addWidget(stopHint);
   m_content->addWidget(m_recordingPage);
@@ -217,23 +219,33 @@ QWidget *MainWindow::createSidebar() {
   auto *sidebar = new QWidget;
   sidebar->setFixedWidth(200);
   sidebar->setStyleSheet(R"(
-        QWidget { background-color: #181825; color: #cdd6f4; }
-        QPushButton { background-color: transparent; color: #cdd6f4; border: none; padding: 12px 20px; text-align: left; font-size: 14px; }
-        QPushButton:hover { background-color: #313244; }
-        QPushButton:checked { background-color: #45475a; color: #89b4fa; font-weight: bold; }
+        QWidget { background-color: #141428; color: #e8e8ec; }
+        QPushButton { background-color: transparent; color: #e8e8ec; border: none; padding: 12px 20px; text-align: left; font-size: 14px; }
+        QPushButton:hover { background-color: #2d2d44; }
+        QPushButton:checked { background-color: #3d3d56; color: #569FC6; font-weight: bold; }
     )");
 
   auto *layout = new QVBoxLayout(sidebar);
   layout->setContentsMargins(0, 0, 0, 0);
   layout->setSpacing(0);
 
+  auto *logo = new QLabel;
+  QSvgRenderer logoRenderer(QString(":/icons/kartoza.svg"));
+  QPixmap logoPix(64, 64);
+  logoPix.fill(Qt::transparent);
+  { QPainter p(&logoPix); logoRenderer.render(&p); }
+  logo->setPixmap(logoPix);
+  logo->setAlignment(Qt::AlignCenter);
+  logo->setStyleSheet("padding: 20px 0 8px 0;");
+  layout->addWidget(logo);
+
   auto *title = new QLabel("Kartoza\nScreencaster");
-  title->setStyleSheet("color: #89b4fa; font-size: 16px; font-weight: bold; padding: 20px;");
+  title->setStyleSheet("color: #569FC6; font-size: 16px; font-weight: bold; padding: 0 20px 4px 20px;");
   title->setAlignment(Qt::AlignCenter);
   layout->addWidget(title);
 
   auto *ver = new QLabel("v" + m_version);
-  ver->setStyleSheet("color: #6c7086; font-size: 11px; padding: 0 20px 15px 20px;");
+  ver->setStyleSheet("color: #8A8B8B; font-size: 11px; padding: 0 20px 15px 20px;");
   ver->setAlignment(Qt::AlignCenter);
   layout->addWidget(ver);
 
@@ -261,8 +273,8 @@ QWidget *MainWindow::createSidebar() {
   auto *quitBtn = new QPushButton("Quit");
   quitBtn->setToolTip("Quit the application completely.");
   quitBtn->setStyleSheet(R"(
-        QPushButton { background-color: transparent; color: #f38ba8; border: none; padding: 12px 20px; text-align: left; font-size: 14px; }
-        QPushButton:hover { background-color: #313244; }
+        QPushButton { background-color: transparent; color: #CC0403; border: none; padding: 12px 20px; text-align: left; font-size: 14px; }
+        QPushButton:hover { background-color: #2d2d44; }
     )");
   connect(quitBtn, &QPushButton::clicked, this, [this]() {
     setProperty("quitting", true);
@@ -272,16 +284,16 @@ QWidget *MainWindow::createSidebar() {
 
   auto *sep = new QFrame;
   sep->setFrameShape(QFrame::HLine);
-  sep->setStyleSheet("color: #313244;");
+  sep->setStyleSheet("color: #2d2d44;");
   layout->addWidget(sep);
 
   auto *helpTitle = new QLabel("Help");
   helpTitle->setStyleSheet(
-      "color: #585b70; font-size: 11px; font-weight: bold; padding: 5px 10px 0 10px;");
+      "color: #4d4d68; font-size: 11px; font-weight: bold; padding: 5px 10px 0 10px;");
   layout->addWidget(helpTitle);
 
   m_helpLabel = new QLabel("Hover over any option\nfor help.");
-  m_helpLabel->setStyleSheet("color: #6c7086; font-size: 11px; padding: 2px 10px 10px 10px;");
+  m_helpLabel->setStyleSheet("color: #8A8B8B; font-size: 11px; padding: 2px 10px 10px 10px;");
   m_helpLabel->setWordWrap(true);
   m_helpLabel->setMinimumHeight(80);
   m_helpLabel->setAlignment(Qt::AlignTop);
@@ -294,13 +306,13 @@ QWidget *MainWindow::createFooter() {
   auto *footer = new QWidget;
   footer->setFixedHeight(30);
   footer->setStyleSheet(
-      "QWidget { background-color: #11111b; } QLabel { color: #6c7086; font-size: 11px; }");
+      "QWidget { background-color: #0f0f20; } QLabel { color: #8A8B8B; font-size: 11px; }");
 
   auto *layout = new QHBoxLayout(footer);
   layout->setContentsMargins(10, 0, 10, 0);
 
   auto *label = new QLabel(
-      R"(Made with ❤️ by <a href="https://kartoza.com" style="color:#89b4fa;">Kartoza</a> | <a href="https://github.com/sponsors/kartoza" style="color:#89b4fa;">Donate!</a> | <a href="https://github.com/kartoza/kartoza-screencaster" style="color:#89b4fa;">GitHub</a>)");
+      R"(Made with ❤️ by <a href="https://kartoza.com" style="color:#569FC6;">Kartoza</a> | <a href="https://github.com/sponsors/kartoza" style="color:#569FC6;">Donate!</a> | <a href="https://github.com/kartoza/kartoza-screencaster" style="color:#569FC6;">GitHub</a>)");
   label->setAlignment(Qt::AlignCenter);
   label->setOpenExternalLinks(true);
   label->setTextFormat(Qt::RichText);

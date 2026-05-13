@@ -1,19 +1,26 @@
 /**
  * @file historypage.h
- * @brief Recording history browser with inline playback.
+ * @brief Recording history browser with inline playback and YouTube upload.
  */
 
 #pragma once
 
 #include <QWidget>
-#include <QListWidget>
+#include <QTreeWidget>
 #include <QLineEdit>
 #include <QLabel>
 #include <QPushButton>
+#include <QComboBox>
+#include <QTextEdit>
 #include <QSlider>
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QVideoWidget>
+#include <QVideoSink>
+#include <QProgressBar>
+#include <QStackedWidget>
+
+class YouTube;
 
 /**
  * @struct RecordingEntry
@@ -32,105 +39,84 @@ struct RecordingEntry {
     QString screenFile;    /**< Path to the raw screen capture file. */
     QString audioFile;     /**< Path to the raw audio capture file. */
     QString webcamFile;    /**< Path to the raw webcam capture file. */
+    QString description;   /**< Recording description from metadata. */
+    // YouTube
+    QString youtubeVideoId;  /**< YouTube video ID if uploaded. */
+    QString youtubeVideoUrl; /**< YouTube video URL if uploaded. */
 };
 
 /**
  * @class HistoryPage
  * @brief Page widget for browsing past recordings and playing them back.
- *
- * Lists all recordings found in the output directory, shows metadata details,
- * and provides an inline video player with seek controls.
  */
 class HistoryPage : public QWidget {
     Q_OBJECT
 
 public:
-    /**
-     * @brief Construct the history page.
-     * @param parent Optional parent widget.
-     */
     explicit HistoryPage(QWidget *parent = nullptr);
-    /** @brief Reload the recording list from disk. */
     void refresh();
-    /**
-     * @brief Find the best available video file for playback.
-     * @param rec The recording entry to search.
-     * @return Path to the preferred video file.
-     *
-     * Static so it can be unit-tested without a full HistoryPage widget.
-     */
     static QString findBestVideo(const RecordingEntry &rec);
 
 signals:
-    /**
-     * @brief Emitted when the user requests reprocessing of a recording.
-     * @param folder Path to the recording directory to reprocess.
-     */
     void reprocessRequested(const QString &folder);
 
 private slots:
-    /**
-     * @brief Handle selection of a recording in the list.
-     * @param row Selected row index.
-     */
-    void onRecordingSelected(int row);
-    /** @brief Start or resume inline video playback. */
+    void onRecordingSelected();
     void onPlayClicked();
-    /** @brief Stop inline video playback. */
     void onStopPlayback();
-    /** @brief Delete the currently selected recording. */
     void onDeleteClicked();
-    /**
-     * @brief Filter the recording list by search text.
-     * @param text Current search input text.
-     */
     void onSearchChanged(const QString &text);
 
 private:
-    /** @brief Build the complete UI layout. */
     void setupUI();
-    /** @brief Scan the output directory and populate the recording list. */
     void loadRecordings();
+    void updateThumbnail(const QString &videoPath);
+    void showUploadForm();
+    void hideUploadForm();
+    void renameRecording(int row, const QString &newTitle);
+    void saveYouTubeMetadata(const QString &folder, const QString &videoId,
+                              const QString &videoUrl);
 
-    /** @brief List widget displaying available recordings. */
-    QListWidget *m_list;
-    /** @brief Search/filter input field. */
+    // -- List --
+    QTreeWidget *m_tree;
     QLineEdit *m_searchInput;
 
-    // -- Player widgets --
-    /** @brief Video display widget for inline playback. */
+    // -- Preview --
+    QStackedWidget *m_previewStack;
+    QLabel *m_thumbnailLabel;
     QVideoWidget *m_videoWidget;
-    /** @brief Media player instance for inline playback. */
     QMediaPlayer *m_player;
-    /** @brief Audio output device for playback. */
     QAudioOutput *m_audioOutput;
-    /** @brief Play/pause button. */
     QPushButton *m_playBtn;
-    /** @brief Stop playback button. */
     QPushButton *m_stopBtn;
-    /** @brief Seek slider for video position. */
     QSlider *m_seekSlider;
-    /** @brief Label showing current playback time. */
     QLabel *m_timeLabel;
-    /** @brief Whether playback is currently active. */
     bool m_playing = false;
+    QImage m_lastFrame;
 
-    // -- Detail labels --
-    /** @brief Label displaying the recording title. */
-    QLabel *m_titleLabel;
-    /** @brief Label displaying the processing status. */
+    // -- Details --
+    QLineEdit *m_titleInput;
     QLabel *m_statusLabel;
-    /** @brief Label displaying the recording duration. */
     QLabel *m_durationLabel;
-    /** @brief Label listing output file names. */
     QLabel *m_filesLabel;
-    /** @brief Label displaying the total file size. */
     QLabel *m_sizeLabel;
 
     // -- Actions --
-    /** @brief Button to delete the selected recording. */
     QPushButton *m_deleteBtn;
 
-    /** @brief Cached list of all discovered recording entries. */
+    // -- YouTube upload form --
+    QWidget *m_uploadForm;
+    QLineEdit *m_ytTitleInput;
+    QTextEdit *m_ytDescInput;
+    QLineEdit *m_ytTagsInput;
+    QComboBox *m_ytPrivacyCombo;
+    QComboBox *m_ytPlaylistCombo;
+    QPushButton *m_ytUploadBtn;
+    QPushButton *m_ytCancelBtn;
+    QProgressBar *m_uploadProgress;
+    QLabel *m_ytLinkLabel;
+    QPushButton *m_uploadBtn;
+    YouTube *m_youtube = nullptr;
+
     QList<RecordingEntry> m_recordings;
 };

@@ -94,6 +94,10 @@ public:
     QString youtubeClientId;
     /** YouTube OAuth2 client secret for upload integration. */
     QString youtubeClientSecret;
+    /** Last-used YouTube playlist ID for upload. */
+    QString youtubeLastPlaylistId;
+    /** Last-used YouTube playlist name (for display). */
+    QString youtubeLastPlaylistName;
 
 private:
     Config() = default;

@@ -1,5 +1,6 @@
 #include "gui/settingspage.h"
 #include "config/config.h"
+#include "youtube/youtube.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QScrollArea>
@@ -15,15 +16,15 @@ SettingsPage::SettingsPage(QWidget *parent) : QWidget(parent) {
 }
 
 void SettingsPage::setupUI() {
-    QString labelStyle = "QLabel { color: #cdd6f4; font-size: 12px; }";
-    QString sectionStyle = "QLabel { color: #89b4fa; font-size: 14px; font-weight: bold; padding-top: 8px; }";
-    QString inputStyle = "QLineEdit { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px; }";
-    QString checkStyle = "QCheckBox { color: #cdd6f4; font-size: 12px; }";
-    QString btnStyle = "QPushButton { background: #45475a; color: #cdd6f4; border: none; border-radius: 4px; padding: 5px 12px; } QPushButton:hover { background: #585b70; }";
+    QString labelStyle = "QLabel { color: #e8e8ec; font-size: 12px; }";
+    QString sectionStyle = "QLabel { color: #569FC6; font-size: 14px; font-weight: bold; padding-top: 8px; }";
+    QString inputStyle = "QLineEdit { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; padding: 5px; }";
+    QString checkStyle = "QCheckBox { color: #e8e8ec; font-size: 12px; }";
+    QString btnStyle = "QPushButton { background: #3d3d56; color: #e8e8ec; border: none; border-radius: 4px; padding: 5px 12px; } QPushButton:hover { background: #4d4d68; }";
 
     auto *scrollArea = new QScrollArea;
     scrollArea->setWidgetResizable(true);
-    scrollArea->setStyleSheet("QScrollArea { border: none; background: #1e1e2e; }");
+    scrollArea->setStyleSheet("QScrollArea { border: none; background: #1a1a2e; }");
 
     auto *scrollContent = new QWidget;
     auto *layout = new QVBoxLayout(scrollContent);
@@ -31,7 +32,7 @@ void SettingsPage::setupUI() {
     layout->setSpacing(8);
 
     auto *title = new QLabel("Settings");
-    title->setStyleSheet("QLabel { color: #cdd6f4; font-size: 18px; font-weight: bold; }");
+    title->setStyleSheet("QLabel { color: #e8e8ec; font-size: 18px; font-weight: bold; }");
     layout->addWidget(title);
 
     // --- Recording Defaults ---
@@ -51,8 +52,10 @@ void SettingsPage::setupUI() {
     m_outputDirInput->setToolTip("Directory where recordings are saved.");
     connect(m_outputDirInput, &QLineEdit::editingFinished, this, &SettingsPage::saveToConfig);
     outRow->addWidget(m_outputDirInput);
-    auto *browseBtn = new QPushButton("Browse");
+    auto *browseBtn = new QPushButton(QString::fromUtf8("\u2026")); // ellipsis
+    browseBtn->setFixedSize(28, 28);
     browseBtn->setStyleSheet(btnStyle);
+    browseBtn->setToolTip("Browse for directory");
     connect(browseBtn, &QPushButton::clicked, this, [this]() {
         QString dir = QFileDialog::getExistingDirectory(this, "Select Output Directory", m_outputDirInput->text());
         if (!dir.isEmpty()) { m_outputDirInput->setText(dir); saveToConfig(); }
@@ -118,7 +121,7 @@ void SettingsPage::setupUI() {
         QString hex = m_titleColorHex->text();
         if (QColor::isValidColorName(hex)) {
             m_titleColor = hex;
-            m_titleColorSwatch->setStyleSheet(QString("background-color: %1; border: 2px solid #45475a; border-radius: 4px;").arg(hex));
+            m_titleColorSwatch->setStyleSheet(QString("background-color: %1; border: 2px solid #3d3d56; border-radius: 4px;").arg(hex));
             saveToConfig();
         }
     });
@@ -149,7 +152,7 @@ void SettingsPage::setupUI() {
         QString hex = m_bgColorHex->text();
         if (QColor::isValidColorName(hex)) {
             m_bgColor = hex;
-            m_bgColorSwatch->setStyleSheet(QString("background-color: %1; border: 2px solid #45475a; border-radius: 4px;").arg(hex));
+            m_bgColorSwatch->setStyleSheet(QString("background-color: %1; border: 2px solid #3d3d56; border-radius: 4px;").arg(hex));
             saveToConfig();
         }
     });
@@ -174,8 +177,10 @@ void SettingsPage::setupUI() {
     m_logoDirInput->setToolTip("Directory to browse for logo images.");
     connect(m_logoDirInput, &QLineEdit::editingFinished, this, &SettingsPage::saveToConfig);
     logoRow->addWidget(m_logoDirInput);
-    auto *logoBrowseBtn = new QPushButton("Browse");
+    auto *logoBrowseBtn = new QPushButton(QString::fromUtf8("\u2026")); // ellipsis
+    logoBrowseBtn->setFixedSize(28, 28);
     logoBrowseBtn->setStyleSheet(btnStyle);
+    logoBrowseBtn->setToolTip("Browse for directory");
     connect(logoBrowseBtn, &QPushButton::clicked, this, [this]() {
         QString dir = QFileDialog::getExistingDirectory(this, "Select Logo Directory", m_logoDirInput->text());
         if (!dir.isEmpty()) { m_logoDirInput->setText(dir); saveToConfig(); }
@@ -190,7 +195,7 @@ void SettingsPage::setupUI() {
 
     m_topicsList = new QListWidget;
     m_topicsList->setMaximumHeight(100);
-    m_topicsList->setStyleSheet("QListWidget { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; } QListWidget::item { padding: 3px 6px; }");
+    m_topicsList->setStyleSheet("QListWidget { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; } QListWidget::item { padding: 3px 6px; }");
     m_topicsList->setToolTip("Recording topics/categories.");
     layout->addWidget(m_topicsList);
 
@@ -200,8 +205,10 @@ void SettingsPage::setupUI() {
     m_topicInput->setStyleSheet(inputStyle);
     topicRow->addWidget(m_topicInput);
 
-    auto *addTopicBtn = new QPushButton("Add");
-    addTopicBtn->setStyleSheet("QPushButton { background: #a6e3a1; color: #1e1e2e; border: none; border-radius: 4px; padding: 5px 10px; font-weight: bold; } QPushButton:hover { background: #94e2d5; }");
+    auto *addTopicBtn = new QPushButton(QString::fromUtf8("\u002B")); // plus
+    addTopicBtn->setFixedSize(28, 28);
+    addTopicBtn->setStyleSheet("QPushButton { background: #06969A; color: #ffffff; border: none; border-radius: 4px; font-size: 16px; } QPushButton:hover { background: #058084; }");
+    addTopicBtn->setToolTip("Add topic");
     connect(addTopicBtn, &QPushButton::clicked, this, [this]() {
         QString name = m_topicInput->text().trimmed();
         if (name.isEmpty()) return;
@@ -212,8 +219,10 @@ void SettingsPage::setupUI() {
     });
     topicRow->addWidget(addTopicBtn);
 
-    auto *rmTopicBtn = new QPushButton("Remove");
-    rmTopicBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 4px; padding: 5px 10px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }");
+    auto *rmTopicBtn = new QPushButton(QString::fromUtf8("\u2716")); // X mark
+    rmTopicBtn->setFixedSize(28, 28);
+    rmTopicBtn->setStyleSheet("QPushButton { background: #CC0403; color: #ffffff; border: none; border-radius: 4px; font-size: 14px; } QPushButton:hover { background: #E03030; }");
+    rmTopicBtn->setToolTip("Remove topic");
     connect(rmTopicBtn, &QPushButton::clicked, this, [this]() {
         auto *item = m_topicsList->currentItem();
         if (item) { delete item; saveToConfig(); }
@@ -227,42 +236,124 @@ void SettingsPage::setupUI() {
     layout->addWidget(ytLabel);
 
     m_ytStatusLabel = new QLabel("Status: Not connected");
-    m_ytStatusLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 12px; }");
+    m_ytStatusLabel->setStyleSheet("QLabel { color: #8A8B8B; font-size: 12px; }");
     layout->addWidget(m_ytStatusLabel);
 
-    auto *ytRow = new QHBoxLayout;
-    auto *ytSetupBtn = new QPushButton("Setup YouTube");
-    ytSetupBtn->setStyleSheet("QPushButton { background: #a6e3a1; color: #1e1e2e; border: none; border-radius: 4px; padding: 5px 12px; font-weight: bold; } QPushButton:hover { background: #94e2d5; }");
-    ytSetupBtn->setToolTip("Enter your Google OAuth Client ID and Secret.");
-    connect(ytSetupBtn, &QPushButton::clicked, this, [this, ytSetupBtn]() {
-        bool ok;
-        QString clientId = QInputDialog::getText(this, "YouTube Setup", "Client ID:", QLineEdit::Normal, "", &ok);
-        if (!ok || clientId.isEmpty()) return;
-        QString clientSecret = QInputDialog::getText(this, "YouTube Setup", "Client Secret:", QLineEdit::Normal, "", &ok);
-        if (!ok || clientSecret.isEmpty()) return;
-        auto &cfg = Config::instance();
-        cfg.youtubeClientId = clientId;
-        cfg.youtubeClientSecret = clientSecret;
-        cfg.save();
-        m_ytStatusLabel->setText("Status: Credentials saved");
-        m_ytStatusLabel->setStyleSheet("QLabel { color: #fab387; font-size: 12px; }");
-    });
-    ytRow->addWidget(ytSetupBtn);
+    m_ytChannelLabel = new QLabel;
+    m_ytChannelLabel->setStyleSheet("QLabel { color: #06969A; font-size: 12px; }");
+    m_ytChannelLabel->hide();
+    layout->addWidget(m_ytChannelLabel);
 
-    auto *ytDisconnectBtn = new QPushButton("Disconnect");
-    ytDisconnectBtn->setStyleSheet("QPushButton { background: #f38ba8; color: #1e1e2e; border: none; border-radius: 4px; padding: 5px 12px; font-weight: bold; } QPushButton:hover { background: #eba0ac; }");
+    // Client ID
+    auto *ytIdRow = new QHBoxLayout;
+    auto *ytIdLabel = new QLabel("Client ID:");
+    ytIdLabel->setStyleSheet(labelStyle);
+    ytIdLabel->setFixedWidth(120);
+    ytIdLabel->setToolTip("Google OAuth2 Client ID from Cloud Console.");
+    ytIdRow->addWidget(ytIdLabel);
+    m_ytClientIdInput = new QLineEdit;
+    m_ytClientIdInput->setStyleSheet(inputStyle);
+    m_ytClientIdInput->setPlaceholderText("Google OAuth Client ID...");
+    m_ytClientIdInput->setToolTip("From Google Cloud Console > APIs & Services > Credentials.");
+    connect(m_ytClientIdInput, &QLineEdit::editingFinished, this, [this]() {
+        auto &cfg = Config::instance();
+        cfg.youtubeClientId = m_ytClientIdInput->text().trimmed();
+        cfg.save();
+        refreshYouTubeStatus();
+    });
+    ytIdRow->addWidget(m_ytClientIdInput);
+    layout->addLayout(ytIdRow);
+
+    // Client Secret
+    auto *ytSecRow = new QHBoxLayout;
+    auto *ytSecLabel = new QLabel("Client Secret:");
+    ytSecLabel->setStyleSheet(labelStyle);
+    ytSecLabel->setFixedWidth(120);
+    ytSecLabel->setToolTip("Google OAuth2 Client Secret from Cloud Console.");
+    ytSecRow->addWidget(ytSecLabel);
+    m_ytClientSecretInput = new QLineEdit;
+    m_ytClientSecretInput->setStyleSheet(inputStyle);
+    m_ytClientSecretInput->setPlaceholderText("Google OAuth Client Secret...");
+    m_ytClientSecretInput->setEchoMode(QLineEdit::Password);
+    m_ytClientSecretInput->setToolTip("From Google Cloud Console > APIs & Services > Credentials.");
+    connect(m_ytClientSecretInput, &QLineEdit::editingFinished, this, [this]() {
+        auto &cfg = Config::instance();
+        cfg.youtubeClientSecret = m_ytClientSecretInput->text().trimmed();
+        cfg.save();
+        refreshYouTubeStatus();
+    });
+    ytSecRow->addWidget(m_ytClientSecretInput);
+    layout->addLayout(ytSecRow);
+
+    // YouTube instance
+    m_youtube = new YouTube(this);
+    connect(m_youtube, &YouTube::authenticated, this, [this]() {
+        m_ytStatusLabel->setText("Status: Authenticated");
+        m_ytStatusLabel->setStyleSheet("QLabel { color: #06969A; font-size: 12px; }");
+        m_youtube->fetchChannelInfo();
+    });
+    connect(m_youtube, &YouTube::authError, this, [this](const QString &err) {
+        m_ytStatusLabel->setText("Status: Auth failed");
+        m_ytStatusLabel->setStyleSheet("QLabel { color: #CC0403; font-size: 12px; }");
+        m_ytChannelLabel->setText(err);
+        m_ytChannelLabel->setStyleSheet("QLabel { color: #CC0403; font-size: 11px; }");
+        m_ytChannelLabel->show();
+    });
+    connect(m_youtube, &YouTube::channelInfoReady, this, [this](const QString &name, const QString &) {
+        m_ytChannelLabel->setText("Channel: " + name);
+        m_ytChannelLabel->setStyleSheet("QLabel { color: #06969A; font-size: 12px; }");
+        m_ytChannelLabel->show();
+    });
+    connect(m_youtube, &YouTube::channelInfoError, this, [this](const QString &err) {
+        m_ytChannelLabel->setText(err);
+        m_ytChannelLabel->setStyleSheet("QLabel { color: #DF9E2F; font-size: 11px; }");
+        m_ytChannelLabel->show();
+    });
+    connect(m_youtube, &YouTube::loggedOut, this, [this]() {
+        refreshYouTubeStatus();
+    });
+
+    // Buttons
+    auto *ytRow = new QHBoxLayout;
+    auto *ytAuthBtn = new QPushButton(QString::fromUtf8("\u2714 Authenticate"));
+    ytAuthBtn->setStyleSheet("QPushButton { background: #06969A; color: #ffffff; border: none; border-radius: 4px; padding: 5px 12px; font-weight: bold; } QPushButton:hover { background: #058084; }");
+    ytAuthBtn->setToolTip("Open browser to authenticate with Google and grant YouTube access.");
+    connect(ytAuthBtn, &QPushButton::clicked, this, [this]() {
+        m_ytStatusLabel->setText("Status: Authenticating...");
+        m_ytStatusLabel->setStyleSheet("QLabel { color: #DF9E2F; font-size: 12px; }");
+        m_youtube->authenticate();
+    });
+    ytRow->addWidget(ytAuthBtn);
+
+    auto *ytVerifyBtn = new QPushButton(QString::fromUtf8("\u21BB Verify"));
+    ytVerifyBtn->setStyleSheet(btnStyle);
+    ytVerifyBtn->setToolTip("Test credentials and fetch channel info.");
+    connect(ytVerifyBtn, &QPushButton::clicked, this, [this]() {
+        m_ytStatusLabel->setText("Status: Verifying...");
+        m_ytStatusLabel->setStyleSheet("QLabel { color: #DF9E2F; font-size: 12px; }");
+        m_youtube->fetchChannelInfo();
+    });
+    ytRow->addWidget(ytVerifyBtn);
+
+    ytRow->addStretch(); // push destructive action right
+
+    auto *ytDisconnectBtn = new QPushButton(QString::fromUtf8("\u2716 Disconnect"));
+    ytDisconnectBtn->setStyleSheet("QPushButton { background: #CC0403; color: #ffffff; border: none; border-radius: 4px; padding: 5px 12px; font-weight: bold; } QPushButton:hover { background: #E03030; }");
     connect(ytDisconnectBtn, &QPushButton::clicked, this, [this]() {
-        if (QMessageBox::question(this, "Disconnect YouTube", "Remove YouTube credentials?") == QMessageBox::Yes) {
+        if (QMessageBox::question(this, "Disconnect YouTube",
+                "Remove YouTube credentials and token?") == QMessageBox::Yes) {
             auto &cfg = Config::instance();
             cfg.youtubeClientId.clear();
             cfg.youtubeClientSecret.clear();
             cfg.save();
-            m_ytStatusLabel->setText("Status: Not connected");
-            m_ytStatusLabel->setStyleSheet("QLabel { color: #6c7086; font-size: 12px; }");
+            m_youtube->logout();
+            m_ytClientIdInput->clear();
+            m_ytClientSecretInput->clear();
+            m_ytChannelLabel->hide();
+            refreshYouTubeStatus();
         }
     });
     ytRow->addWidget(ytDisconnectBtn);
-    ytRow->addStretch();
     layout->addLayout(ytRow);
 
     layout->addStretch();
@@ -285,16 +376,15 @@ void SettingsPage::loadFromConfig() {
 
     m_titleColor = cfg.titleColor.isEmpty() ? "#62A4C7" : cfg.titleColor;
     m_titleColorHex->setText(m_titleColor);
-    m_titleColorSwatch->setStyleSheet(QString("background-color: %1; border: 2px solid #45475a; border-radius: 4px;").arg(m_titleColor));
+    m_titleColorSwatch->setStyleSheet(QString("background-color: %1; border: 2px solid #3d3d56; border-radius: 4px;").arg(m_titleColor));
 
     m_bgColor = cfg.bgColor.isEmpty() ? "white" : cfg.bgColor;
     m_bgColorHex->setText(m_bgColor);
-    m_bgColorSwatch->setStyleSheet(QString("background-color: %1; border: 2px solid #45475a; border-radius: 4px;").arg(m_bgColor));
+    m_bgColorSwatch->setStyleSheet(QString("background-color: %1; border: 2px solid #3d3d56; border-radius: 4px;").arg(m_bgColor));
 
-    if (!cfg.youtubeClientId.isEmpty()) {
-        m_ytStatusLabel->setText("Status: Connected");
-        m_ytStatusLabel->setStyleSheet("QLabel { color: #a6e3a1; font-size: 12px; }");
-    }
+    m_ytClientIdInput->setText(cfg.youtubeClientId);
+    m_ytClientSecretInput->setText(cfg.youtubeClientSecret);
+    refreshYouTubeStatus();
 }
 
 void SettingsPage::saveToConfig() {
@@ -308,23 +398,39 @@ void SettingsPage::saveToConfig() {
     cfg.save();
 }
 
+void SettingsPage::refreshYouTubeStatus() {
+    auto &cfg = Config::instance();
+    if (cfg.youtubeClientId.isEmpty() || cfg.youtubeClientSecret.isEmpty()) {
+        m_ytStatusLabel->setText("Status: Not configured");
+        m_ytStatusLabel->setStyleSheet("QLabel { color: #8A8B8B; font-size: 12px; }");
+        m_ytChannelLabel->hide();
+    } else if (m_youtube->hasToken()) {
+        m_ytStatusLabel->setText("Status: Connected");
+        m_ytStatusLabel->setStyleSheet("QLabel { color: #06969A; font-size: 12px; }");
+    } else {
+        m_ytStatusLabel->setText("Status: Credentials saved (not authenticated)");
+        m_ytStatusLabel->setStyleSheet("QLabel { color: #DF9E2F; font-size: 12px; }");
+        m_ytChannelLabel->hide();
+    }
+}
+
 void SettingsPage::openColorDialog(const QString &title, QPushButton *swatch, QLineEdit *hexInput, QString &colorVar) {
     QColor initial(colorVar);
     QColorDialog dlg(initial, this);
     dlg.setWindowTitle(title);
     dlg.setStyleSheet(R"(
-        QColorDialog, QWidget { background-color: #1e1e2e; color: #cdd6f4; }
-        QLabel { color: #cdd6f4; }
-        QLineEdit, QSpinBox { background: #313244; color: #cdd6f4; border: 1px solid #45475a; }
-        QPushButton { background: #45475a; color: #cdd6f4; border: 1px solid #585b70; border-radius: 3px; padding: 4px 12px; }
-        QPushButton:hover { background: #585b70; }
-        QGroupBox { color: #cdd6f4; }
+        QColorDialog, QWidget { background-color: #1a1a2e; color: #e8e8ec; }
+        QLabel { color: #e8e8ec; }
+        QLineEdit, QSpinBox { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; }
+        QPushButton { background: #3d3d56; color: #e8e8ec; border: 1px solid #4d4d68; border-radius: 3px; padding: 4px 12px; }
+        QPushButton:hover { background: #4d4d68; }
+        QGroupBox { color: #e8e8ec; }
     )");
     if (dlg.exec() == QDialog::Accepted) {
         QColor c = dlg.selectedColor();
         colorVar = c.name();
         hexInput->setText(colorVar);
-        swatch->setStyleSheet(QString("background-color: %1; border: 2px solid #45475a; border-radius: 4px;").arg(colorVar));
+        swatch->setStyleSheet(QString("background-color: %1; border: 2px solid #3d3d56; border-radius: 4px;").arg(colorVar));
         saveToConfig();
     }
 }
