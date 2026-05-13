@@ -28,7 +28,8 @@ QList<MonitorInfo> Monitor::listMonitors() {
 
     // Fallback
     MonitorInfo fallback;
-    fallback.name = "";
+    fallback.name = "default";
+    fallback.description = "Default Screen";
     fallback.width = 1920;
     fallback.height = 1080;
     fallback.focused = true;
@@ -153,10 +154,10 @@ QList<MonitorInfo> Monitor::listMonitorsX11() {
     QString output = proc.readAllStandardOutput();
     QList<MonitorInfo> monitors;
 
-    // Pattern: "DP-0 connected primary 1920x1080+0+0 ..."
-    // or:      "HDMI-0 connected 1920x1080+1920+0 ..."
+    // Match xrandr connected outputs — allow arbitrary text between
+    // "connected [primary]" and the geometry "WxH+X+Y"
     QRegularExpression re(
-        R"(^(\S+)\s+connected\s+(primary\s+)?(\d+)x(\d+)\+(\d+)\+(\d+))",
+        R"(^(\S+)\s+connected\s+(primary\s+)?.*?(\d+)x(\d+)\+(\d+)\+(\d+))",
         QRegularExpression::MultilineOption);
 
     auto it = re.globalMatch(output);
@@ -164,11 +165,35 @@ QList<MonitorInfo> Monitor::listMonitorsX11() {
         auto match = it.next();
         MonitorInfo mon;
         mon.name = match.captured(1);
+        mon.description = mon.name; // X11 outputs use their xrandr name as description
         mon.focused = !match.captured(2).isEmpty(); // primary = focused
         mon.width = match.captured(3).toInt();
         mon.height = match.captured(4).toInt();
         mon.x = match.captured(5).toInt();
         mon.y = match.captured(6).toInt();
+        monitors.append(mon);
+    }
+
+    // If xrandr found nothing, try a full-screen fallback
+    if (monitors.isEmpty()) {
+        MonitorInfo mon;
+        mon.name = "default";
+        mon.description = "Full Screen";
+        mon.width = 1920;
+        mon.height = 1080;
+        mon.focused = true;
+
+        // Try to get actual screen size from xdpyinfo
+        QProcess dp;
+        dp.start("xdpyinfo", {});
+        if (dp.waitForFinished(2000)) {
+            QRegularExpression dimRe(R"(dimensions:\s+(\d+)x(\d+))");
+            auto m = dimRe.match(dp.readAllStandardOutput());
+            if (m.hasMatch()) {
+                mon.width = m.captured(1).toInt();
+                mon.height = m.captured(2).toInt();
+            }
+        }
         monitors.append(mon);
     }
 
