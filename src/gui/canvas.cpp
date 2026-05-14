@@ -1,6 +1,8 @@
 #include "gui/canvas.h"
 #include "config/config.h"
 #include "monitor/monitor.h"
+#include "platform/platform.h"
+#include <QApplication>
 #include <QPainter>
 #include <QPainterPath>
 #include <QMouseEvent>
@@ -9,7 +11,7 @@
 #include <QResizeEvent>
 #include <QDir>
 #include <QFileInfo>
-#include <QThreadPool>
+#include <QScreen>
 #include <QThreadPool>
 #include <cmath>
 #ifndef Q_OS_WIN
@@ -422,38 +424,43 @@ void Canvas::captureScreen() {
     if (m_monitorName.isEmpty()) return;
     QString path = QDir::tempPath() + "/kartoza-canvas-" + m_monitorName + ".png";
 
-    QProcess proc;
 #if defined(Q_OS_LINUX)
-    // Try grim first (Wayland), fall back to scrot/import (X11)
-    QString wayland = qEnvironmentVariable("WAYLAND_DISPLAY");
-    if (!wayland.isEmpty()) {
+    if (Platform::isWayland()) {
+        // Wayland: must use grim (can't grab windows directly)
+        QProcess proc;
         proc.start("grim", {"-o", m_monitorName, "-t", "png", "-l", "0", path});
-    } else {
-        // X11: use ffmpeg to grab a single frame at monitor geometry
-        QString display = qEnvironmentVariable("DISPLAY", ":0");
-        int monW = m_monitor.width > 0 ? m_monitor.width : 1920;
-        int monH = m_monitor.height > 0 ? m_monitor.height : 1080;
-        int monX = m_monitor.x;
-        int monY = m_monitor.y;
-        proc.start("ffmpeg", {"-y", "-f", "x11grab",
-                              "-video_size", QString("%1x%2").arg(monW).arg(monH),
-                              "-i", QString("%1+%2,%3").arg(display).arg(monX).arg(monY),
-                              "-frames:v", "1",
-                              "-update", "1", path});
+        if (proc.waitForFinished(5000) && proc.exitCode() == 0) {
+            m_mutex.lock();
+            m_pendingScreenPath = path;
+            m_mutex.unlock();
+        }
+        return;
     }
-#elif defined(Q_OS_MACOS)
-    proc.start("screencapture", {"-x", path});
-#elif defined(Q_OS_WIN)
-    // On Windows use ffmpeg gdigrab single frame
-    proc.start("ffmpeg", {"-y", "-f", "gdigrab", "-i", "desktop",
-                          "-frames:v", "1", path});
 #endif
 
-    if (proc.waitForFinished(5000) && proc.exitCode() == 0) {
-        m_mutex.lock();
-        m_pendingScreenPath = path;
-        m_mutex.unlock();
-    }
+    // X11 / macOS / Windows: use Qt's screen grab (works without external tools)
+    // QScreen::grabWindow must be called on the main thread, so we use invokeMethod
+    QMetaObject::invokeMethod(this, [this, path]() {
+        QScreen *targetScreen = nullptr;
+        for (auto *screen : QApplication::screens()) {
+            if (screen->name() == m_monitorName) {
+                targetScreen = screen;
+                break;
+            }
+        }
+        if (!targetScreen) targetScreen = QApplication::primaryScreen();
+        if (!targetScreen) return;
+
+        QPixmap pix = targetScreen->grabWindow(0);
+        if (!pix.isNull()) {
+            // Scale down for preview performance
+            QPixmap scaled = pix.scaled(960, 540, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            scaled.save(path, "PNG");
+            m_mutex.lock();
+            m_pendingScreenPath = path;
+            m_mutex.unlock();
+        }
+    }, Qt::QueuedConnection);
 }
 
 QRect Canvas::frameRect() const {

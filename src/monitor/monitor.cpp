@@ -1,10 +1,12 @@
 #include "monitor/monitor.h"
 #include "platform/platform.h"
+#include <QApplication>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QScreen>
 #include <QDebug>
 
 QList<MonitorInfo> Monitor::listMonitors() {
@@ -21,12 +23,16 @@ QList<MonitorInfo> Monitor::listMonitors() {
         monitors = listMonitorsSway();
         if (!monitors.isEmpty()) return monitors;
     } else {
-        // Try X11
+        // Try X11 via xrandr
         monitors = listMonitorsX11();
         if (!monitors.isEmpty()) return monitors;
     }
 
-    // Fallback
+    // Qt fallback — works on all platforms
+    monitors = listMonitorsQt();
+    if (!monitors.isEmpty()) return monitors;
+
+    // Last resort fallback
     MonitorInfo fallback;
     fallback.name = "default";
     fallback.description = "Default Screen";
@@ -197,6 +203,31 @@ QList<MonitorInfo> Monitor::listMonitorsX11() {
         monitors.append(mon);
     }
 
+    return monitors;
+}
+
+QList<MonitorInfo> Monitor::listMonitorsQt() {
+    QList<MonitorInfo> monitors;
+    auto *app = qApp;
+    if (!app) return monitors;
+
+    for (auto *screen : QApplication::screens()) {
+        MonitorInfo mon;
+        mon.name = screen->name();
+        mon.description = screen->manufacturer() + " " + screen->model();
+        mon.description = mon.description.trimmed();
+        if (mon.description.isEmpty()) mon.description = mon.name;
+        auto geo = screen->geometry();
+        mon.x = geo.x();
+        mon.y = geo.y();
+        mon.width = geo.width();
+        mon.height = geo.height();
+        mon.focused = (screen == QApplication::primaryScreen());
+        monitors.append(mon);
+        qDebug() << "Qt screen detected:" << mon.name << mon.description
+                 << mon.width << "x" << mon.height
+                 << "at" << mon.x << "," << mon.y;
+    }
     return monitors;
 }
 

@@ -184,7 +184,9 @@ set(CPACK_DEBIAN_PACKAGE_SECTION "video")
 set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS
-    "libqt6core6 (>= 6.2), libqt6widgets6 (>= 6.2), libqt6multimedia6 (>= 6.2), libqt6network6 (>= 6.2), libqt6svg6 (>= 6.2), ffmpeg, grim, wl-screenrec | xdg-utils")
+    "libqt6core6 (>= 6.2), libqt6widgets6 (>= 6.2), libqt6multimedia6 (>= 6.2), libqt6network6 (>= 6.2), libqt6svg6 (>= 6.2), ffmpeg")
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "pulseaudio")
+set(CPACK_DEBIAN_PACKAGE_SUGGESTS "grim, wl-screenrec")
 set(CPACK_DEBIAN_PACKAGE_DESCRIPTION
     "Kartoza Screencaster - Professional screen recording tool.\n Features include WYSIWYG canvas layout, webcam overlay, logo placement,\n pause/resume, post-processing with audio normalization, and YouTube upload.\n Made with love by Kartoza (https://kartoza.com).")
 

@@ -317,10 +317,15 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
     }
 
     qDebug() << "Starting screen recorder:" << cmd << args;
+    connect(m_screenProc, &QProcess::readyReadStandardError, this, [this]() {
+        qDebug() << "Screen recorder stderr:" << m_screenProc->readAllStandardError();
+    });
     m_screenProc->start(cmd, args);
 
     if (!m_screenProc->waitForStarted(5000)) {
-        emit recordingError("Failed to start screen recorder: " + m_screenProc->errorString());
+        QString err = "Failed to start screen recorder: " + m_screenProc->errorString();
+        qDebug() << err;
+        emit recordingError(err);
     }
 }
 
