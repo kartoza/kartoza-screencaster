@@ -68,6 +68,12 @@ public:
      */
     void addLogo(const QString &filePath);
     /**
+     * @brief Add a sound effect layer (start or end).
+     * @param filePath Path to the audio file.
+     * @param isEnd If true, this is an end sound; otherwise a start sound.
+     */
+    void addSound(const QString &filePath, bool isEnd);
+    /**
      * @brief Remove an overlay item by index.
      * @param index Zero-based index into the item list.
      */
@@ -144,6 +150,10 @@ public:
         QString device;   /**< Device path for webcam items. */
         int gifLoop = 2;    /**< GIF loop mode: 0=disabled, 1=once, 2=continuous. */
         int gifLoopMax = 3; /**< Maximum number of GIF loop iterations. */
+        int cropTop = 0;    /**< Pixels cropped from top. */
+        int cropBottom = 0; /**< Pixels cropped from bottom. */
+        int cropLeft = 0;   /**< Pixels cropped from left. */
+        int cropRight = 0;  /**< Pixels cropped from right. */
     };
 
     /**
@@ -156,6 +166,8 @@ public:
      * @param e The exported item data.
      */
     void importItem(const ItemExport &e);
+    /** @brief Update the screen item's position and crop from an export struct. */
+    void updateScreenItem(const ItemExport &e);
     /** @brief Return a string identifier for the current orientation mode. */
     QString modeString() const;
 
@@ -183,6 +195,10 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
     /** @brief Recalculate canvas dimensions on resize. */
     void resizeEvent(QResizeEvent *event) override;
+    /** @brief Accept drag enter for image files. */
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    /** @brief Handle drop of image files onto the canvas. */
+    void dropEvent(QDropEvent *event) override;
 
 private:
     /**
@@ -198,6 +214,11 @@ private:
         QString filePath;   /**< Source file path for logos. */
         QString device;     /**< V4L2 device path for webcams. */
         bool visible = true; /**< Whether the item is drawn. */
+        // Crop insets (pixels cropped from each edge)
+        int cropTop = 0;    /**< Pixels cropped from the top edge. */
+        int cropBottom = 0; /**< Pixels cropped from the bottom edge. */
+        int cropLeft = 0;   /**< Pixels cropped from the left edge. */
+        int cropRight = 0;  /**< Pixels cropped from the right edge. */
         // GIF fields
         QMovie *movie = nullptr; /**< QMovie for animated GIF playback. */
         bool isGif = false;      /**< Whether this item is an animated GIF. */
@@ -214,6 +235,8 @@ private:
     void captureScreen();
     /** @brief Draw the screen background and all overlay items. */
     void drawScreen(QPainter &painter);
+    /** @brief Draw crop handles on a selected item. */
+    void drawCropHandles(QPainter &painter, const CanvasItem &item);
     /**
      * @brief Test whether a point hits a canvas item.
      * @param item The item to test.
@@ -222,6 +245,8 @@ private:
      * @return True if the point is inside the item.
      */
     bool hitTest(const CanvasItem &item, int mx, int my) const;
+    /** @brief Test which crop handle (if any) is hit at the given point. Returns 0=none, 1=top, 2=bottom, 3=left, 4=right. */
+    int hitCropHandle(const CanvasItem &item, int mx, int my) const;
     /**
      * @brief Start the live webcam capture process for an item.
      * @param itemIdx Index of the webcam item.
@@ -260,6 +285,10 @@ private:
     int m_dragOffX = 0;
     /** @brief Drag offset Y from item origin. */
     int m_dragOffY = 0;
+    /** @brief Which crop handle is being dragged: 0=none, 1=top, 2=bottom, 3=left, 4=right. */
+    int m_cropHandle = 0;
+    /** @brief Index of item whose crop handle is being dragged. */
+    int m_cropItem = -1;
     /** @brief X offset to center the 16:9 canvas within the widget. */
     int m_offsetX = 0;
     /** @brief Y offset to center the 16:9 canvas within the widget. */
@@ -274,6 +303,7 @@ private:
     /** @brief Last known frame rect for rescaling items on resize. */
     QRect m_lastFrameRect;
 
+    static constexpr int CROP_HANDLE_SIZE = 6; /**< Radius of crop handle hit area. */
     static constexpr int WC_W = 160;              /**< Webcam capture width. */
     static constexpr int WC_H = 120;              /**< Webcam capture height. */
     static constexpr int WC_FPS = 10;             /**< Webcam capture frame rate. */

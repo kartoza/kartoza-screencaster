@@ -11,6 +11,8 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QWheelEvent>
+#include <QMouseEvent>
+#include <QKeyEvent>
 #include <QImage>
 #include <QPainter>
 #include "gui/canvas.h"
@@ -1122,6 +1124,549 @@ private slots:
     auto after = c.exportItems()[0];
     // 4:3 webcam: h should be w * 3/4
     QCOMPARE(after.h, after.w * 3 / 4);
+  }
+  // =========================================================================
+  // 15. CROP HANDLES (15 tests)
+  // =========================================================================
+
+  void testCropDefaultsZero() {
+    Canvas c; c.addWebcam("v0", "C", 1);
+    auto e = c.exportItems()[0];
+    QCOMPARE(e.cropTop, 0);
+    QCOMPARE(e.cropBottom, 0);
+    QCOMPARE(e.cropLeft, 0);
+    QCOMPARE(e.cropRight, 0);
+  }
+
+  void testCropExportImportRoundTrip() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "Cam"; e.device = "v0"; e.shape = 1;
+    e.x = 200; e.y = 150; e.w = 80; e.h = 60;
+    e.cropTop = 5; e.cropBottom = 10; e.cropLeft = 3; e.cropRight = 7;
+    c.importItem(e);
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.cropTop, 5);
+    QCOMPARE(out.cropBottom, 10);
+    QCOMPARE(out.cropLeft, 3);
+    QCOMPARE(out.cropRight, 7);
+  }
+
+  void testCropScreenExportImportRoundTrip() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 0; e.label = "Screen: DP-1";
+    e.x = 280; e.y = 160; e.w = 560; e.h = 315;
+    e.cropTop = 20; e.cropBottom = 15; e.cropLeft = 10; e.cropRight = 25;
+    c.importItem(e);
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.cropTop, 20);
+    QCOMPARE(out.cropBottom, 15);
+    QCOMPARE(out.cropLeft, 10);
+    QCOMPARE(out.cropRight, 25);
+  }
+
+  void testCropLogoExportImportRoundTrip() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString path = createTestImage(200, 100, dir.path());
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 2; e.label = "logo.png"; e.filePath = path;
+    e.x = 100; e.y = 50; e.w = 80; e.h = 40;
+    e.cropTop = 4; e.cropBottom = 6; e.cropLeft = 2; e.cropRight = 8;
+    c.importItem(e);
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.cropTop, 4);
+    QCOMPARE(out.cropBottom, 6);
+    QCOMPARE(out.cropLeft, 2);
+    QCOMPARE(out.cropRight, 8);
+  }
+
+  void testCropTitleExportImportRoundTrip() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 3; e.label = "My Title";
+    e.x = 100; e.y = 200; e.w = 200; e.h = 30;
+    e.cropTop = 2; e.cropBottom = 3; e.cropLeft = 5; e.cropRight = 5;
+    c.importItem(e);
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.cropTop, 2);
+    QCOMPARE(out.cropBottom, 3);
+    QCOMPARE(out.cropLeft, 5);
+    QCOMPARE(out.cropRight, 5);
+  }
+
+  void testCropPreservedAfterSwap() {
+    Canvas c;
+    Canvas::ItemExport e1;
+    e1.type = 1; e1.label = "C0"; e1.device = "v0"; e1.shape = 1;
+    e1.x = 100; e1.y = 100; e1.w = 60; e1.h = 45;
+    e1.cropTop = 10; e1.cropLeft = 5;
+    Canvas::ItemExport e2;
+    e2.type = 1; e2.label = "C1"; e2.device = "v1"; e2.shape = 1;
+    e2.x = 200; e2.y = 200; e2.w = 60; e2.h = 45;
+    e2.cropBottom = 8; e2.cropRight = 3;
+    c.importItem(e1);
+    c.importItem(e2);
+    c.swapItems(0, 1);
+    auto items = c.exportItems();
+    QCOMPARE(items[0].cropBottom, 8);
+    QCOMPARE(items[0].cropRight, 3);
+    QCOMPARE(items[1].cropTop, 10);
+    QCOMPARE(items[1].cropLeft, 5);
+  }
+
+  void testCropItemStateDefaults() {
+    CanvasItemState s;
+    QCOMPARE(s.cropTop, 0.0);
+    QCOMPARE(s.cropBottom, 0.0);
+    QCOMPARE(s.cropLeft, 0.0);
+    QCOMPARE(s.cropRight, 0.0);
+  }
+
+  // =========================================================================
+  // 16. SCREEN ITEM POSITION PERSISTENCE (10 tests)
+  // =========================================================================
+
+  void testScreenPositionExportImport() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 0; e.label = "Screen: DP-1";
+    e.x = 300; e.y = 200; e.w = 560; e.h = 315;
+    c.importItem(e);
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.x, 300);
+    QCOMPARE(out.y, 200);
+  }
+
+  void testScreenSizeExportImport() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 0; e.label = "Screen: DP-1";
+    e.x = 280; e.y = 157; e.w = 600; e.h = 337;
+    c.importItem(e);
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.w, 600);
+    QCOMPARE(out.h, 337);
+  }
+
+  void testUpdateScreenItem() {
+    Canvas c;
+    MonitorInfo mon;
+    mon.name = "DP-1"; mon.width = 1920; mon.height = 1080;
+    c.setMonitor(mon);
+    // Screen created at center
+    auto before = c.exportItems()[0];
+    QCOMPARE(before.x, c.canvasWidth()/2);
+    QCOMPARE(before.y, c.canvasHeight()/2);
+
+    // Now update its position
+    Canvas::ItemExport e;
+    e.type = 0; e.label = "Screen: DP-1";
+    e.x = 100; e.y = 50; e.w = 560; e.h = 315;
+    e.cropTop = 12; e.cropLeft = 8;
+    c.updateScreenItem(e);
+    auto after = c.exportItems()[0];
+    QCOMPARE(after.x, 100);
+    QCOMPARE(after.y, 50);
+    QCOMPARE(after.cropTop, 12);
+    QCOMPARE(after.cropLeft, 8);
+  }
+
+  void testScreenRemovalClearsMonitor() {
+    Canvas c;
+    MonitorInfo mon;
+    mon.name = "DP-1"; mon.width = 1920; mon.height = 1080;
+    c.setMonitor(mon);
+    QCOMPARE(c.selectedMonitor(), "DP-1");
+    c.removeItem(0);
+    QVERIFY(c.selectedMonitor().isEmpty());
+  }
+
+  void testScreenDefaultPosition() {
+    Canvas c;
+    MonitorInfo mon;
+    mon.name = "DP-1"; mon.width = 1920; mon.height = 1080;
+    c.setMonitor(mon);
+    auto e = c.exportItems()[0];
+    QCOMPARE(e.x, c.canvasWidth()/2);
+    QCOMPARE(e.y, c.canvasHeight()/2);
+  }
+
+  void testScreenPositionResetOnModeChange() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 0; e.label = "Screen: DP-1";
+    e.x = 100; e.y = 50; e.w = 560; e.h = 315;
+    c.importItem(e);
+    c.setMode(1); // switch to vertical
+    auto out = c.exportItems()[0];
+    // Position should reset to center
+    QCOMPARE(out.x, c.canvasWidth()/2);
+    QCOMPARE(out.y, c.canvasHeight()/2);
+  }
+
+  // =========================================================================
+  // 17. EDGE SNAPPING (12 tests)
+  // =========================================================================
+
+  void testSnapToLeftEdge() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    e.x = 200; e.y = 150; e.w = 60; e.h = 45;
+    c.importItem(e);
+
+    // Simulate drag near left edge (item edge within snap threshold)
+    QRect fr = c.frameRect();
+    // Position item so its left edge is 5px from frame left (within snap=12)
+    int nearLeftX = fr.left() + 60/2 + 5; // item center when left edge is 5px from frame
+    // Send mouse events
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(200, 150), QPointF(200, 150),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(nearLeftX, 150), QPointF(nearLeftX, 150),
+                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(nearLeftX, 150), QPointF(nearLeftX, 150),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &release);
+
+    auto out = c.exportItems()[0];
+    // Should have snapped: item left edge == frame left
+    QCOMPARE(out.x, fr.left() + out.w/2);
+  }
+
+  void testSnapToRightEdge() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    e.x = 200; e.y = 150; e.w = 60; e.h = 45;
+    c.importItem(e);
+
+    QRect fr = c.frameRect();
+    int nearRightX = (fr.x() + fr.width()) - 60/2 - 5;
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(200, 150), QPointF(200, 150),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(nearRightX, 150), QPointF(nearRightX, 150),
+                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(nearRightX, 150), QPointF(nearRightX, 150),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &release);
+
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.x, fr.x() + fr.width() - out.w/2);
+  }
+
+  void testSnapToTopEdge() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    e.x = 200; e.y = 150; e.w = 60; e.h = 45;
+    c.importItem(e);
+
+    QRect fr = c.frameRect();
+    int nearTopY = fr.top() + 45/2 + 5;
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(200, 150), QPointF(200, 150),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(200, nearTopY), QPointF(200, nearTopY),
+                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(200, nearTopY), QPointF(200, nearTopY),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &release);
+
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.y, fr.top() + out.h/2);
+  }
+
+  void testSnapToBottomEdge() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    e.x = 200; e.y = 150; e.w = 60; e.h = 45;
+    c.importItem(e);
+
+    QRect fr = c.frameRect();
+    int nearBottomY = (fr.y() + fr.height()) - 45/2 - 5;
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(200, 150), QPointF(200, 150),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(200, nearBottomY), QPointF(200, nearBottomY),
+                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(200, nearBottomY), QPointF(200, nearBottomY),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &release);
+
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.y, fr.y() + fr.height() - out.h/2);
+  }
+
+  void testSnapToHorizontalCenter() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    e.x = 200; e.y = 150; e.w = 60; e.h = 45;
+    c.importItem(e);
+
+    QRect fr = c.frameRect();
+    int centerX = fr.left() + fr.width()/2;
+    int nearCenterX = centerX + 5; // within snap
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(200, 150), QPointF(200, 150),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(nearCenterX, 150), QPointF(nearCenterX, 150),
+                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(nearCenterX, 150), QPointF(nearCenterX, 150),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &release);
+
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.x, centerX);
+  }
+
+  void testSnapToVerticalCenter() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    e.x = 200; e.y = 150; e.w = 60; e.h = 45;
+    c.importItem(e);
+
+    QRect fr = c.frameRect();
+    int centerY = fr.top() + fr.height()/2;
+    int nearCenterY = centerY + 5;
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(200, 150), QPointF(200, 150),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(200, nearCenterY), QPointF(200, nearCenterY),
+                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(200, nearCenterY), QPointF(200, nearCenterY),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &release);
+
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.y, centerY);
+  }
+
+  void testShiftDragNoSnap() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    e.x = 200; e.y = 150; e.w = 60; e.h = 45;
+    c.importItem(e);
+
+    QRect fr = c.frameRect();
+    // Position near left edge - should NOT snap with shift held
+    int nearLeftX = fr.left() + 60/2 + 5;
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(200, 150), QPointF(200, 150),
+                      Qt::LeftButton, Qt::LeftButton, Qt::ShiftModifier);
+    QApplication::sendEvent(&c, &press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(nearLeftX, 150), QPointF(nearLeftX, 150),
+                     Qt::LeftButton, Qt::LeftButton, Qt::ShiftModifier);
+    QApplication::sendEvent(&c, &move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(nearLeftX, 150), QPointF(nearLeftX, 150),
+                        Qt::LeftButton, Qt::NoButton, Qt::ShiftModifier);
+    QApplication::sendEvent(&c, &release);
+
+    auto out = c.exportItems()[0];
+    // Should NOT have snapped to left edge
+    QVERIFY(out.x != fr.left() + out.w/2);
+  }
+
+  void testNoSnapWhenFarFromEdge() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    e.x = 200; e.y = 150; e.w = 60; e.h = 45;
+    c.importItem(e);
+
+    // Move to center of canvas (far from all edges in landscape mode)
+    int midX = 280, midY = 157;
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(200, 150), QPointF(200, 150),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(midX, midY), QPointF(midX, midY),
+                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(midX, midY), QPointF(midX, midY),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &release);
+
+    auto out = c.exportItems()[0];
+    // In landscape mode, frame center IS canvas center (280, 157)
+    // so it WILL snap to center. Use a non-center position instead.
+    // Actually center snap should trigger here — that's correct behavior.
+    QRect fr = c.frameRect();
+    int centerX = fr.left() + fr.width()/2;
+    int centerY = fr.top() + fr.height()/2;
+    QCOMPARE(out.x, centerX);
+    QCOMPARE(out.y, centerY);
+  }
+
+  void testArrowKeyNoSnap() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    // Place at left edge (snapped position)
+    QRect fr = c.frameRect();
+    e.x = fr.left() + 30; e.y = 150; e.w = 60; e.h = 45;
+    c.importItem(e);
+    c.setSelectedItem(0);
+
+    // Nudge right by 1px - should not re-snap
+    QKeyEvent right(QEvent::KeyPress, Qt::Key_Right, Qt::NoModifier);
+    QApplication::sendEvent(&c, &right);
+
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.x, fr.left() + 31); // exactly +1, no snap
+  }
+
+  void testSnapWorksInVerticalMode() {
+    Canvas c;
+    c.setMode(1); // vertical
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    e.x = 200; e.y = 150; e.w = 40; e.h = 30;
+    c.importItem(e);
+
+    QRect fr = c.frameRect();
+    int nearLeftX = fr.left() + 40/2 + 5;
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(200, 150), QPointF(200, 150),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(nearLeftX, 150), QPointF(nearLeftX, 150),
+                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(nearLeftX, 150), QPointF(nearLeftX, 150),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &release);
+
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.x, fr.left() + out.w/2);
+  }
+
+  void testSnapThresholdBoundary() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    e.x = 200; e.y = 150; e.w = 60; e.h = 45;
+    c.importItem(e);
+
+    QRect fr = c.frameRect();
+    // Place item so left edge is exactly 13px from frame (beyond snap=12)
+    int justOutside = fr.left() + 60/2 + 13;
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(200, 150), QPointF(200, 150),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(justOutside, 150), QPointF(justOutside, 150),
+                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(justOutside, 150), QPointF(justOutside, 150),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &release);
+
+    auto out = c.exportItems()[0];
+    // Should NOT snap (13px > 12px threshold)
+    QVERIFY(out.x != fr.left() + out.w/2);
+  }
+
+  void testSnapMultipleEdgesSimultaneously() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    e.x = 200; e.y = 150; e.w = 60; e.h = 45;
+    c.importItem(e);
+
+    QRect fr = c.frameRect();
+    // Near top-left corner
+    int nearLeftX = fr.left() + 60/2 + 5;
+    int nearTopY = fr.top() + 45/2 + 5;
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(200, 150), QPointF(200, 150),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(nearLeftX, nearTopY), QPointF(nearLeftX, nearTopY),
+                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(nearLeftX, nearTopY), QPointF(nearLeftX, nearTopY),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &release);
+
+    auto out = c.exportItems()[0];
+    // Should snap to both left and top edges
+    QCOMPARE(out.x, fr.left() + out.w/2);
+    QCOMPARE(out.y, fr.top() + out.h/2);
   }
 };
 

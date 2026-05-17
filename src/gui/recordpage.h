@@ -16,6 +16,7 @@
 #include <QButtonGroup>
 #include <QListWidget>
 #include "gui/canvas.h"
+#include "gui/assetgallery.h"
 #include "config/config.h"
 #include "recorder/recorder.h"
 #include "monitor/monitor.h"
@@ -162,6 +163,10 @@ private:
     QLineEdit *m_presetNameInput;
     /** @brief Row widget holding the preset name input (for show/hide). */
     QWidget *m_presetNameRow;
+
+    // -- Asset gallery --
+    /** @brief Thumbnail gallery strip for drag-drop assets. */
+    AssetGallery *m_assetGallery = nullptr;
 
     // -- Data --
     /** @brief Recorder instance managing the capture pipeline. */

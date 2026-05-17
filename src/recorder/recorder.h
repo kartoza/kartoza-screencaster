@@ -72,6 +72,8 @@ struct RecordingOptions {
     /** @brief Overlay logos/GIFs placed on the canvas (0..N). */
     QVector<LogoOpts> logos;
     QString titleColor = "#62A4C7";               /**< Hex colour used when rendering the title. */
+    QString startSound;                           /**< Path to audio file played at recording start. */
+    QString endSound;                             /**< Path to audio file played at recording end. */
 };
 
 /**

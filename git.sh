@@ -1,49 +1,51 @@
 #!/usr/bin/env bash
 set -euo pipefail
+cd "$(dirname "$0")"
 
-VERSION="v1.4.0"
+# Push the branch
+git push origin v1.7.0
 
-# 3. Tag and push
-git tag -a "$VERSION" -m "Release $VERSION"
-git push origin "$VERSION"
+# Create PR
+gh pr create \
+  --base main \
+  --head v1.7.0 \
+  --title "v1.7.0: Fix X11 support, Qt-based monitor detection" \
+  --body "$(cat <<'BODY'
+## Summary
 
-# 4. Create GitHub release (triggers release.yml to build all OS binaries)
-gh release create "$VERSION" \
-  --title "Kartoza Screencaster $VERSION" \
-  --notes "$(
-    cat <<'NOTES'
-## What's New in 1.4.0
+- **Qt QScreen fallback for monitor detection** — works on X11, macOS, Windows without needing xrandr, hyprctl, or any external tools. Detects `Virtual-1` in QEMU/KVM VMs correctly.
+- **Qt-based screen preview on X11** — uses `QScreen::grabWindow()` instead of shelling out to ffmpeg for canvas preview screenshots. No external dependencies needed.
+- **Fixed xrandr regex** — handles extra text (rotation/reflection) between "connected" and geometry that Ubuntu 24.04 VMs produce.
+- **X11 recording fix** — removed guard that required non-empty monitor name, added stderr logging for ffmpeg x11grab debugging.
+- **Deb packaging** — Wayland tools (grim, wl-screenrec) moved to Suggests, not required.
 
-### History Page Playback
-- **Video playback now works** — replaced broken QVideoSink+QLabel with QVideoWidget and configured GStreamer plugin paths for NixOS
-- Vertical recording output files are now tracked in `recording.json` and discoverable by the history page
-- Video discovery priority: merged > vertical > raw screen capture, with fallback directory scanning
-- New **Open Folder** button opens the recording directory in your file manager
+## Test plan
 
-### Canvas Aspect Ratio Enforcement
-- Canvas maintains **16:9 aspect ratio** with letterboxing/pillarboxing when the window is resized to non-16:9 dimensions
-- **Logo overlays preserve their source image aspect ratio** during mouse wheel resize, mode changes, and canvas resize events
-- Webcam overlays continue to enforce 1:1 (round) and 4:3 (rect/square) aspect ratios
+- [ ] Build and install .deb on Ubuntu 24.04 X11 VM
+- [ ] Verify screen appears in Add Element > Screen menu with name (e.g. "Virtual-1")
+- [ ] Verify canvas shows live screen preview
+- [ ] Verify recording works on X11
+- [ ] Verify existing Wayland functionality still works
 
-### Start-to-Tray
-- Application **starts with only the system tray icon** visible (no main window on launch)
-- Clicking the window close button (X) **hides to tray** instead of quitting
-- **Quit** available from both the tray menu and a new sidebar button
-- Full quit closes the application including the system tray
+## Includes all v1.6.0 changes
 
-### Testing
-- Added `test_history` suite (17 tests) covering video discovery logic
-- Added 18 new canvas tests for logo/canvas aspect ratio preservation
-- All tests pass on Linux, macOS, and Windows CI
+- YouTube integration (OAuth2, upload with metadata, playlist selection)
+- Kartoza colour scheme (replaced Catppuccin)
+- History page redesign (tree view, thumbnails, editable titles, rename)
+- Recording in-progress page with stop circle
+- Countdown numbers in systray icon
+- Preset rename by double-click
+- Cancel processing button
+- Consistent icon buttons throughout
 
----
-Made with :heart: by [Kartoza](https://kartoza.com) | [Donate](https://github.com/sponsors/kartoza) | [GitHub](https://github.com/kartoza/kartoza-screencaster)
-NOTES
-  )"
+BODY
+)"
 
 echo ""
-echo "Release $VERSION created!"
-echo "CI will build and attach Linux/macOS/Windows/deb/rpm packages (~10 min)."
+echo "PR created! Merge it, then run:"
 echo ""
-echo "Monitor: https://github.com/kartoza/kartoza-screencaster/actions"
-echo "Release: https://github.com/kartoza/kartoza-screencaster/releases/tag/$VERSION"
+echo "  git checkout main && git pull"
+echo "  git tag -a v1.7.0 -m 'Release v1.7.0'"
+echo "  git push origin v1.7.0"
+echo ""
+echo "That will trigger the release build."

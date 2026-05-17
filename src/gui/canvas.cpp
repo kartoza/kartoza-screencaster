@@ -9,6 +9,9 @@
 #include <QWheelEvent>
 #include <QKeyEvent>
 #include <QResizeEvent>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QDir>
 #include <QFileInfo>
 #include <QScreen>
@@ -23,6 +26,7 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
     setMinimumSize(400, 225);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
+    setAcceptDrops(true);
     setStyleSheet("background: #0f0f20; border-radius: 8px;");
 
     m_refreshTimer = new QTimer(this);
@@ -74,7 +78,14 @@ void Canvas::setMonitor(const MonitorInfo &mon) {
     m_monitorName = mon.name;
 
     bool hasScreen = false;
-    for (const auto &item : m_items) { if (item.type == 0) { hasScreen = true; break; } }
+    for (auto &item : m_items) {
+        if (item.type == 0) {
+            hasScreen = true;
+            QString desc = mon.description.isEmpty() ? mon.name : mon.description;
+            item.label = "Screen: " + desc;
+            break;
+        }
+    }
     if (!hasScreen) {
         QString desc = mon.description.isEmpty() ? mon.name : mon.description;
         CanvasItem item;
@@ -112,7 +123,14 @@ void Canvas::setMode(int mode) {
     if (oldFrame.isValid() && newFrame.isValid() &&
         oldFrame.width() > 0 && oldFrame.height() > 0) {
         for (auto &item : m_items) {
-            if (item.type == 0) continue;
+            if (item.type == 0) {
+                // Reset screen to centered when mode changes
+                item.x = m_cw/2;
+                item.y = m_ch/2;
+                item.w = m_cw;
+                item.h = m_ch;
+                continue;
+            }
             double relX = double(item.x - oldFrame.x()) / oldFrame.width();
             double relY = double(item.y - oldFrame.y()) / oldFrame.height();
             double relW = double(item.w) / oldFrame.width();
@@ -200,8 +218,45 @@ void Canvas::addLogo(const QString &filePath) {
     update();
 }
 
+void Canvas::addSound(const QString &filePath, bool isEnd) {
+    int soundType = isEnd ? 5 : 4;
+    // Replace existing sound of this type
+    for (int i = 0; i < m_items.size(); i++) {
+        if (m_items[i].type == soundType) {
+            m_items[i].filePath = filePath;
+            m_items[i].label = (isEnd ? "End: " : "Start: ") + QFileInfo(filePath).fileName();
+            emit itemsChanged();
+            update();
+            return;
+        }
+    }
+    CanvasItem item;
+    item.type = soundType;
+    item.label = (isEnd ? "End: " : "Start: ") + QFileInfo(filePath).fileName();
+    item.filePath = filePath;
+    item.x = 0; item.y = 0; item.w = 0; item.h = 0;
+    item.visible = true;
+    m_items.append(item);
+    emit itemsChanged();
+    update();
+}
+
+void Canvas::updateScreenItem(const ItemExport &e) {
+    for (auto &item : m_items) {
+        if (item.type == 0) {
+            item.x = e.x; item.y = e.y;
+            item.w = e.w; item.h = e.h;
+            item.cropTop = e.cropTop; item.cropBottom = e.cropBottom;
+            item.cropLeft = e.cropLeft; item.cropRight = e.cropRight;
+            update();
+            return;
+        }
+    }
+}
+
 void Canvas::removeItem(int index) {
     if (index < 0 || index >= m_items.size()) return;
+    bool wasScreen = (m_items[index].type == 0);
     stopWebcamCapture(index);
     if (m_items[index].movie) {
         m_items[index].movie->disconnect();
@@ -210,6 +265,10 @@ void Canvas::removeItem(int index) {
         m_items[index].movie = nullptr;
     }
     m_items.removeAt(index);
+    if (wasScreen) {
+        m_screenPixmap = QPixmap(); // Clear cached screenshot
+        m_monitorName.clear();
+    }
     if (m_selected >= m_items.size()) m_selected = -1;
     emit itemsChanged();
     update();
@@ -307,6 +366,8 @@ QList<Canvas::ItemExport> Canvas::exportItems() const {
         e.x = item.x; e.y = item.y; e.w = item.w; e.h = item.h;
         e.shape = item.shape; e.filePath = item.filePath; e.device = item.device;
         e.gifLoop = item.gifLoop; e.gifLoopMax = item.gifLoopMax;
+        e.cropTop = item.cropTop; e.cropBottom = item.cropBottom;
+        e.cropLeft = item.cropLeft; e.cropRight = item.cropRight;
         result.append(e);
     }
     return result;
@@ -318,6 +379,8 @@ void Canvas::importItem(const ItemExport &e) {
         CanvasItem item;
         item.type = 0; item.label = e.label;
         item.x = e.x; item.y = e.y; item.w = e.w; item.h = e.h;
+        item.cropTop = e.cropTop; item.cropBottom = e.cropBottom;
+        item.cropLeft = e.cropLeft; item.cropRight = e.cropRight;
         m_items.append(item);
         break;
     }
@@ -329,6 +392,8 @@ void Canvas::importItem(const ItemExport &e) {
             m_items[idx].w = e.w; m_items[idx].h = e.h;
             m_items[idx].gifLoop = e.gifLoop;
             m_items[idx].gifLoopMax = e.gifLoopMax;
+            m_items[idx].cropTop = e.cropTop; m_items[idx].cropBottom = e.cropBottom;
+            m_items[idx].cropLeft = e.cropLeft; m_items[idx].cropRight = e.cropRight;
         }
         break;
     }
@@ -338,6 +403,8 @@ void Canvas::importItem(const ItemExport &e) {
             auto &last = m_items.last();
             last.x = e.x; last.y = e.y; last.w = e.w; last.h = e.h;
             last.gifLoop = e.gifLoop; last.gifLoopMax = e.gifLoopMax;
+            last.cropTop = e.cropTop; last.cropBottom = e.cropBottom;
+            last.cropLeft = e.cropLeft; last.cropRight = e.cropRight;
         }
         break;
     }
@@ -346,7 +413,16 @@ void Canvas::importItem(const ItemExport &e) {
         CanvasItem item;
         item.type = 3; item.label = e.label;
         item.x = e.x; item.y = e.y; item.w = e.w; item.h = e.h;
+        item.cropTop = e.cropTop; item.cropBottom = e.cropBottom;
+        item.cropLeft = e.cropLeft; item.cropRight = e.cropRight;
         m_items.append(item);
+        break;
+    }
+    case 4: // start sound
+    case 5: { // end sound
+        if (!e.filePath.isEmpty() && QFile::exists(e.filePath)) {
+            addSound(e.filePath, e.type == 5);
+        }
         break;
     }
     }
@@ -495,7 +571,16 @@ void Canvas::resizeEvent(QResizeEvent *event) {
     if (m_lastFrameRect.isValid() && newFrame.isValid() &&
         m_lastFrameRect.width() > 0 && m_lastFrameRect.height() > 0) {
         for (auto &item : m_items) {
-            if (item.type == 0) continue; // screen fills the frame, skip
+            if (item.type == 0) {
+                // Rescale screen item position proportionally
+                double relX = double(item.x) / m_lastFrameRect.width();
+                double relY = double(item.y) / m_lastFrameRect.height();
+                item.x = int(relX * newFrame.width());
+                item.y = int(relY * newFrame.height());
+                item.w = newFrame.width();
+                item.h = newFrame.height();
+                continue;
+            }
 
             // Convert from old frame-relative to new frame-relative
             double relX = double(item.x - m_lastFrameRect.x()) / m_lastFrameRect.width();
@@ -533,9 +618,56 @@ bool Canvas::hitTest(const CanvasItem &item, int mx, int my) const {
 
 // === Input events ===
 
+int Canvas::hitCropHandle(const CanvasItem &item, int mx, int my) const {
+    // Returns: 0=none, 1=top, 2=bottom, 3=left, 4=right
+    int left = item.x - item.w/2;
+    int top = item.y - item.h/2;
+    int right = left + item.w;
+    int bottom = top + item.h;
+    int hs = CROP_HANDLE_SIZE;
+
+    // Top handle: centered horizontally at item top edge
+    if (std::abs(my - (top + item.cropTop)) <= hs &&
+        std::abs(mx - item.x) <= hs*2)
+        return 1;
+    // Bottom handle
+    if (std::abs(my - (bottom - item.cropBottom)) <= hs &&
+        std::abs(mx - item.x) <= hs*2)
+        return 2;
+    // Left handle
+    if (std::abs(mx - (left + item.cropLeft)) <= hs &&
+        std::abs(my - item.y) <= hs*2)
+        return 3;
+    // Right handle
+    if (std::abs(mx - (right - item.cropRight)) <= hs &&
+        std::abs(my - item.y) <= hs*2)
+        return 4;
+
+    return 0;
+}
+
 void Canvas::mousePressEvent(QMouseEvent *event) {
     int mx = event->pos().x() - m_offsetX, my = event->pos().y() - m_offsetY;
+    m_cropHandle = 0;
+    m_cropItem = -1;
     int hit = -1;
+
+    // Check crop handles on selected item first
+    if (m_selected >= 0 && m_selected < m_items.size() && m_items[m_selected].visible) {
+        int handle = hitCropHandle(m_items[m_selected], mx, my);
+        if (handle > 0) {
+            m_cropHandle = handle;
+            m_cropItem = m_selected;
+            hit = m_selected;
+            setFocus();
+            update();
+            m_selected = hit;
+            emit selectionChanged(hit);
+            return;
+        }
+    }
+
+    // First pass: check non-screen items (drawn on top)
     for (int i = m_items.size()-1; i >= 0; i--) {
         if (!m_items[i].visible || m_items[i].type == 0) continue;
         if (hitTest(m_items[i], mx, my)) {
@@ -546,6 +678,34 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
             break;
         }
     }
+    // Check sound items (click on their icon area)
+    if (hit < 0) {
+        for (int i = 0; i < m_items.size(); i++) {
+            if ((m_items[i].type == 4 || m_items[i].type == 5) && m_items[i].visible) {
+                bool isEnd = (m_items[i].type == 5);
+                int iconX = isEnd ? m_cw - 20 : 5;
+                int iconY = m_ch - 18;
+                if (mx >= iconX && mx <= iconX + 18 && my >= iconY && my <= iconY + 14) {
+                    hit = i;
+                    break;
+                }
+            }
+        }
+    }
+    // Last pass: check screen item
+    if (hit < 0) {
+        for (int i = 0; i < m_items.size(); i++) {
+            if (m_items[i].type == 0 && m_items[i].visible) {
+                if (hitTest(m_items[i], mx, my)) {
+                    hit = i;
+                    m_dragging = i;
+                    m_dragOffX = mx - m_items[i].x;
+                    m_dragOffY = my - m_items[i].y;
+                }
+                break;
+            }
+        }
+    }
     m_selected = hit;
     emit selectionChanged(hit);
     setFocus();
@@ -553,24 +713,104 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
 }
 
 void Canvas::mouseMoveEvent(QMouseEvent *event) {
-    if (m_dragging < 0) return;
-    auto &item = m_items[m_dragging];
-    int nx = event->pos().x() - m_offsetX - m_dragOffX;
-    int ny = event->pos().y() - m_offsetY - m_dragOffY;
-    item.x = std::clamp(nx, item.w/2, m_cw - item.w/2);
-    item.y = std::clamp(ny, item.h/2, m_ch - item.h/2);
+    int mx = event->pos().x() - m_offsetX;
+    int my = event->pos().y() - m_offsetY;
+    bool shiftHeld = event->modifiers() & Qt::ShiftModifier;
 
-    // Edge snap
-    int margin = 8, snap = 15;
-    if (item.x - item.w/2 < snap+margin) item.x = item.w/2 + margin;
-    else if (m_cw - item.x - item.w/2 < snap+margin) item.x = m_cw - item.w/2 - margin;
-    if (item.y - item.h/2 < snap+margin) item.y = item.h/2 + margin;
-    else if (m_ch - item.y - item.h/2 < snap+margin) item.y = m_ch - item.h/2 - margin;
+    // Handle crop handle dragging
+    if (m_cropHandle > 0 && m_cropItem >= 0 && m_cropItem < m_items.size()) {
+        auto &item = m_items[m_cropItem];
+        int left = item.x - item.w/2;
+        int top = item.y - item.h/2;
+        int right = left + item.w;
+        int bottom = top + item.h;
+        int minVisible = 20; // minimum visible area
+
+        switch (m_cropHandle) {
+        case 1: // top
+            item.cropTop = std::clamp(my - top, 0, item.h - item.cropBottom - minVisible);
+            break;
+        case 2: // bottom
+            item.cropBottom = std::clamp(bottom - my, 0, item.h - item.cropTop - minVisible);
+            break;
+        case 3: // left
+            item.cropLeft = std::clamp(mx - left, 0, item.w - item.cropRight - minVisible);
+            break;
+        case 4: // right
+            item.cropRight = std::clamp(right - mx, 0, item.w - item.cropLeft - minVisible);
+            break;
+        }
+        update();
+        return;
+    }
+
+    if (m_dragging < 0) {
+        // Update cursor for crop handle hover on selected item
+        if (m_selected >= 0 && m_selected < m_items.size()) {
+            int handle = hitCropHandle(m_items[m_selected], mx, my);
+            if (handle == 1 || handle == 2)
+                setCursor(Qt::SizeVerCursor);
+            else if (handle == 3 || handle == 4)
+                setCursor(Qt::SizeHorCursor);
+            else
+                setCursor(Qt::ArrowCursor);
+        }
+        return;
+    }
+
+    auto &item = m_items[m_dragging];
+    int nx = mx - m_dragOffX;
+    int ny = my - m_dragOffY;
+
+    if (item.type == 0) {
+        item.x = std::clamp(nx, 0, m_cw);
+        item.y = std::clamp(ny, 0, m_ch);
+    } else {
+        item.x = std::clamp(nx, item.w/2, m_cw - item.w/2);
+        item.y = std::clamp(ny, item.h/2, m_ch - item.h/2);
+
+        // Edge snap (unless Shift is held)
+        if (!shiftHeld) {
+            QRect fr = frameRect();
+            int snap = 12;
+            // Use x+width instead of QRect::right() to avoid off-by-one
+            int frRight = fr.x() + fr.width();
+            int frBottom = fr.y() + fr.height();
+            int frCenterX = fr.x() + fr.width()/2;
+            int frCenterY = fr.y() + fr.height()/2;
+
+            // Item edges
+            int itemLeft = item.x - item.w/2;
+            int itemRight = item.x + item.w/2;
+            int itemTop = item.y - item.h/2;
+            int itemBottom = item.y + item.h/2;
+
+            // Snap to frame left edge
+            if (std::abs(itemLeft - fr.x()) < snap) item.x = fr.x() + item.w/2;
+            // Snap to frame right edge
+            else if (std::abs(itemRight - frRight) < snap) item.x = frRight - item.w/2;
+            // Snap to frame horizontal center
+            else if (std::abs(item.x - frCenterX) < snap) item.x = frCenterX;
+
+            // Snap to frame top edge
+            if (std::abs(itemTop - fr.y()) < snap) item.y = fr.y() + item.h/2;
+            // Snap to frame bottom edge
+            else if (std::abs(itemBottom - frBottom) < snap) item.y = frBottom - item.h/2;
+            // Snap to frame vertical center
+            else if (std::abs(item.y - frCenterY) < snap) item.y = frCenterY;
+        }
+    }
 
     update();
 }
 
 void Canvas::mouseReleaseEvent(QMouseEvent *) {
+    if (m_cropHandle > 0) {
+        m_cropHandle = 0;
+        m_cropItem = -1;
+        setCursor(Qt::ArrowCursor);
+        emit itemsChanged();
+    }
     if (m_dragging >= 0) {
         m_dragging = -1;
         emit itemsChanged();
@@ -580,6 +820,8 @@ void Canvas::mouseReleaseEvent(QMouseEvent *) {
 void Canvas::wheelEvent(QWheelEvent *event) {
     int mx = event->position().toPoint().x() - m_offsetX;
     int my = event->position().toPoint().y() - m_offsetY;
+
+    // Check non-screen items first
     for (int i = m_items.size()-1; i >= 0; i--) {
         auto &item = m_items[i];
         if (!item.visible || item.type == 0) continue;
@@ -587,38 +829,89 @@ void Canvas::wheelEvent(QWheelEvent *event) {
             int delta = event->angleDelta().y() > 0 ? 5 : -5;
             item.w = std::max(20, item.w + delta);
             if (item.type == 1) {
-                // Webcam: maintain aspect ratio
-                if (item.shape == 0) item.h = item.w; // round: square
-                else item.h = item.w * 3 / 4; // 4:3 aspect
+                if (item.shape == 0) item.h = item.w;
+                else item.h = item.w * 3 / 4;
             } else if (item.type == 2 && !item.pixmap.isNull() && item.pixmap.width() > 0) {
-                // Logo: maintain original image aspect ratio
                 item.h = std::max(10, item.w * item.pixmap.height() / item.pixmap.width());
             } else {
                 item.h = std::max(15, item.h + delta);
             }
             emit itemsChanged();
             update();
-            break;
+            return;
         }
+    }
+
+    // If no overlay item hit, allow scroll-wheel on the screen item (scale/zoom)
+    if (m_selected >= 0 && m_selected < m_items.size() && m_items[m_selected].type == 0) {
+        auto &item = m_items[m_selected];
+        int delta = event->angleDelta().y() > 0 ? 10 : -10;
+        int newW = std::max(m_cw / 2, item.w + delta);
+        int newH = newW * 9 / 16;
+        item.w = newW;
+        item.h = newH;
+        emit itemsChanged();
+        update();
     }
 }
 
 void Canvas::keyPressEvent(QKeyEvent *event) {
-    if (m_selected >= 0 && m_selected < m_items.size() && m_items[m_selected].type != 0) {
+    if (m_selected >= 0 && m_selected < m_items.size()) {
         auto &item = m_items[m_selected];
         switch (event->key()) {
-        case Qt::Key_Left: item.x--; update(); return;
-        case Qt::Key_Right: item.x++; update(); return;
-        case Qt::Key_Up: item.y--; update(); return;
-        case Qt::Key_Down: item.y++; update(); return;
+        case Qt::Key_Left: item.x--; update(); emit itemsChanged(); return;
+        case Qt::Key_Right: item.x++; update(); emit itemsChanged(); return;
+        case Qt::Key_Up: item.y--; update(); emit itemsChanged(); return;
+        case Qt::Key_Down: item.y++; update(); emit itemsChanged(); return;
         case Qt::Key_Delete:
-            removeItem(m_selected);
-            m_selected = -1;
-            emit selectionChanged(-1);
+            if (item.type != 0) { // Don't allow deleting the screen item
+                removeItem(m_selected);
+                m_selected = -1;
+                emit selectionChanged(-1);
+            }
             return;
         }
     }
     QWidget::keyPressEvent(event);
+}
+
+// === Drag and Drop ===
+
+void Canvas::dragEnterEvent(QDragEnterEvent *event) {
+    if (event->mimeData()->hasUrls() || event->mimeData()->hasText()) {
+        event->acceptProposedAction();
+    }
+}
+
+void Canvas::dropEvent(QDropEvent *event) {
+    QString filePath;
+    if (event->mimeData()->hasUrls() && !event->mimeData()->urls().isEmpty()) {
+        filePath = event->mimeData()->urls().first().toLocalFile();
+    } else if (event->mimeData()->hasText()) {
+        filePath = event->mimeData()->text();
+    }
+    if (filePath.isEmpty()) return;
+
+    QString ext = QFileInfo(filePath).suffix().toLower();
+
+    // Image files become logo overlays
+    QStringList imageExts = {"png", "jpg", "jpeg", "svg", "gif", "webp", "bmp"};
+    if (imageExts.contains(ext)) {
+        addLogo(filePath);
+        event->acceptProposedAction();
+        return;
+    }
+
+    // Audio files become sound effects
+    QStringList audioExts = {"wav", "mp3", "ogg", "flac", "aac", "m4a", "opus"};
+    if (audioExts.contains(ext)) {
+        // Drop on left half = start sound, right half = end sound
+        int mx = event->position().toPoint().x() - m_offsetX;
+        bool isEnd = (mx > m_cw / 2);
+        addSound(filePath, isEnd);
+        event->acceptProposedAction();
+        return;
+    }
 }
 
 // === Painting ===
@@ -638,69 +931,133 @@ void Canvas::paintEvent(QPaintEvent *) {
         bool isDragging = (i == m_dragging);
         bool isSelected = (i == m_selected);
 
+        // Compute visible rect after cropping
+        int visLeft = item.x - item.w/2 + item.cropLeft;
+        int visTop = item.y - item.h/2 + item.cropTop;
+        int visW = item.w - item.cropLeft - item.cropRight;
+        int visH = item.h - item.cropTop - item.cropBottom;
+        QRect visRect(visLeft, visTop, visW, visH);
+
         if (item.type == 2) { // Logo
             if (!item.pixmap.isNull()) {
-                painter.drawPixmap(QRect(item.x-item.w/2, item.y-item.h/2, item.w, item.h), item.pixmap);
+                // Source rect within the pixmap (proportional crop)
+                int pw = item.pixmap.width(), ph = item.pixmap.height();
+                int srcL = item.cropLeft * pw / item.w;
+                int srcT = item.cropTop * ph / item.h;
+                int srcW = visW * pw / item.w;
+                int srcH = visH * ph / item.h;
+                painter.drawPixmap(visRect, item.pixmap, QRect(srcL, srcT, srcW, srcH));
             }
             if (isDragging || isSelected) {
                 painter.setPen(isSelected ? QColor(232, 184, 74) : QColor(86, 159, 198));
                 painter.setBrush(Qt::NoBrush);
-                painter.drawRect(item.x-item.w/2, item.y-item.h/2, item.w, item.h);
+                painter.drawRect(visRect);
             }
         } else if (item.type == 1) { // Webcam
             QPen pen(isDragging ? QColor(86, 159, 198) : QColor(232, 232, 236));
             painter.setPen(pen);
 
             bool hasFrame = !item.webcamPixmap.isNull();
-            int r = item.w / 2;
 
             if (item.shape == 0) { // round
+                // For round webcam, crop reduces the visible circle
+                int r = std::min(visW, visH) / 2;
+                int cx = visLeft + visW/2, cy = visTop + visH/2;
                 if (hasFrame) {
                     painter.save();
                     QPainterPath clipPath;
-                    clipPath.addEllipse(item.x-r, item.y-r, item.w, item.h);
+                    clipPath.addEllipse(cx-r, cy-r, r*2, r*2);
                     painter.setClipPath(clipPath);
-                    painter.drawPixmap(QRect(item.x-r, item.y-r, item.w, item.h), item.webcamPixmap);
+                    painter.drawPixmap(QRect(cx-r, cy-r, r*2, r*2), item.webcamPixmap);
                     painter.restore();
                 } else {
                     painter.setBrush(QColor(6, 150, 154));
                 }
                 painter.setBrush(Qt::NoBrush);
-                painter.drawEllipse(item.x-r, item.y-r, item.w, item.h);
+                painter.drawEllipse(cx-r, cy-r, r*2, r*2);
             } else { // square or rect
-                QRect rect(item.x-item.w/2, item.y-item.h/2, item.w, item.h);
                 if (hasFrame) {
-                    painter.drawPixmap(rect, item.webcamPixmap);
+                    // Source crop within webcam frame
+                    int pw = item.webcamPixmap.width(), ph = item.webcamPixmap.height();
+                    int srcL = item.cropLeft * pw / item.w;
+                    int srcT = item.cropTop * ph / item.h;
+                    int srcW = visW * pw / item.w;
+                    int srcH = visH * ph / item.h;
+                    painter.drawPixmap(visRect, item.webcamPixmap, QRect(srcL, srcT, srcW, srcH));
                 } else {
                     painter.setBrush(QColor(6, 150, 154));
-                    painter.drawRect(rect);
+                    painter.drawRect(visRect);
                 }
                 painter.setBrush(Qt::NoBrush);
-                painter.drawRect(rect);
+                painter.drawRect(visRect);
             }
 
             // Label
             painter.setPen(QColor(232, 232, 236));
-            painter.drawText(QPoint(item.x - item.w/3, item.y + item.h/2 + 12), item.label.left(10));
+            painter.drawText(QPoint(visLeft, visTop + visH + 12), item.label.left(10));
 
             if (isSelected) {
                 painter.setPen(QColor(232, 184, 74));
                 painter.setBrush(Qt::NoBrush);
-                painter.drawRect(item.x-item.w/2-3, item.y-item.h/2-3, item.w+6, item.h+6);
+                painter.drawRect(visRect.adjusted(-3, -3, 3, 3));
             }
         } else if (item.type == 3) { // Title
             painter.save();
-            int fontSize = std::max(6, item.h * 2 / 3);
+            int fontSize = std::max(6, visH * 2 / 3);
             painter.setFont(QFont("Sans", fontSize));
             painter.setPen(isDragging ? QColor(86, 159, 198) : QColor(m_titleColor));
+            painter.setClipRect(visRect);
             painter.drawText(QPoint(item.x - item.w/2, item.y + item.h/4), item.label);
+            painter.restore();
             if (isDragging || isSelected) {
                 painter.setPen(isSelected ? QColor(232, 184, 74) : QColor(86, 159, 198));
                 painter.setBrush(Qt::NoBrush);
-                painter.drawRect(item.x-item.w/2-2, item.y-item.h/2-2, item.w+4, item.h+4);
+                painter.drawRect(visRect.adjusted(-2, -2, 2, 2));
             }
-            painter.restore();
         }
+
+        // Draw crop handles on the selected item
+        if (isSelected) {
+            drawCropHandles(painter, item);
+        }
+    }
+
+    // Sound effect indicators (bottom-left = start, bottom-right = end)
+    for (int i = 0; i < m_items.size(); i++) {
+        const auto &item = m_items[i];
+        if (item.type != 4 && item.type != 5) continue;
+        if (!item.visible) continue;
+
+        bool isEnd = (item.type == 5);
+        bool isSelected = (i == m_selected);
+        int iconX = isEnd ? m_cw - 20 : 5;
+        int iconY = m_ch - 18;
+
+        // Speaker icon (simple drawn shape)
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(isSelected ? QColor(223, 158, 47) : QColor(86, 159, 198));
+
+        // Speaker body
+        painter.drawRect(iconX, iconY + 3, 5, 8);
+        // Speaker cone
+        QPolygon cone;
+        cone << QPoint(iconX + 5, iconY + 2) << QPoint(iconX + 10, iconY)
+             << QPoint(iconX + 10, iconY + 14) << QPoint(iconX + 5, iconY + 12);
+        painter.drawPolygon(cone);
+
+        // Sound waves
+        painter.setPen(QPen(isSelected ? QColor(223, 158, 47) : QColor(86, 159, 198), 1));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawArc(iconX + 11, iconY + 2, 4, 10, -60*16, 120*16);
+
+        // Label
+        painter.setPen(isSelected ? QColor(223, 158, 47) : QColor(138, 139, 139));
+        QFont smallFont("Sans", 7);
+        painter.setFont(smallFont);
+        QString label = QFileInfo(item.filePath).baseName().left(12);
+        int textX = isEnd ? iconX - 4 - painter.fontMetrics().horizontalAdvance(label) : iconX + 18;
+        painter.drawText(QPoint(textX, iconY + 10), label);
+        painter.setFont(QFont()); // reset
     }
 
     // Mode label
@@ -710,15 +1067,53 @@ void Canvas::paintEvent(QPaintEvent *) {
 }
 
 void Canvas::drawScreen(QPainter &painter) {
+    // Check if a screen item actually exists
+    bool hasScreenItem = false;
+    int screenOffX = 0, screenOffY = 0;
+    int screenW = m_cw, screenH = m_ch;
+    int sCropT = 0, sCropB = 0, sCropL = 0, sCropR = 0;
+    for (const auto &item : m_items) {
+        if (item.type == 0) {
+            hasScreenItem = true;
+            screenOffX = item.x - m_cw/2;
+            screenOffY = item.y - m_ch/2;
+            screenW = item.w;
+            screenH = item.h;
+            sCropT = item.cropTop; sCropB = item.cropBottom;
+            sCropL = item.cropLeft; sCropR = item.cropRight;
+            break;
+        }
+    }
+
+    // If no screen item in the layer list, just draw empty canvas
+    if (!hasScreenItem) {
+        painter.fillRect(QRect(0, 0, m_cw, m_ch), QColor(15, 15, 32));
+        painter.setPen(QColor(61, 61, 86));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(0, 0, m_cw-1, m_ch-1);
+        return;
+    }
+
     bool hasScreen = !m_screenPixmap.isNull();
 
     QRect canvasRect(0, 0, m_cw, m_ch);
     if (m_mode == 0) {
-        if (hasScreen) painter.drawPixmap(canvasRect, m_screenPixmap);
-        else {
-            painter.fillRect(canvasRect, QColor(26, 26, 46));
+        int sx = screenOffX + (m_cw - screenW)/2;
+        int sy = screenOffY + (m_ch - screenH)/2;
+        QRect screenRect(sx + sCropL, sy + sCropT,
+                         screenW - sCropL - sCropR, screenH - sCropT - sCropB);
+        if (hasScreen) {
+            // Crop the source pixmap proportionally
+            int pw = m_screenPixmap.width(), ph = m_screenPixmap.height();
+            int srcL = sCropL * pw / screenW;
+            int srcT = sCropT * ph / screenH;
+            int srcW = (screenW - sCropL - sCropR) * pw / screenW;
+            int srcH = (screenH - sCropT - sCropB) * ph / screenH;
+            painter.drawPixmap(screenRect, m_screenPixmap, QRect(srcL, srcT, srcW, srcH));
+        } else {
+            painter.fillRect(screenRect, QColor(26, 26, 46));
             painter.setPen(QColor(138, 139, 139));
-            painter.drawText(QPoint(m_cw/2-20, m_ch/2), "Screen");
+            painter.drawText(screenRect.center() - QPoint(20, 0), "Screen");
         }
     } else {
         int fh = m_ch - 20, fw = fh * 9 / 16;
@@ -736,7 +1131,7 @@ void Canvas::drawScreen(QPainter &painter) {
         int screenH = (m_mode >= 2) ? std::min(fw * 9 / 8, fh) : std::min(fw * 9 / 16, fh);
 
         if (hasScreen) {
-            QRect target(fx, fy, fw, screenH);
+            QRect target(fx + screenOffX, fy + screenOffY, fw, screenH);
             if (m_mode == 2) { // left split
                 QRect src(0, 0, m_screenPixmap.width()/2, m_screenPixmap.height());
                 painter.drawPixmap(target, m_screenPixmap, src);
@@ -749,7 +1144,7 @@ void Canvas::drawScreen(QPainter &painter) {
         }
 
         if (screenH < fh)
-            painter.fillRect(QRect(fx, fy+screenH, fw, fh-screenH), Qt::white);
+            painter.fillRect(QRect(fx + screenOffX, fy + screenOffY + screenH, fw, fh-screenH), Qt::white);
 
         painter.setPen(QColor(86, 159, 198));
         painter.setBrush(Qt::NoBrush);
@@ -759,7 +1154,71 @@ void Canvas::drawScreen(QPainter &painter) {
         painter.drawText(QPoint(fx+5, fy+fh+14), modeNames.value(m_mode, ""));
     }
 
+    // Draw selection highlight and crop handles on screen item if selected
+    int screenIdx = -1;
+    for (int i = 0; i < m_items.size(); i++) {
+        if (m_items[i].type == 0) { screenIdx = i; break; }
+    }
+    if (screenIdx >= 0 && (screenIdx == m_selected || screenIdx == m_dragging)) {
+        painter.setPen(QPen(QColor(232, 184, 74), 2, Qt::DashLine));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(0, 0, m_cw-1, m_ch-1);
+        if (screenIdx == m_selected)
+            drawCropHandles(painter, m_items[screenIdx]);
+    }
+
     painter.setPen(QColor(61, 61, 86));
     painter.setBrush(Qt::NoBrush);
     painter.drawRect(0, 0, m_cw-1, m_ch-1);
+}
+
+void Canvas::drawCropHandles(QPainter &painter, const CanvasItem &item) {
+    int left = item.x - item.w/2;
+    int top = item.y - item.h/2;
+    int right = left + item.w;
+    int bottom = top + item.h;
+    int hs = CROP_HANDLE_SIZE;
+
+    QColor handleColor(223, 158, 47); // Kartoza highlight1 #DF9E2F
+    QColor cropAreaColor(223, 158, 47, 40);
+    painter.setBrush(handleColor);
+    painter.setPen(Qt::NoPen);
+
+    // Draw dimmed crop regions
+    if (item.cropTop > 0) {
+        painter.fillRect(QRect(left, top, item.w, item.cropTop), cropAreaColor);
+    }
+    if (item.cropBottom > 0) {
+        painter.fillRect(QRect(left, bottom - item.cropBottom, item.w, item.cropBottom), cropAreaColor);
+    }
+    if (item.cropLeft > 0) {
+        painter.fillRect(QRect(left, top + item.cropTop, item.cropLeft, item.h - item.cropTop - item.cropBottom), cropAreaColor);
+    }
+    if (item.cropRight > 0) {
+        painter.fillRect(QRect(right - item.cropRight, top + item.cropTop, item.cropRight, item.h - item.cropTop - item.cropBottom), cropAreaColor);
+    }
+
+    // Draw crop edge lines
+    painter.setPen(QPen(handleColor, 1, Qt::DashLine));
+    painter.setBrush(Qt::NoBrush);
+    if (item.cropTop > 0)
+        painter.drawLine(left, top + item.cropTop, right, top + item.cropTop);
+    if (item.cropBottom > 0)
+        painter.drawLine(left, bottom - item.cropBottom, right, bottom - item.cropBottom);
+    if (item.cropLeft > 0)
+        painter.drawLine(left + item.cropLeft, top, left + item.cropLeft, bottom);
+    if (item.cropRight > 0)
+        painter.drawLine(right - item.cropRight, top, right - item.cropRight, bottom);
+
+    // Draw handle rectangles
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(handleColor);
+    // Top handle
+    painter.drawRect(item.x - hs, top + item.cropTop - hs/2, hs*2, hs);
+    // Bottom handle
+    painter.drawRect(item.x - hs, bottom - item.cropBottom - hs/2, hs*2, hs);
+    // Left handle
+    painter.drawRect(left + item.cropLeft - hs/2, item.y - hs, hs, hs*2);
+    // Right handle
+    painter.drawRect(right - item.cropRight - hs/2, item.y - hs, hs, hs*2);
 }

@@ -67,6 +67,8 @@ set(SOURCES
     src/gui/settingspage.h
     src/gui/processingpage.cpp
     src/gui/processingpage.h
+    src/gui/assetgallery.cpp
+    src/gui/assetgallery.h
     src/gui/tray.cpp
     src/gui/tray.h
     src/recorder/recorder.cpp

@@ -160,21 +160,21 @@ void SettingsPage::setupUI() {
     bgRow->addStretch();
     layout->addLayout(bgRow);
 
-    // Logo directory
-    auto *logoLabel = new QLabel("Logos");
+    // Assets directory
+    auto *logoLabel = new QLabel("Assets");
     logoLabel->setStyleSheet(sectionStyle);
     layout->addWidget(logoLabel);
 
     auto *logoRow = new QHBoxLayout;
-    auto *logoDirLabel = new QLabel("Logo directory:");
+    auto *logoDirLabel = new QLabel("Assets directory:");
     logoDirLabel->setStyleSheet(labelStyle);
     logoDirLabel->setFixedWidth(120);
-    logoDirLabel->setToolTip("Directory to browse for logo images.");
+    logoDirLabel->setToolTip("Directory containing images, logos, and overlays to use on the canvas.");
     logoRow->addWidget(logoDirLabel);
     m_logoDirInput = new QLineEdit;
     m_logoDirInput->setStyleSheet(inputStyle);
-    m_logoDirInput->setPlaceholderText("~/Pictures/Logos");
-    m_logoDirInput->setToolTip("Directory to browse for logo images.");
+    m_logoDirInput->setPlaceholderText("~/Pictures/Assets");
+    m_logoDirInput->setToolTip("Directory containing images, logos, and overlays to use on the canvas.");
     connect(m_logoDirInput, &QLineEdit::editingFinished, this, &SettingsPage::saveToConfig);
     logoRow->addWidget(m_logoDirInput);
     auto *logoBrowseBtn = new QPushButton(QString::fromUtf8("\u2026")); // ellipsis
@@ -182,7 +182,7 @@ void SettingsPage::setupUI() {
     logoBrowseBtn->setStyleSheet(btnStyle);
     logoBrowseBtn->setToolTip("Browse for directory");
     connect(logoBrowseBtn, &QPushButton::clicked, this, [this]() {
-        QString dir = QFileDialog::getExistingDirectory(this, "Select Logo Directory", m_logoDirInput->text());
+        QString dir = QFileDialog::getExistingDirectory(this, "Select Assets Directory", m_logoDirInput->text());
         if (!dir.isEmpty()) { m_logoDirInput->setText(dir); saveToConfig(); }
     });
     logoRow->addWidget(logoBrowseBtn);

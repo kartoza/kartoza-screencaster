@@ -278,6 +278,77 @@ private slots:
         QVERIFY(cfg.presets.contains("Stable"));
         QCOMPARE(cfg.presets["Stable"].presenter, QString("Stable"));
     }
+    void testCropFieldsSaveLoad() {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+
+        auto &cfg = Config::instance();
+        QString oldDir = cfg.outputDir;
+        cfg.outputDir = tmp.path();
+
+        // Set crop values on a canvas item
+        CanvasItemState item;
+        item.type = "webcam";
+        item.label = "CropTest";
+        item.rx = 0.5; item.ry = 0.5; item.rw = 0.2; item.rh = 0.15;
+        item.cropTop = 0.1; item.cropBottom = 0.2;
+        item.cropLeft = 0.05; item.cropRight = 0.15;
+        cfg.canvasState.items.clear();
+        cfg.canvasState.items.append(item);
+        cfg.save();
+
+        // Reload
+        cfg.canvasState.items.clear();
+        cfg.load();
+        QCOMPARE(cfg.canvasState.items.size(), 1);
+        auto &loaded = cfg.canvasState.items[0];
+        QVERIFY(qAbs(loaded.cropTop - 0.1) < 0.001);
+        QVERIFY(qAbs(loaded.cropBottom - 0.2) < 0.001);
+        QVERIFY(qAbs(loaded.cropLeft - 0.05) < 0.001);
+        QVERIFY(qAbs(loaded.cropRight - 0.15) < 0.001);
+
+        cfg.outputDir = oldDir;
+    }
+
+    void testCropFieldsInPreset() {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+
+        auto &cfg = Config::instance();
+        QString oldDir = cfg.outputDir;
+        cfg.outputDir = tmp.path();
+
+        CanvasItemState item;
+        item.type = "logo";
+        item.label = "CropPreset";
+        item.rx = 0.3; item.ry = 0.4; item.rw = 0.1; item.rh = 0.08;
+        item.cropTop = 0.25; item.cropLeft = 0.3;
+
+        CanvasState preset;
+        preset.mode = "landscape";
+        preset.items.append(item);
+        cfg.presets["CropTest"] = preset;
+        cfg.save();
+
+        cfg.presets.clear();
+        cfg.load();
+        QVERIFY(cfg.presets.contains("CropTest"));
+        auto &loadedItem = cfg.presets["CropTest"].items[0];
+        QVERIFY(qAbs(loadedItem.cropTop - 0.25) < 0.001);
+        QVERIFY(qAbs(loadedItem.cropLeft - 0.3) < 0.001);
+        QCOMPARE(loadedItem.cropBottom, 0.0);
+        QCOMPARE(loadedItem.cropRight, 0.0);
+
+        cfg.outputDir = oldDir;
+    }
+
+    void testCropFieldsDefaultZero() {
+        CanvasItemState s;
+        QCOMPARE(s.cropTop, 0.0);
+        QCOMPARE(s.cropBottom, 0.0);
+        QCOMPARE(s.cropLeft, 0.0);
+        QCOMPARE(s.cropRight, 0.0);
+    }
 };
 
 QTEST_MAIN(TestConfig)

@@ -248,6 +248,12 @@
           shellHook = ''
             export EDITOR=nvim
 
+            # Suppress VDPAU nvidia probe (not available in nix env).
+            # If you DO have an NVIDIA GPU with drivers installed, use instead:
+            #   export VDPAU_DRIVER=nvidia
+            #   export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/vdpau''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+            export VDPAU_DRIVER=va_gl
+
             # Qt multimedia needs its GStreamer backend plugin + GStreamer plugins
             export QT_PLUGIN_PATH="${pkgs.qt6.qtmultimedia}/${pkgs.qt6.qtbase.qtPluginPrefix}''${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
             export GST_PLUGIN_SYSTEM_PATH_1_0="${pkgs.gst_all_1.gst-plugins-base}/lib/gstreamer-1.0:${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0:${pkgs.gst_all_1.gst-plugins-bad}/lib/gstreamer-1.0:${pkgs.gst_all_1.gst-libav}/lib/gstreamer-1.0''${GST_PLUGIN_SYSTEM_PATH_1_0:+:$GST_PLUGIN_SYSTEM_PATH_1_0}"
