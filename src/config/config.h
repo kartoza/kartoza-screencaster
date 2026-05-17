@@ -80,6 +80,8 @@ public:
     QString bgColor = "white";
     /** Whether to normalise audio levels in post-processing. */
     bool normalizeAudio = true;
+    /** Whether to apply noise reduction and dereverb in post-processing. */
+    bool denoiseAudio = true;
 
     /** Current canvas layout state persisted between sessions. */
     CanvasState canvasState;

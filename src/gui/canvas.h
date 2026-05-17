@@ -195,9 +195,13 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
     /** @brief Recalculate canvas dimensions on resize. */
     void resizeEvent(QResizeEvent *event) override;
-    /** @brief Accept drag enter for image files. */
+    /** @brief Accept drag enter for image/audio files. */
     void dragEnterEvent(QDragEnterEvent *event) override;
-    /** @brief Handle drop of image files onto the canvas. */
+    /** @brief Track drag position to highlight drop targets. */
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    /** @brief Hide drop targets when drag leaves. */
+    void dragLeaveEvent(QDragLeaveEvent *event) override;
+    /** @brief Handle drop of image/audio files onto the canvas. */
     void dropEvent(QDropEvent *event) override;
 
 private:
@@ -247,6 +251,8 @@ private:
     bool hitTest(const CanvasItem &item, int mx, int my) const;
     /** @brief Test which crop handle (if any) is hit at the given point. Returns 0=none, 1=top, 2=bottom, 3=left, 4=right. */
     int hitCropHandle(const CanvasItem &item, int mx, int my) const;
+    /** @brief Get the rect for a sound drop target (in canvas coords). */
+    QRect soundDropTargetRect(bool isEnd) const;
     /**
      * @brief Start the live webcam capture process for an item.
      * @param itemIdx Index of the webcam item.
@@ -289,6 +295,10 @@ private:
     int m_cropHandle = 0;
     /** @brief Index of item whose crop handle is being dragged. */
     int m_cropItem = -1;
+    /** @brief Whether audio drop targets are visible (during audio file drag). */
+    bool m_showSoundDropTargets = false;
+    /** @brief Which sound drop target is hovered: 0=none, 1=start(left), 2=end(right). */
+    int m_soundDropHover = 0;
     /** @brief X offset to center the 16:9 canvas within the widget. */
     int m_offsetX = 0;
     /** @brief Y offset to center the 16:9 canvas within the widget. */

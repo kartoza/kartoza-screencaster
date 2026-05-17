@@ -59,7 +59,9 @@
       "Bash(QT_QPA_PLATFORM=offscreen ctest --output-on-failure -R test_config)",
       "Bash(QT_QPA_PLATFORM=offscreen ctest --output-on-failure)",
       "Bash(ninja test_youtube)",
-      "Bash(ninja)"
+      "Bash(ninja)",
+      "Bash(ffmpeg -y -f lavfi -i \"anoisesrc=d=1.2:c=pink:s=77,highpass=f=200,bandpass=f=650:width_type=q:w=2.5,vibrato=f=6:d=0.5,volume=4,areverse,afade=t=in:st=0:d=0.3,afade=t=out:st=0.5:d=0.7\" -af \"alimiter=limit=0.9\" /home/timlinux/dev/cpp/kartoza-screencaster/resources/sounds/bamboo_wind_outro.wav)",
+      "Bash(ffmpeg -y -f lavfi -i \"anoisesrc=d=1:c=pink,highpass=f=300,bandpass=f=900:width_type=q:w=3,tremolo=f=4:d=0.9,volume=6,afade=t=in:st=0:d=0.15,afade=t=out:st=0.5:d=0.5\" -af \"alimiter=limit=0.95\" /home/timlinux/dev/cpp/kartoza-screencaster/resources/sounds/bamboo_wind_intro.wav)"
     ],
     "deny": [],
     "ask": []

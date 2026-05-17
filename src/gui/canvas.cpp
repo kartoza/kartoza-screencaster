@@ -10,6 +10,8 @@
 #include <QKeyEvent>
 #include <QResizeEvent>
 #include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDragLeaveEvent>
 #include <QDropEvent>
 #include <QMimeData>
 #include <QDir>
@@ -220,11 +222,12 @@ void Canvas::addLogo(const QString &filePath) {
 
 void Canvas::addSound(const QString &filePath, bool isEnd) {
     int soundType = isEnd ? 5 : 4;
+    QString label = QFileInfo(filePath).baseName() + (isEnd ? " (End)" : " (Start)");
     // Replace existing sound of this type
     for (int i = 0; i < m_items.size(); i++) {
         if (m_items[i].type == soundType) {
             m_items[i].filePath = filePath;
-            m_items[i].label = (isEnd ? "End: " : "Start: ") + QFileInfo(filePath).fileName();
+            m_items[i].label = label;
             emit itemsChanged();
             update();
             return;
@@ -232,7 +235,7 @@ void Canvas::addSound(const QString &filePath, bool isEnd) {
     }
     CanvasItem item;
     item.type = soundType;
-    item.label = (isEnd ? "End: " : "Start: ") + QFileInfo(filePath).fileName();
+    item.label = label;
     item.filePath = filePath;
     item.x = 0; item.y = 0; item.w = 0; item.h = 0;
     item.visible = true;
@@ -877,41 +880,107 @@ void Canvas::keyPressEvent(QKeyEvent *event) {
 
 // === Drag and Drop ===
 
+static bool isAudioFile(const QString &path) {
+    QStringList exts = {"wav", "mp3", "ogg", "flac", "aac", "m4a", "opus"};
+    return exts.contains(QFileInfo(path).suffix().toLower());
+}
+
+static bool isImageFile(const QString &path) {
+    QStringList exts = {"png", "jpg", "jpeg", "svg", "gif", "webp", "bmp"};
+    return exts.contains(QFileInfo(path).suffix().toLower());
+}
+
+static QString dragFilePath(const QMimeData *mime) {
+    if (mime->hasUrls() && !mime->urls().isEmpty())
+        return mime->urls().first().toLocalFile();
+    if (mime->hasText())
+        return mime->text();
+    return {};
+}
+
+QRect Canvas::soundDropTargetRect(bool isEnd) const {
+    int tw = 70, th = 30;
+    int y = m_ch - th - 4;
+    int x = isEnd ? m_cw - tw - 4 : 4;
+    return QRect(x, y, tw, th);
+}
+
 void Canvas::dragEnterEvent(QDragEnterEvent *event) {
-    if (event->mimeData()->hasUrls() || event->mimeData()->hasText()) {
+    QString path = dragFilePath(event->mimeData());
+    if (path.isEmpty()) return;
+
+    if (isImageFile(path) || isAudioFile(path)) {
+        if (isAudioFile(path)) {
+            m_showSoundDropTargets = true;
+            m_soundDropHover = 0;
+            update();
+        }
         event->acceptProposedAction();
     }
 }
 
-void Canvas::dropEvent(QDropEvent *event) {
-    QString filePath;
-    if (event->mimeData()->hasUrls() && !event->mimeData()->urls().isEmpty()) {
-        filePath = event->mimeData()->urls().first().toLocalFile();
-    } else if (event->mimeData()->hasText()) {
-        filePath = event->mimeData()->text();
+void Canvas::dragMoveEvent(QDragMoveEvent *event) {
+    if (!m_showSoundDropTargets) {
+        event->acceptProposedAction();
+        return;
     }
+
+    int mx = event->position().toPoint().x() - m_offsetX;
+    int my = event->position().toPoint().y() - m_offsetY;
+
+    int oldHover = m_soundDropHover;
+    m_soundDropHover = 0;
+    if (soundDropTargetRect(false).contains(mx, my))
+        m_soundDropHover = 1; // start
+    else if (soundDropTargetRect(true).contains(mx, my))
+        m_soundDropHover = 2; // end
+
+    if (m_soundDropHover != oldHover) update();
+    event->acceptProposedAction();
+}
+
+void Canvas::dragLeaveEvent(QDragLeaveEvent *) {
+    if (m_showSoundDropTargets) {
+        m_showSoundDropTargets = false;
+        m_soundDropHover = 0;
+        update();
+    }
+}
+
+void Canvas::dropEvent(QDropEvent *event) {
+    QString filePath = dragFilePath(event->mimeData());
     if (filePath.isEmpty()) return;
 
-    QString ext = QFileInfo(filePath).suffix().toLower();
-
-    // Image files become logo overlays
-    QStringList imageExts = {"png", "jpg", "jpeg", "svg", "gif", "webp", "bmp"};
-    if (imageExts.contains(ext)) {
+    if (isImageFile(filePath)) {
         addLogo(filePath);
         event->acceptProposedAction();
         return;
     }
 
-    // Audio files become sound effects
-    QStringList audioExts = {"wav", "mp3", "ogg", "flac", "aac", "m4a", "opus"};
-    if (audioExts.contains(ext)) {
-        // Drop on left half = start sound, right half = end sound
+    if (isAudioFile(filePath) && m_showSoundDropTargets) {
         int mx = event->position().toPoint().x() - m_offsetX;
-        bool isEnd = (mx > m_cw / 2);
-        addSound(filePath, isEnd);
-        event->acceptProposedAction();
+        int my = event->position().toPoint().y() - m_offsetY;
+
+        bool accepted = false;
+        if (soundDropTargetRect(false).contains(mx, my)) {
+            addSound(filePath, false);
+            accepted = true;
+        } else if (soundDropTargetRect(true).contains(mx, my)) {
+            addSound(filePath, true);
+            accepted = true;
+        }
+
+        m_showSoundDropTargets = false;
+        m_soundDropHover = 0;
+        update();
+
+        if (accepted) event->acceptProposedAction();
         return;
     }
+
+    m_showSoundDropTargets = false;
+    m_soundDropHover = 0;
+    update();
 }
 
 // === Painting ===
@@ -1058,6 +1127,38 @@ void Canvas::paintEvent(QPaintEvent *) {
         int textX = isEnd ? iconX - 4 - painter.fontMetrics().horizontalAdvance(label) : iconX + 18;
         painter.drawText(QPoint(textX, iconY + 10), label);
         painter.setFont(QFont()); // reset
+    }
+
+    // Sound drop targets (shown only during audio file drag)
+    if (m_showSoundDropTargets) {
+        for (int side = 0; side < 2; side++) {
+            bool isEnd = (side == 1);
+            QRect r = soundDropTargetRect(isEnd);
+            bool hovered = (isEnd ? m_soundDropHover == 2 : m_soundDropHover == 1);
+
+            // Background
+            painter.setPen(QPen(hovered ? QColor(223, 158, 47) : QColor(86, 159, 198), 2, Qt::DashLine));
+            painter.setBrush(QColor(hovered ? 223 : 86, hovered ? 158 : 159, hovered ? 47 : 198, 40));
+            painter.drawRoundedRect(r, 4, 4);
+
+            // Speaker icon
+            int ix = r.x() + 6, iy = r.y() + 8;
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(hovered ? QColor(223, 158, 47) : QColor(86, 159, 198));
+            painter.drawRect(ix, iy + 2, 4, 6);
+            QPolygon cone;
+            cone << QPoint(ix + 4, iy + 1) << QPoint(ix + 8, iy - 1)
+                 << QPoint(ix + 8, iy + 11) << QPoint(ix + 4, iy + 9);
+            painter.drawPolygon(cone);
+
+            // Label
+            painter.setPen(hovered ? QColor(223, 158, 47) : QColor(200, 200, 200));
+            QFont f("Sans", 8);
+            painter.setFont(f);
+            QString label = isEnd ? "End" : "Start";
+            painter.drawText(QPoint(ix + 14, iy + 8), label);
+            painter.setFont(QFont());
+        }
     }
 
     // Mode label

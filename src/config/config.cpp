@@ -103,6 +103,7 @@ void Config::load() {
   logoDirectory = root["logo_directory"].toString();
   bgColor = root["bg_color"].toString("white");
   normalizeAudio = root["audio_processing"].toObject()["normalize_enabled"].toBool(true);
+  denoiseAudio = root["audio_processing"].toObject()["denoise_enabled"].toBool(true);
 
   auto logos = root["last_used_logos"].toObject();
   titleColor = logos["title_color"].toString("#62A4C7");
@@ -166,6 +167,7 @@ void Config::save() {
 
   QJsonObject audio;
   audio["normalize_enabled"] = normalizeAudio;
+  audio["denoise_enabled"] = denoiseAudio;
   root["audio_processing"] = audio;
 
   QJsonObject logos;

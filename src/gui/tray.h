@@ -35,6 +35,10 @@ private:
     void refreshPresetMenu();
     /** @brief Build icon from SVG with a number overlay in the center. */
     QIcon buildCountdownIcon(int number);
+    /** @brief Build icon from SVG with a pause symbol in the center. */
+    QIcon buildPausedIcon();
+    /** @brief Build icon from SVG with a colored center dot, optionally rotated. */
+    QIcon buildDotIcon(const QColor &dotColor, int rotationDeg = 0);
 
     QSystemTrayIcon *m_trayIcon;
     QMenu *m_menu = nullptr;
@@ -48,6 +52,8 @@ private:
     State m_state = Idle;
 
     QTimer *m_countdownTimer = nullptr;
+    QTimer *m_rotationTimer = nullptr;
     int m_countdownVal = 0;
+    int m_rotationAngle = 0;
     QSvgRenderer *m_svgRenderer = nullptr;
 };

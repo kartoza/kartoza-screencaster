@@ -225,6 +225,10 @@
             libnotify
             kooha              # GNOME-compatible screen recorder
 
+            # Audio synthesis (for creating intro/outro sound effects)
+            yoshimi
+            helm
+
             # Documentation
             mkdocsEnv
 
