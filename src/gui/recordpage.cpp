@@ -625,7 +625,14 @@ void RecordPage::onCountdownTick() {
         double cw = m_canvas->canvasWidth();
         double ch = m_canvas->canvasHeight();
         for (const auto &e : items) {
-            if (e.type == 2) { // logo
+            if (e.type == 0) { // screen — extract crop
+                if (e.h > 0 && e.w > 0) {
+                    opts.screenCropTop = double(e.cropTop) / e.h;
+                    opts.screenCropBottom = double(e.cropBottom) / e.h;
+                    opts.screenCropLeft = double(e.cropLeft) / e.w;
+                    opts.screenCropRight = double(e.cropRight) / e.w;
+                }
+            } else if (e.type == 2) { // logo
                 RecordingOptions::LogoOpts lo;
                 lo.path = e.filePath;
                 lo.gifLoop = e.gifLoop;

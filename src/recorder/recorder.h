@@ -74,6 +74,8 @@ struct RecordingOptions {
     QString titleColor = "#62A4C7";               /**< Hex colour used when rendering the title. */
     QString startSound;                           /**< Path to audio file played at recording start. */
     QString endSound;                             /**< Path to audio file played at recording end. */
+    /** @brief Screen crop as fractions (0.0-1.0) of the screen dimensions. */
+    double screenCropTop = 0, screenCropBottom = 0, screenCropLeft = 0, screenCropRight = 0;
 };
 
 /**

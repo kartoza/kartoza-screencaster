@@ -1226,6 +1226,132 @@ private slots:
   }
 
   // =========================================================================
+  // 15b. SOUND ITEM PERSISTENCE (8 tests)
+  // =========================================================================
+
+  void testAddStartSound() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString path = dir.path() + "/intro.wav";
+    QFile f(path); f.open(QIODevice::WriteOnly); f.write("fake"); f.close();
+
+    Canvas c;
+    c.addSound(path, false);
+    QCOMPARE(c.itemCount(), 1);
+    auto items = c.exportItems();
+    QCOMPARE(items[0].type, 4);
+    QCOMPARE(items[0].filePath, path);
+    QVERIFY(items[0].label.contains("(Start)"));
+  }
+
+  void testAddEndSound() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString path = dir.path() + "/outro.wav";
+    QFile f(path); f.open(QIODevice::WriteOnly); f.write("fake"); f.close();
+
+    Canvas c;
+    c.addSound(path, true);
+    QCOMPARE(c.itemCount(), 1);
+    auto items = c.exportItems();
+    QCOMPARE(items[0].type, 5);
+    QCOMPARE(items[0].filePath, path);
+    QVERIFY(items[0].label.contains("(End)"));
+  }
+
+  void testSoundReplacesExisting() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString path1 = dir.path() + "/intro1.wav";
+    QString path2 = dir.path() + "/intro2.wav";
+    QFile f1(path1); f1.open(QIODevice::WriteOnly); f1.write("fake"); f1.close();
+    QFile f2(path2); f2.open(QIODevice::WriteOnly); f2.write("fake"); f2.close();
+
+    Canvas c;
+    c.addSound(path1, false);
+    QCOMPARE(c.itemCount(), 1);
+    c.addSound(path2, false); // should replace, not add
+    QCOMPARE(c.itemCount(), 1);
+    QCOMPARE(c.exportItems()[0].filePath, path2);
+  }
+
+  void testStartAndEndSoundCoexist() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString intro = dir.path() + "/intro.wav";
+    QString outro = dir.path() + "/outro.wav";
+    QFile f1(intro); f1.open(QIODevice::WriteOnly); f1.write("fake"); f1.close();
+    QFile f2(outro); f2.open(QIODevice::WriteOnly); f2.write("fake"); f2.close();
+
+    Canvas c;
+    c.addSound(intro, false);
+    c.addSound(outro, true);
+    QCOMPARE(c.itemCount(), 2);
+
+    auto items = c.exportItems();
+    bool hasStart = false, hasEnd = false;
+    for (const auto &e : items) {
+      if (e.type == 4) { hasStart = true; QCOMPARE(e.filePath, intro); }
+      if (e.type == 5) { hasEnd = true; QCOMPARE(e.filePath, outro); }
+    }
+    QVERIFY(hasStart);
+    QVERIFY(hasEnd);
+  }
+
+  void testSoundImportExportRoundTrip() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString path = dir.path() + "/sfx.wav";
+    QFile f(path); f.open(QIODevice::WriteOnly); f.write("fake"); f.close();
+
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 4; e.label = "sfx (Start)"; e.filePath = path;
+    c.importItem(e);
+    QCOMPARE(c.itemCount(), 1);
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.type, 4);
+    QCOMPARE(out.filePath, path);
+    QVERIFY(out.label.contains("(Start)"));
+  }
+
+  void testSoundImportMissingFile() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 5; e.label = "gone (End)"; e.filePath = "/nonexistent/file.wav";
+    c.importItem(e);
+    QCOMPARE(c.itemCount(), 0); // file doesn't exist, should not add
+  }
+
+  void testSoundNotDraggable() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString path = dir.path() + "/intro.wav";
+    QFile f(path); f.open(QIODevice::WriteOnly); f.write("fake"); f.close();
+
+    Canvas c;
+    c.addSound(path, false);
+    auto e = c.exportItems()[0];
+    // Sound items have zero dimensions (not visual elements)
+    QCOMPARE(e.w, 0);
+    QCOMPARE(e.h, 0);
+  }
+
+  void testSoundRemovedByClearAll() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString path = dir.path() + "/sfx.wav";
+    QFile f(path); f.open(QIODevice::WriteOnly); f.write("fake"); f.close();
+
+    Canvas c;
+    c.addSound(path, false);
+    c.addSound(path, true);
+    QCOMPARE(c.itemCount(), 2);
+    c.clearAll();
+    QCOMPARE(c.itemCount(), 0);
+  }
+
+  // =========================================================================
   // 16. SCREEN ITEM POSITION PERSISTENCE (10 tests)
   // =========================================================================
 

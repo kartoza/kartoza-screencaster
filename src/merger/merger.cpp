@@ -209,16 +209,30 @@ static void appendWebcamFilter(QString &filter, QString &current, int &vIdx,
     int wcX = static_cast<int>(opts.webcamRelX * canvasW);
     int wcY = static_cast<int>(opts.webcamRelY * canvasH);
 
-    filter += QString("[%1:v]scale=%2:%3,setsar=1[wcam];").arg(webcamInput).arg(wcW).arg(wcH);
     if (opts.webcamShape == 0) {
-        int r = qMin(wcW, wcH) / 2;
-        // Single-frame circle mask — alphamerge repeats it for the webcam duration
-        filter += QString("color=black:%1x%2:d=0.04,geq=lum='if(lt(hypot(X-%3,Y-%4),%5),255,0)':cb=128:cr=128[cmask];")
-            .arg(wcW).arg(wcH).arg(wcW/2).arg(wcH/2).arg(r);
+        // Round bubble: scale to fill a square (preserving aspect ratio) then crop to circle
+        int diameter = qMin(wcW, wcH);
+        diameter = (diameter / 2) * 2; // ensure even
+        int r = diameter / 2;
+        // Scale preserving aspect ratio to fill the square, then crop center
+        filter += QString("[%1:v]scale=%2:%2:force_original_aspect_ratio=increase,"
+                          "crop=%2:%2,setsar=1[wcam];")
+            .arg(webcamInput).arg(diameter);
+        // Circular mask
+        filter += QString("color=black:%1x%1:d=0.04,"
+                          "geq=lum='if(lt(hypot(X-%2,Y-%2),%2),255,0)':cb=128:cr=128[cmask];")
+            .arg(diameter).arg(r);
         filter += "[wcam][cmask]alphamerge=eof_action=repeat[wcam_shaped];";
+        // Center the circle at the overlay position
+        wcX = wcX + (wcW - diameter) / 2;
+        wcY = wcY + (wcH - diameter) / 2;
     } else {
-        filter += "[wcam]null[wcam_shaped];";
+        // Rectangle/square: scale preserving aspect ratio, pad to fit target box
+        filter += QString("[%1:v]scale=%2:%3:force_original_aspect_ratio=decrease,"
+                          "pad=%2:%3:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[wcam_shaped];")
+            .arg(webcamInput).arg(wcW).arg(wcH);
     }
+
     filter += QString("%1[wcam_shaped]overlay=%2:%3[v%4];").arg(current).arg(wcX).arg(wcY).arg(++vIdx);
     current = QString("[v%1]").arg(vIdx);
 }
@@ -273,6 +287,11 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
     for (int idx : logoInputs) { if (idx >= 0) { hasAnyLogo = true; break; } }
     needsFilter = hasAnyLogo || mergeWebcam;
 
+    // Check if screen needs cropping
+    bool needsCrop = in.opts.screenCropTop > 0 || in.opts.screenCropBottom > 0 ||
+                     in.opts.screenCropLeft > 0 || in.opts.screenCropRight > 0;
+    needsFilter = needsFilter || needsCrop;
+
     if (needsFilter) {
         QString filter;
         QString current = "[0:v]";
@@ -282,6 +301,22 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
         auto dim = getVideoDimensions(in.screenFile);
         int cw = dim.width > 0 ? dim.width : 1920;
         int ch = dim.height > 0 ? dim.height : 1080;
+
+        // Apply screen crop if set
+        if (needsCrop) {
+            int cropX = int(in.opts.screenCropLeft * cw);
+            int cropY = int(in.opts.screenCropTop * ch);
+            int cropW = cw - int(in.opts.screenCropLeft * cw) - int(in.opts.screenCropRight * cw);
+            int cropH = ch - int(in.opts.screenCropTop * ch) - int(in.opts.screenCropBottom * ch);
+            // Ensure even dimensions for h264
+            cropW = cropW & ~1;
+            cropH = cropH & ~1;
+            filter += QString("%1crop=%2:%3:%4:%5[cropped];")
+                .arg(current).arg(cropW).arg(cropH).arg(cropX).arg(cropY);
+            current = "[cropped]";
+            cw = cropW;
+            ch = cropH;
+        }
 
         for (int i = 0; i < in.opts.logos.size(); ++i) {
             if (i < logoInputs.size() && logoInputs[i] >= 0) {
@@ -350,7 +385,25 @@ QStringList buildVerticalArgs(const MergeInputs &in, const QString &outputFile) 
     }
 
     QString f;
-    f += "[0:v]scale=1080:-2,setsar=1[screen];";
+
+    // Apply screen crop if set
+    bool needsCrop = in.opts.screenCropTop > 0 || in.opts.screenCropBottom > 0 ||
+                     in.opts.screenCropLeft > 0 || in.opts.screenCropRight > 0;
+    if (needsCrop) {
+        auto dim = getVideoDimensions(in.screenFile);
+        int sw = dim.width > 0 ? dim.width : 1920;
+        int sh = dim.height > 0 ? dim.height : 1080;
+        int cropX = int(in.opts.screenCropLeft * sw);
+        int cropY = int(in.opts.screenCropTop * sh);
+        int cropW = sw - int(in.opts.screenCropLeft * sw) - int(in.opts.screenCropRight * sw);
+        int cropH = sh - int(in.opts.screenCropTop * sh) - int(in.opts.screenCropBottom * sh);
+        cropW = cropW & ~1;
+        cropH = cropH & ~1;
+        f += QString("[0:v]crop=%1:%2:%3:%4,scale=1080:-2,setsar=1[screen];")
+            .arg(cropW).arg(cropH).arg(cropX).arg(cropY);
+    } else {
+        f += "[0:v]scale=1080:-2,setsar=1[screen];";
+    }
     f += "[screen]pad=1080:1920:(ow-iw)/2:0:black[padded];";
     f += "[padded]drawbox=y=1280:w=1080:h=640:c=white:t=fill[canvas];";
 
