@@ -72,6 +72,10 @@ struct RecordingOptions {
     /** @brief Overlay logos/GIFs placed on the canvas (0..N). */
     QVector<LogoOpts> logos;
     QString titleColor = "#62A4C7";               /**< Hex colour used when rendering the title. */
+    QString startSound;                           /**< Path to audio file played at recording start. */
+    QString endSound;                             /**< Path to audio file played at recording end. */
+    /** @brief Screen crop as fractions (0.0-1.0) of the screen dimensions. */
+    double screenCropTop = 0, screenCropBottom = 0, screenCropLeft = 0, screenCropRight = 0;
 };
 
 /**
@@ -193,6 +197,8 @@ private:
     QString m_mergedFile;                  /**< Path to the final merged output file. */
     QString m_verticalFile;                /**< Path to the vertical format output file. */
 
+    /** @brief Copy logos, GIFs, and sound assets into the output directory. */
+    void copyAssetsToOutputDir();
     /** @brief Stop all running FFmpeg sub-processes. */
     void stopAllProcesses();
     /** @brief Record a short room-noise sample before the main capture. */

@@ -1,4 +1,5 @@
 #include "recorder/recorder.h"
+#include "config/config.h"
 #include "merger/merger.h"
 #include "monitor/monitor.h"
 #include "platform/platform.h"
@@ -12,6 +13,7 @@
 #include <QJsonArray>
 #include <QFile>
 #include <QFileInfo>
+#include <QTextStream>
 #include <QHostInfo>
 #include <QRegularExpression>
 #ifndef Q_OS_WIN
@@ -74,6 +76,9 @@ void Recorder::start(const RecordingOptions &opts) {
     }
     QDir().mkpath(m_outputDir);
 
+    // Copy assets (logos, GIFs, sounds) into the output directory
+    copyAssetsToOutputDir();
+
     // Set part filenames and start recorders
     startRecordersForPart();
 
@@ -112,6 +117,34 @@ void Recorder::startRecordersForPart() {
     }
 
     m_partTimestamps.append(ts);
+}
+
+void Recorder::copyAssetsToOutputDir() {
+    QDir assetsDir(m_outputDir + "/assets");
+    assetsDir.mkpath(".");
+
+    // Copy logo files
+    for (const auto &logo : m_opts.logos) {
+        if (!logo.path.isEmpty() && QFile::exists(logo.path)) {
+            QString dest = assetsDir.filePath(QFileInfo(logo.path).fileName());
+            if (!QFile::exists(dest))
+                QFile::copy(logo.path, dest);
+        }
+    }
+
+    // Copy start sound
+    if (!m_opts.startSound.isEmpty() && QFile::exists(m_opts.startSound)) {
+        QString dest = assetsDir.filePath(QFileInfo(m_opts.startSound).fileName());
+        if (!QFile::exists(dest))
+            QFile::copy(m_opts.startSound, dest);
+    }
+
+    // Copy end sound
+    if (!m_opts.endSound.isEmpty() && QFile::exists(m_opts.endSound)) {
+        QString dest = assetsDir.filePath(QFileInfo(m_opts.endSound).fileName());
+        if (!QFile::exists(dest))
+            QFile::copy(m_opts.endSound, dest);
+    }
 }
 
 void Recorder::stopAllProcesses() {
@@ -317,10 +350,15 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
     }
 
     qDebug() << "Starting screen recorder:" << cmd << args;
+    connect(m_screenProc, &QProcess::readyReadStandardError, this, [this]() {
+        qDebug() << "Screen recorder stderr:" << m_screenProc->readAllStandardError();
+    });
     m_screenProc->start(cmd, args);
 
     if (!m_screenProc->waitForStarted(5000)) {
-        emit recordingError("Failed to start screen recorder: " + m_screenProc->errorString());
+        QString err = "Failed to start screen recorder: " + m_screenProc->errorString();
+        qDebug() << err;
+        emit recordingError(err);
     }
 }
 
@@ -464,7 +502,9 @@ void Recorder::renameOutputFolder() {
 }
 
 void Recorder::captureRoomNoise() {
-    static const int DURATION_SECS = 30;
+    // 5 seconds is sufficient for noise profiling — ffmpeg's afftdn and
+    // anlmdn filters only need ~1-2s to build an accurate noise model.
+    static const int DURATION_SECS = 5;
     QString roomNoiseFile = m_outputDir + "/room_noise.wav";
 
     qDebug() << "Capturing room noise for" << DURATION_SECS << "seconds...";
@@ -815,6 +855,140 @@ void Recorder::processRecordings() {
         }
     } else {
         emit processingStepDone(1, "Normalizing audio", true);
+    }
+
+    if (m_cancelRequested) { m_processing = false; emit processingFinished(false); return; }
+
+    // Step 1.5: Denoise and dereverb
+    if (hasAudio && Config::instance().denoiseAudio) {
+        QString roomNoiseFile = m_outputDir + "/room_noise.wav";
+        QString denoisedFile = m_outputDir + "/audio_denoised.wav";
+        bool hasRoomNoise = QFile::exists(roomNoiseFile);
+
+        // Build filter chain:
+        // - afftdn: adaptive noise reduction (uses noise floor from room noise sample)
+        // - highpass at 80Hz: removes low rumble/room resonance
+        // - lowpass at 13000Hz: tames harsh high-freq reverb tails
+        QString filter;
+        if (hasRoomNoise) {
+            // Use noise sample for profile-based reduction (nr=20dB, nt=w for wiener filter)
+            filter = "afftdn=nf=-25:tn=1:nr=20:nt=w,highpass=f=80,lowpass=f=13000";
+        } else {
+            // No room noise sample — use adaptive mode with moderate reduction
+            filter = "afftdn=nf=-30:nr=12:nt=w,highpass=f=80,lowpass=f=13000";
+        }
+
+        QProcess proc;
+        QStringList args = {"-y", "-i", audioToUse};
+        if (hasRoomNoise) {
+            // Feed room noise as a second input for noise profiling
+            args << "-i" << roomNoiseFile
+                 << "-filter_complex"
+                 << QString("[1:a]asplit[noise];[0:a][noise]afftdn=nr=20:nt=w,highpass=f=80,lowpass=f=13000[aout]")
+                 << "-map" << "[aout]";
+        } else {
+            args << "-af" << filter;
+        }
+        args << "-ar" << "48000" << denoisedFile;
+
+        proc.start("ffmpeg", args);
+        if (proc.waitForFinished(60000) && proc.exitCode() == 0) {
+            audioToUse = denoisedFile;
+            qDebug() << "Applied denoise/dereverb filter";
+        } else {
+            qDebug() << "Denoise failed, using unprocessed audio:" << proc.readAllStandardError();
+        }
+    }
+
+    if (m_cancelRequested) { m_processing = false; emit processingFinished(false); return; }
+
+    // Step 1.7: Mix start/end sound effects over the audio track
+    bool hasStartSound = !m_opts.startSound.isEmpty() && QFile::exists(m_opts.startSound);
+    bool hasEndSound = !m_opts.endSound.isEmpty() && QFile::exists(m_opts.endSound);
+
+    if (hasAudio && (hasStartSound || hasEndSound)) {
+        QString withSounds = m_outputDir + "/audio_with_sfx.wav";
+
+        // Get duration of main audio to position end sound
+        QProcess probe;
+        probe.start("ffprobe", {"-v", "error", "-show_entries", "format=duration",
+                                "-of", "default=noprint_wrappers=1:nokey=1", audioToUse});
+        double audioDuration = 0;
+        if (probe.waitForFinished(5000))
+            audioDuration = QString(probe.readAllStandardOutput().trimmed()).toDouble();
+
+        // Build amix filter: overlay sounds at start (t=0) and end (t=duration-sfx_length)
+        QStringList args;
+        int inputIdx = 0;
+        args << "-y" << "-i" << audioToUse;
+        int mainIdx = inputIdx++;
+
+        int startIdx = -1, endIdx = -1;
+        if (hasStartSound) { args << "-i" << m_opts.startSound; startIdx = inputIdx++; }
+        if (hasEndSound) { args << "-i" << m_opts.endSound; endIdx = inputIdx++; }
+
+        // Get end sound duration to calculate its start offset
+        double endSoundDur = 0;
+        if (hasEndSound) {
+            QProcess ep;
+            ep.start("ffprobe", {"-v", "error", "-show_entries", "format=duration",
+                                 "-of", "default=noprint_wrappers=1:nokey=1", m_opts.endSound});
+            if (ep.waitForFinished(5000))
+                endSoundDur = QString(ep.readAllStandardOutput().trimmed()).toDouble();
+        }
+
+        // Build filter_complex
+        QString filter;
+        QString currentMix = QString("[%1:a]").arg(mainIdx);
+
+        if (hasStartSound) {
+            // Mix start sound at t=0 over main audio
+            filter += QString("[%1:a]adelay=0|0[sfx_start];").arg(startIdx);
+            filter += QString("%1[sfx_start]amix=inputs=2:duration=longest:dropout_transition=0[mix1];").arg(currentMix);
+            currentMix = "[mix1]";
+        }
+
+        if (hasEndSound && audioDuration > 0) {
+            // Mix end sound at (duration - end_sound_duration) over main audio
+            int delayMs = std::max(0, int((audioDuration - endSoundDur) * 1000));
+            filter += QString("[%1:a]adelay=%2|%2[sfx_end];").arg(endIdx).arg(delayMs);
+            filter += QString("%1[sfx_end]amix=inputs=2:duration=longest:dropout_transition=0[mix2];").arg(currentMix);
+            currentMix = "[mix2]";
+        }
+
+        // Output
+        filter += currentMix + "aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=mono[aout]";
+        args << "-filter_complex" << filter << "-map" << "[aout]" << withSounds;
+
+        QProcess proc;
+        proc.start("ffmpeg", args);
+        if (proc.waitForFinished(60000) && proc.exitCode() == 0) {
+            audioToUse = withSounds;
+            qDebug() << "Mixed start/end sounds over audio track";
+        } else {
+            qDebug() << "Failed to mix sound effects:" << proc.readAllStandardError();
+        }
+    } else if (!hasAudio && (hasStartSound || hasEndSound)) {
+        // No recorded audio — just use the sound effects concatenated
+        if (hasStartSound && hasEndSound) {
+            QString combined = m_outputDir + "/audio_sfx_only.wav";
+            QString concatList = m_outputDir + "/sfx_concat.txt";
+            QFile listFile(concatList);
+            if (listFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                QTextStream out(&listFile);
+                out << "file '" << m_opts.startSound << "'\n";
+                out << "file '" << m_opts.endSound << "'\n";
+                listFile.close();
+            }
+            QProcess proc;
+            proc.start("ffmpeg", {"-y", "-f", "concat", "-safe", "0",
+                                  "-i", concatList, "-c:a", "pcm_s16le", combined});
+            if (proc.waitForFinished(30000) && proc.exitCode() == 0)
+                audioToUse = combined;
+            QFile::remove(concatList);
+        } else {
+            audioToUse = hasStartSound ? m_opts.startSound : m_opts.endSound;
+        }
     }
 
     // Compute sync offsets from the first part's timestamps (screen is reference)

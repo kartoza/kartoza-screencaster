@@ -10,7 +10,7 @@
 static QList<MonitorInfo> parseXrandrOutput(const QString &output) {
     QList<MonitorInfo> monitors;
     QRegularExpression re(
-        R"(^(\S+)\s+connected\s+(primary\s+)?(\d+)x(\d+)\+(\d+)\+(\d+))",
+        R"(^(\S+)\s+connected\s+(primary\s+)?.*?(\d+)x(\d+)\+(\d+)\+(\d+))",
         QRegularExpression::MultilineOption);
 
     auto it = re.globalMatch(output);

@@ -156,41 +156,50 @@ void Tray::updateMenuState() {
 void Tray::setState(State s) {
     m_state = s;
 
-    QString iconPath;
+    // Stop rotation timer if leaving Processing state
+    if (s != Processing && m_rotationTimer) {
+        m_rotationTimer->stop();
+    }
+
     QString tooltip;
 
     switch (s) {
     case Idle:
-        iconPath = ":/icons/ready.png";
         tooltip = "Kartoza Screencaster - Click to record";
+        m_trayIcon->setIcon(QIcon(":/icons/ready.png"));
         break;
     case Countdown:
-        iconPath = ":/icons/ready.png";
         tooltip = QString("Starting in %1...").arg(m_countdownVal);
+        m_trayIcon->setIcon(QIcon(":/icons/ready.png"));
         break;
     case Recording:
-        iconPath = ":/icons/recording.png";
         tooltip = "Recording - Click to pause";
+        m_trayIcon->setIcon(QIcon(":/icons/recording.png"));
         break;
     case Paused:
-        iconPath = ":/icons/ready.png";
         tooltip = "Paused - Click to resume";
+        m_trayIcon->setIcon(buildPausedIcon());
         break;
     case RoomNoise:
-        iconPath = ":/icons/recording.png";
         tooltip = "Recording room noise - Please keep quiet!";
+        m_trayIcon->setIcon(buildDotIcon(QColor(86, 159, 198))); // Kartoza blue
         break;
     case Processing:
-        iconPath = ":/icons/ready.png";
         tooltip = "Processing video...";
+        m_rotationAngle = 0;
+        if (!m_rotationTimer) {
+            m_rotationTimer = new QTimer(this);
+            connect(m_rotationTimer, &QTimer::timeout, this, [this]() {
+                m_rotationAngle = (m_rotationAngle + 10) % 360;
+                m_trayIcon->setIcon(buildDotIcon(QColor(232, 232, 236), m_rotationAngle)); // white dot, rotating
+            });
+        }
+        m_trayIcon->setIcon(buildDotIcon(QColor(232, 232, 236)));
+        m_rotationTimer->start(100);
         break;
     }
 
-    QIcon icon(iconPath);
-    if (icon.isNull()) icon = QIcon::fromTheme("camera-video");
-    m_trayIcon->setIcon(icon);
     m_trayIcon->setToolTip(tooltip);
-
     updateMenuState();
 }
 
@@ -228,6 +237,56 @@ QIcon Tray::buildCountdownIcon(int number) {
     p.setFont(font);
     p.setPen(QColor("#e8e8ec"));
     p.drawText(QRect(0, 0, 64, 64), Qt::AlignCenter, QString::number(number));
+
+    p.end();
+    return QIcon(pix);
+}
+
+QIcon Tray::buildPausedIcon() {
+    QPixmap pix(64, 64);
+    pix.fill(Qt::transparent);
+    QPainter p(&pix);
+    p.setRenderHint(QPainter::Antialiasing);
+
+    // Render the base SVG
+    m_svgRenderer->render(&p, QRectF(0, 0, 64, 64));
+
+    // Draw pause bars (two vertical rectangles) in the center
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor("#e8e8ec"));
+    int barW = 7, barH = 24;
+    int gap = 5;
+    int cx = 32, cy = 32;
+    p.drawRoundedRect(cx - gap - barW, cy - barH/2, barW, barH, 2, 2);
+    p.drawRoundedRect(cx + gap, cy - barH/2, barW, barH, 2, 2);
+
+    p.end();
+    return QIcon(pix);
+}
+
+QIcon Tray::buildDotIcon(const QColor &dotColor, int rotationDeg) {
+    QPixmap pix(64, 64);
+    pix.fill(Qt::transparent);
+    QPainter p(&pix);
+    p.setRenderHint(QPainter::Antialiasing);
+
+    // Apply rotation around center
+    if (rotationDeg != 0) {
+        p.translate(32, 32);
+        p.rotate(rotationDeg);
+        p.translate(-32, -32);
+    }
+
+    // Render the base SVG
+    m_svgRenderer->render(&p, QRectF(0, 0, 64, 64));
+
+    // Reset transform for the dot (always centered, not rotated)
+    p.resetTransform();
+
+    // Draw center dot
+    p.setPen(Qt::NoPen);
+    p.setBrush(dotColor);
+    p.drawEllipse(QPoint(32, 32), 8, 8);
 
     p.end();
     return QIcon(pix);

@@ -57,4 +57,6 @@ private:
     static QList<MonitorInfo> listMonitorsSway();
     /** @brief Lists monitors via xrandr (X11). */
     static QList<MonitorInfo> listMonitorsX11();
+    /** @brief Lists monitors via Qt's QScreen API (works everywhere). */
+    static QList<MonitorInfo> listMonitorsQt();
 };

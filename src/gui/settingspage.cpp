@@ -85,13 +85,23 @@ void SettingsPage::setupUI() {
 
     m_normalizeCheck = new QCheckBox("Normalize and process audio");
     m_normalizeCheck->setStyleSheet(checkStyle);
-    m_normalizeCheck->setToolTip("Denoise, compress, and normalize audio after recording.");
+    m_normalizeCheck->setToolTip("Loudness normalize audio after recording (two-pass EBU R128).");
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     connect(m_normalizeCheck, &QCheckBox::checkStateChanged, this, [this]() { saveToConfig(); });
 #else
     connect(m_normalizeCheck, &QCheckBox::stateChanged, this, [this]() { saveToConfig(); });
 #endif
     layout->addWidget(m_normalizeCheck);
+
+    m_denoiseCheck = new QCheckBox("Denoise and dereverb audio");
+    m_denoiseCheck->setStyleSheet(checkStyle);
+    m_denoiseCheck->setToolTip("Remove background noise and reduce room echo/reverb using adaptive filtering.");
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    connect(m_denoiseCheck, &QCheckBox::checkStateChanged, this, [this]() { saveToConfig(); });
+#else
+    connect(m_denoiseCheck, &QCheckBox::stateChanged, this, [this]() { saveToConfig(); });
+#endif
+    layout->addWidget(m_denoiseCheck);
 
     // --- Appearance ---
     auto *appearLabel = new QLabel("Appearance");
@@ -160,21 +170,21 @@ void SettingsPage::setupUI() {
     bgRow->addStretch();
     layout->addLayout(bgRow);
 
-    // Logo directory
-    auto *logoLabel = new QLabel("Logos");
+    // Assets directory
+    auto *logoLabel = new QLabel("Assets");
     logoLabel->setStyleSheet(sectionStyle);
     layout->addWidget(logoLabel);
 
     auto *logoRow = new QHBoxLayout;
-    auto *logoDirLabel = new QLabel("Logo directory:");
+    auto *logoDirLabel = new QLabel("Assets directory:");
     logoDirLabel->setStyleSheet(labelStyle);
     logoDirLabel->setFixedWidth(120);
-    logoDirLabel->setToolTip("Directory to browse for logo images.");
+    logoDirLabel->setToolTip("Directory containing images, logos, and overlays to use on the canvas.");
     logoRow->addWidget(logoDirLabel);
     m_logoDirInput = new QLineEdit;
     m_logoDirInput->setStyleSheet(inputStyle);
-    m_logoDirInput->setPlaceholderText("~/Pictures/Logos");
-    m_logoDirInput->setToolTip("Directory to browse for logo images.");
+    m_logoDirInput->setPlaceholderText("~/Pictures/Assets");
+    m_logoDirInput->setToolTip("Directory containing images, logos, and overlays to use on the canvas.");
     connect(m_logoDirInput, &QLineEdit::editingFinished, this, &SettingsPage::saveToConfig);
     logoRow->addWidget(m_logoDirInput);
     auto *logoBrowseBtn = new QPushButton(QString::fromUtf8("\u2026")); // ellipsis
@@ -182,7 +192,7 @@ void SettingsPage::setupUI() {
     logoBrowseBtn->setStyleSheet(btnStyle);
     logoBrowseBtn->setToolTip("Browse for directory");
     connect(logoBrowseBtn, &QPushButton::clicked, this, [this]() {
-        QString dir = QFileDialog::getExistingDirectory(this, "Select Logo Directory", m_logoDirInput->text());
+        QString dir = QFileDialog::getExistingDirectory(this, "Select Assets Directory", m_logoDirInput->text());
         if (!dir.isEmpty()) { m_logoDirInput->setText(dir); saveToConfig(); }
     });
     logoRow->addWidget(logoBrowseBtn);
@@ -369,10 +379,18 @@ void SettingsPage::loadFromConfig() {
     auto &cfg = Config::instance();
     cfg.load();
 
+    // Block signals to prevent saveToConfig() being triggered during load
+    m_normalizeCheck->blockSignals(true);
+    m_denoiseCheck->blockSignals(true);
+
     m_outputDirInput->setText(cfg.outputDir);
     m_presenterInput->setText(cfg.defaultPresenter);
     m_normalizeCheck->setChecked(cfg.normalizeAudio);
+    m_denoiseCheck->setChecked(cfg.denoiseAudio);
     m_logoDirInput->setText(cfg.logoDirectory);
+
+    m_normalizeCheck->blockSignals(false);
+    m_denoiseCheck->blockSignals(false);
 
     m_titleColor = cfg.titleColor.isEmpty() ? "#62A4C7" : cfg.titleColor;
     m_titleColorHex->setText(m_titleColor);
@@ -392,6 +410,7 @@ void SettingsPage::saveToConfig() {
     cfg.outputDir = m_outputDirInput->text();
     cfg.defaultPresenter = m_presenterInput->text();
     cfg.normalizeAudio = m_normalizeCheck->isChecked();
+    cfg.denoiseAudio = m_denoiseCheck->isChecked();
     cfg.logoDirectory = m_logoDirInput->text();
     cfg.titleColor = m_titleColor;
     cfg.bgColor = m_bgColor;

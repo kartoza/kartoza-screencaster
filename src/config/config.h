@@ -32,6 +32,8 @@ struct CanvasItemState {
     int gifLoop = 2;
     /** Maximum number of GIF loop iterations. */
     int gifLoopMax = 3;
+    /** Crop insets as fractions of item dimensions (0.0-1.0). */
+    double cropTop = 0, cropBottom = 0, cropLeft = 0, cropRight = 0;
 };
 
 /**
@@ -78,6 +80,8 @@ public:
     QString bgColor = "white";
     /** Whether to normalise audio levels in post-processing. */
     bool normalizeAudio = true;
+    /** Whether to apply noise reduction and dereverb in post-processing. */
+    bool denoiseAudio = true;
 
     /** Current canvas layout state persisted between sessions. */
     CanvasState canvasState;

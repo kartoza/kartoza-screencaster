@@ -55,6 +55,8 @@ private:
     QLineEdit *m_presenterInput;
     /** @brief Checkbox to enable/disable audio normalisation. */
     QCheckBox *m_normalizeCheck;
+    /** @brief Checkbox to enable/disable noise reduction and dereverb. */
+    QCheckBox *m_denoiseCheck;
     /** @brief Colour swatch button for the title colour. */
     QPushButton *m_titleColorSwatch;
     /** @brief Hex colour input for the title colour. */

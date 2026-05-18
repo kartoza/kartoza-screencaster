@@ -225,6 +225,10 @@
             libnotify
             kooha              # GNOME-compatible screen recorder
 
+            # Audio synthesis (for creating intro/outro sound effects)
+            yoshimi
+            helm
+
             # Documentation
             mkdocsEnv
 
@@ -247,6 +251,12 @@
 
           shellHook = ''
             export EDITOR=nvim
+
+            # Suppress VDPAU nvidia probe (not available in nix env).
+            # If you DO have an NVIDIA GPU with drivers installed, use instead:
+            #   export VDPAU_DRIVER=nvidia
+            #   export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/vdpau''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+            export VDPAU_DRIVER=va_gl
 
             # Qt multimedia needs its GStreamer backend plugin + GStreamer plugins
             export QT_PLUGIN_PATH="${pkgs.qt6.qtmultimedia}/${pkgs.qt6.qtbase.qtPluginPrefix}''${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"

@@ -48,6 +48,10 @@ static CanvasState canvasStateFromJson(const QJsonObject &cs) {
     s.shape = obj["shape"].toInt();
     s.gifLoop = obj["gif_loop"].toInt(2);
     s.gifLoopMax = obj["gif_loop_max"].toInt(3);
+    s.cropTop = obj["crop_top"].toDouble(0);
+    s.cropBottom = obj["crop_bottom"].toDouble(0);
+    s.cropLeft = obj["crop_left"].toDouble(0);
+    s.cropRight = obj["crop_right"].toDouble(0);
     state.items.append(s);
   }
   return state;
@@ -74,6 +78,10 @@ static QJsonObject canvasStateToJson(const CanvasState &state) {
     item["shape"] = s.shape;
     item["gif_loop"] = s.gifLoop;
     item["gif_loop_max"] = s.gifLoopMax;
+    if (s.cropTop > 0) item["crop_top"] = s.cropTop;
+    if (s.cropBottom > 0) item["crop_bottom"] = s.cropBottom;
+    if (s.cropLeft > 0) item["crop_left"] = s.cropLeft;
+    if (s.cropRight > 0) item["crop_right"] = s.cropRight;
     items.append(item);
   }
   cs["items"] = items;
@@ -95,6 +103,7 @@ void Config::load() {
   logoDirectory = root["logo_directory"].toString();
   bgColor = root["bg_color"].toString("white");
   normalizeAudio = root["audio_processing"].toObject()["normalize_enabled"].toBool(true);
+  denoiseAudio = root["audio_processing"].toObject()["denoise_enabled"].toBool(true);
 
   auto logos = root["last_used_logos"].toObject();
   titleColor = logos["title_color"].toString("#62A4C7");
@@ -158,6 +167,7 @@ void Config::save() {
 
   QJsonObject audio;
   audio["normalize_enabled"] = normalizeAudio;
+  audio["denoise_enabled"] = denoiseAudio;
   root["audio_processing"] = audio;
 
   QJsonObject logos;

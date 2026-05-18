@@ -47,9 +47,15 @@ void RecordPage::setupUI() {
     auto &cfg = Config::instance();
     cfg.load();
 
-    auto *layout = new QHBoxLayout(this);
+    auto *outerLayout = new QVBoxLayout(this);
+    outerLayout->setSpacing(4);
+    outerLayout->setContentsMargins(10, 10, 10, 10);
+
+    auto *mainRow = new QWidget;
+    auto *layout = new QHBoxLayout(mainRow);
     layout->setSpacing(10);
-    layout->setContentsMargins(10, 10, 10, 10);
+    layout->setContentsMargins(0, 0, 0, 0);
+    outerLayout->addWidget(mainRow, 1);
 
     QString labelStyle = "QLabel { color: #e8e8ec; font-size: 12px; }";
     QString inputStyle = "QLineEdit { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; padding: 5px; font-size: 12px; }";
@@ -539,6 +545,10 @@ void RecordPage::setupUI() {
 
     centerLayout->addLayout(btnRow);
     layout->addWidget(centerCol, 1);
+
+    // === Asset gallery at bottom ===
+    m_assetGallery = new AssetGallery(this);
+    outerLayout->addWidget(m_assetGallery);
 }
 
 void RecordPage::addScreen(const MonitorInfo &mon) {
@@ -562,6 +572,7 @@ void RecordPage::showEvent(QShowEvent *event) {
     QWidget::showEvent(event);
     refreshLayerList();
     m_canvas->update();
+    if (m_assetGallery) m_assetGallery->refresh();
 }
 
 void RecordPage::suspendPreviews() {
@@ -614,7 +625,14 @@ void RecordPage::onCountdownTick() {
         double cw = m_canvas->canvasWidth();
         double ch = m_canvas->canvasHeight();
         for (const auto &e : items) {
-            if (e.type == 2) { // logo
+            if (e.type == 0) { // screen — extract crop
+                if (e.h > 0 && e.w > 0) {
+                    opts.screenCropTop = double(e.cropTop) / e.h;
+                    opts.screenCropBottom = double(e.cropBottom) / e.h;
+                    opts.screenCropLeft = double(e.cropLeft) / e.w;
+                    opts.screenCropRight = double(e.cropRight) / e.w;
+                }
+            } else if (e.type == 2) { // logo
                 RecordingOptions::LogoOpts lo;
                 lo.path = e.filePath;
                 lo.gifLoop = e.gifLoop;
@@ -631,6 +649,10 @@ void RecordPage::onCountdownTick() {
                 opts.webcamRelW = e.w / cw;
                 opts.webcamRelH = e.h / ch;
                 opts.webcamShape = e.shape; // 0=round, 1=square, 2=rect
+            } else if (e.type == 4) { // start sound
+                opts.startSound = e.filePath;
+            } else if (e.type == 5) { // end sound
+                opts.endSound = e.filePath;
             }
         }
 
@@ -836,6 +858,8 @@ CanvasState RecordPage::captureCurrentState() {
         case 1: s.type = "webcam"; break;
         case 2: s.type = "logo"; break;
         case 3: s.type = "title"; break;
+        case 4: s.type = "start_sound"; break;
+        case 5: s.type = "end_sound"; break;
         default: s.type = "unknown"; break;
         }
         s.label = e.label;
@@ -849,6 +873,11 @@ CanvasState RecordPage::captureCurrentState() {
         s.rh = e.h / fh;
         s.device = e.device; s.filePath = e.filePath;
         s.shape = e.shape; s.gifLoop = e.gifLoop; s.gifLoopMax = e.gifLoopMax;
+        // Store crop as fraction of item dimensions
+        s.cropTop = e.h > 0 ? double(e.cropTop) / e.h : 0;
+        s.cropBottom = e.h > 0 ? double(e.cropBottom) / e.h : 0;
+        s.cropLeft = e.w > 0 ? double(e.cropLeft) / e.w : 0;
+        s.cropRight = e.w > 0 ? double(e.cropRight) / e.w : 0;
         state.items.append(s);
     }
     return state;
@@ -885,12 +914,30 @@ void RecordPage::applyState(const CanvasState &state) {
                 if (s.label == "Screen: " + desc) { addScreen(mon); matched = true; break; }
             }
             if (!matched && !m_monitors.isEmpty()) addScreen(m_monitors.first());
+            // Apply saved position and crop to the screen item
+            for (int i = 0; i < m_canvas->itemCount(); i++) {
+                if (m_canvas->isScreenItem(i)) {
+                    Canvas::ItemExport e;
+                    e.type = 0; e.label = s.label;
+                    e.x = px; e.y = py; e.w = pw; e.h = ph;
+                    e.cropTop = static_cast<int>(s.cropTop * ph);
+                    e.cropBottom = static_cast<int>(s.cropBottom * ph);
+                    e.cropLeft = static_cast<int>(s.cropLeft * pw);
+                    e.cropRight = static_cast<int>(s.cropRight * pw);
+                    m_canvas->updateScreenItem(e);
+                    break;
+                }
+            }
         } else if (s.type == "webcam") {
             if (!availableWebcams.contains(s.device)) continue;
             Canvas::ItemExport e;
             e.type = 1; e.label = s.label;
             e.x = px; e.y = py; e.w = pw; e.h = ph;
             e.device = s.device; e.shape = s.shape;
+            e.cropTop = static_cast<int>(s.cropTop * ph);
+            e.cropBottom = static_cast<int>(s.cropBottom * ph);
+            e.cropLeft = static_cast<int>(s.cropLeft * pw);
+            e.cropRight = static_cast<int>(s.cropRight * pw);
             m_canvas->importItem(e);
         } else if (s.type == "logo") {
             if (s.filePath.isEmpty() || !QFile::exists(s.filePath)) continue;
@@ -899,11 +946,25 @@ void RecordPage::applyState(const CanvasState &state) {
             e.x = px; e.y = py; e.w = pw; e.h = ph;
             e.filePath = s.filePath;
             e.gifLoop = s.gifLoop; e.gifLoopMax = s.gifLoopMax;
+            e.cropTop = static_cast<int>(s.cropTop * ph);
+            e.cropBottom = static_cast<int>(s.cropBottom * ph);
+            e.cropLeft = static_cast<int>(s.cropLeft * pw);
+            e.cropRight = static_cast<int>(s.cropRight * pw);
             m_canvas->importItem(e);
         } else if (s.type == "title") {
             Canvas::ItemExport e;
             e.type = 3; e.label = s.label;
             e.x = px; e.y = py; e.w = pw; e.h = ph;
+            e.cropTop = static_cast<int>(s.cropTop * ph);
+            e.cropBottom = static_cast<int>(s.cropBottom * ph);
+            e.cropLeft = static_cast<int>(s.cropLeft * pw);
+            e.cropRight = static_cast<int>(s.cropRight * pw);
+            m_canvas->importItem(e);
+        } else if (s.type == "start_sound" || s.type == "end_sound") {
+            Canvas::ItemExport e;
+            e.type = (s.type == "end_sound") ? 5 : 4;
+            e.label = s.label;
+            e.filePath = s.filePath;
             m_canvas->importItem(e);
         }
     }
