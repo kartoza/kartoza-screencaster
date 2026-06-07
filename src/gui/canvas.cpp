@@ -170,7 +170,13 @@ void Canvas::addWebcam(const QString &device, const QString &name, int shape) {
 
     m_items.append(item);
     int idx = m_items.size() - 1;
-    startWebcamCapture(idx);
+    // Only open the capture device when the window is actually on screen.
+    // Why: addWebcam runs during state restoration at startup — before the
+    // MainWindow has been shown — and the app launches into the tray. Starting
+    // ffmpeg here would hold the webcam open while the user thinks the app is
+    // idle. MainWindow::showEvent → RecordPage::resumePreviews →
+    // Canvas::resumePreviews will start any pending captures once visible.
+    if (isVisible()) startWebcamCapture(idx);
     emit itemsChanged();
     update();
 }
