@@ -5,6 +5,15 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-06-07
+
+### Fixed
+
+#### Webcam no longer opens when app launches into the tray
+- The application launches with the main window hidden (tray-only). Previously, restoring the saved canvas state at startup would open the V4L2 webcam device for the live preview, even though no window was visible and no recording was in progress. The webcam indicator LED would stay on as a result.
+- `Canvas::addWebcam` now defers starting the ffmpeg preview capture when the canvas widget is not visible. The existing show-event chain (`MainWindow::showEvent` → `RecordPage::resumePreviews` → `Canvas::resumePreviews` → `startAllWebcamPreviews`) starts the preview the first time the window is actually shown.
+- The same guard avoids wasted captures if a webcam is added while the window is minimized to tray.
+
 ## [0.7.4] - 2026-01-25
 
 ### Added
