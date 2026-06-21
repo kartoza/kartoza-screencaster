@@ -81,6 +81,38 @@ void Portal::disconnectResponse(const QString &path, const char *slot) {
         kPortalBus, path, kRequestIface, "Response", this, slot);
 }
 
+bool Portal::decodeResponse(const QDBusMessage &msg,
+                            uint &code, QVariantMap &results) {
+    const QList<QVariant> args = msg.arguments();
+    if (args.size() < 2) return false;
+    code = args.at(0).toUInt();
+
+    // args[1] is signature a{sv}. We avoid letting QtDBus auto-walk
+    // it (which is the source of the "type struct 114" SIGABRT) by
+    // demarshalling the dict ourselves, reading each value as a
+    // QDBusVariant. The actual inner type (struct / array / basic)
+    // stays opaque inside the QVariant — we read what we need
+    // (session_handle, uri, streams, restore_token) by key later.
+    QVariant raw = args.at(1);
+    if (raw.userType() == QMetaType::QVariantMap) {
+        results = raw.toMap();
+        return true;
+    }
+    QDBusArgument arg = raw.value<QDBusArgument>();
+    if (arg.currentSignature().isEmpty()) return false;
+    arg.beginMap();
+    while (!arg.atEnd()) {
+        arg.beginMapEntry();
+        QString key;
+        QDBusVariant value;
+        arg >> key >> value;
+        arg.endMapEntry();
+        results.insert(key, value.variant());
+    }
+    arg.endMap();
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Screenshot
 // ---------------------------------------------------------------------------
@@ -101,7 +133,7 @@ void Portal::requestScreenshot() {
                             .arg(senderToken(), token);
 
     if (!bus.connect(kPortalBus, m_screenshotPath, kRequestIface, "Response",
-                     this, SLOT(onScreenshotResponse(uint, QVariantMap)))) {
+                     this, SLOT(onScreenshotResponse(QDBusMessage)))) {
         emit screenshotFailed("failed to subscribe to Response signal");
         m_screenshotPath.clear();
         return;
@@ -120,7 +152,7 @@ void Portal::requestScreenshot() {
     if (reply.type() != QDBusMessage::ReplyMessage) {
         QString err = reply.errorMessage();
         disconnectResponse(m_screenshotPath,
-                           SLOT(onScreenshotResponse(uint, QVariantMap)));
+                           SLOT(onScreenshotResponse(QDBusMessage)));
         m_screenshotPath.clear();
         emit screenshotFailed("method call failed: " + err);
         return;
@@ -130,11 +162,18 @@ void Portal::requestScreenshot() {
     // user takes their time at the permission dialog).
 }
 
-void Portal::onScreenshotResponse(uint code, const QVariantMap &results) {
+void Portal::onScreenshotResponse(const QDBusMessage &msg) {
     disconnectResponse(m_screenshotPath,
-                       SLOT(onScreenshotResponse(uint, QVariantMap)));
+                       SLOT(onScreenshotResponse(QDBusMessage)));
     m_screenshotPath.clear();
     m_screenshotInFlight = false;
+
+    uint code = 0;
+    QVariantMap results;
+    if (!decodeResponse(msg, code, results)) {
+        emit screenshotFailed("malformed Response message");
+        return;
+    }
 
     if (code != 0) {
         emit screenshotFailed(code == 1 ? "user cancelled"
@@ -183,7 +222,7 @@ void Portal::requestScreenCast() {
 
     if (!bus.connect(kPortalBus, m_screenCastReqPath, kRequestIface,
                      "Response", this,
-                     SLOT(onCreateSessionResponse(uint, QVariantMap)))) {
+                     SLOT(onCreateSessionResponse(QDBusMessage)))) {
         emit screenCastFailed("failed to subscribe to CreateSession Response");
         m_screenCastReqPath.clear();
         return;
@@ -201,7 +240,7 @@ void Portal::requestScreenCast() {
     if (reply.type() != QDBusMessage::ReplyMessage) {
         QString err = reply.errorMessage();
         disconnectResponse(m_screenCastReqPath,
-                           SLOT(onCreateSessionResponse(uint, QVariantMap)));
+                           SLOT(onCreateSessionResponse(QDBusMessage)));
         m_screenCastReqPath.clear();
         emit screenCastFailed("CreateSession call failed: " + err);
         return;
@@ -209,10 +248,17 @@ void Portal::requestScreenCast() {
     m_screenCastInFlight = true;
 }
 
-void Portal::onCreateSessionResponse(uint code, const QVariantMap &results) {
+void Portal::onCreateSessionResponse(const QDBusMessage &msg) {
     disconnectResponse(m_screenCastReqPath,
-                       SLOT(onCreateSessionResponse(uint, QVariantMap)));
+                       SLOT(onCreateSessionResponse(QDBusMessage)));
     m_screenCastReqPath.clear();
+
+    uint code = 0;
+    QVariantMap results;
+    if (!decodeResponse(msg, code, results)) {
+        abortScreenCast("malformed CreateSession Response");
+        return;
+    }
 
     if (code != 0) {
         abortScreenCast(code == 1 ? "user cancelled CreateSession"
@@ -234,7 +280,7 @@ void Portal::onCreateSessionResponse(uint code, const QVariantMap &results) {
 
     if (!bus.connect(kPortalBus, m_screenCastReqPath, kRequestIface,
                      "Response", this,
-                     SLOT(onSelectSourcesResponse(uint, QVariantMap)))) {
+                     SLOT(onSelectSourcesResponse(QDBusMessage)))) {
         abortScreenCast("failed to subscribe to SelectSources Response");
         return;
     }
@@ -251,21 +297,27 @@ void Portal::onCreateSessionResponse(uint code, const QVariantMap &results) {
     opts["persist_mode"] = uint(2);  // PERMANENT
     if (!restoreToken.isEmpty()) opts["restore_token"] = restoreToken;
 
-    QDBusMessage msg = QDBusMessage::createMethodCall(
+    QDBusMessage call = QDBusMessage::createMethodCall(
         kPortalBus, kPortalPath, kScreenCastIface, "SelectSources");
-    msg.setArguments({QVariant::fromValue(QDBusObjectPath(session)), opts});
+    call.setArguments({QVariant::fromValue(QDBusObjectPath(session)), opts});
 
-    QDBusMessage reply = bus.call(msg, QDBus::Block, 5000);
+    QDBusMessage reply = bus.call(call, QDBus::Block, 5000);
     if (reply.type() != QDBusMessage::ReplyMessage) {
         abortScreenCast("SelectSources call failed: " + reply.errorMessage());
     }
 }
 
-void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
-    Q_UNUSED(results);
+void Portal::onSelectSourcesResponse(const QDBusMessage &msg) {
     disconnectResponse(m_screenCastReqPath,
-                       SLOT(onSelectSourcesResponse(uint, QVariantMap)));
+                       SLOT(onSelectSourcesResponse(QDBusMessage)));
     m_screenCastReqPath.clear();
+
+    uint code = 0;
+    QVariantMap unused;
+    if (!decodeResponse(msg, code, unused)) {
+        abortScreenCast("malformed SelectSources Response");
+        return;
+    }
 
     if (code != 0) {
         abortScreenCast(code == 1 ? "user cancelled SelectSources"
@@ -281,7 +333,7 @@ void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
 
     if (!bus.connect(kPortalBus, m_screenCastReqPath, kRequestIface,
                      "Response", this,
-                     SLOT(onStartResponse(uint, QVariantMap)))) {
+                     SLOT(onStartResponse(QDBusMessage)))) {
         abortScreenCast("failed to subscribe to Start Response");
         return;
     }
@@ -289,15 +341,15 @@ void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
     QVariantMap opts;
     opts["handle_token"] = reqToken;
 
-    QDBusMessage msg = QDBusMessage::createMethodCall(
+    QDBusMessage call = QDBusMessage::createMethodCall(
         kPortalBus, kPortalPath, kScreenCastIface, "Start");
-    msg.setArguments({
+    call.setArguments({
         QVariant::fromValue(QDBusObjectPath(m_sessionHandle)),
         QString(""),  // parent_window — Wayland handles its own focus
         opts,
     });
 
-    QDBusMessage reply = bus.call(msg, QDBus::Block, 5000);
+    QDBusMessage reply = bus.call(call, QDBus::Block, 5000);
     if (reply.type() != QDBusMessage::ReplyMessage) {
         abortScreenCast("Start call failed: " + reply.errorMessage());
     }
@@ -305,10 +357,17 @@ void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
     // the Response signal for as long as the user takes to act.
 }
 
-void Portal::onStartResponse(uint code, const QVariantMap &results) {
+void Portal::onStartResponse(const QDBusMessage &msg) {
     disconnectResponse(m_screenCastReqPath,
-                       SLOT(onStartResponse(uint, QVariantMap)));
+                       SLOT(onStartResponse(QDBusMessage)));
     m_screenCastReqPath.clear();
+
+    uint code = 0;
+    QVariantMap results;
+    if (!decodeResponse(msg, code, results)) {
+        abortScreenCast("malformed Start Response");
+        return;
+    }
 
     if (code != 0) {
         abortScreenCast(code == 1 ? "user cancelled Start"
