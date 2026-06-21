@@ -439,6 +439,11 @@ void Recorder::onScreenCastReady(uint nodeId, int fd) {
         }
     });
 
+    // We use `avenc_libx264` from gst-libav rather than `x264enc` from
+    // gst-plugins-ugly. Both wrap libx264; libav is in the base
+    // flake.nix dev shell and the installed wrapProgram env, ugly is
+    // not always present in older shells / packaging paths. avenc takes
+    // bitrate in bits/sec (not kbits/sec like x264enc), hence 8000000.
     QString cmd = "gst-launch-1.0";
     QStringList args;
     args << "-e"  // EOS on SIGINT so mp4mux finalises the moov atom
@@ -449,8 +454,8 @@ void Recorder::onScreenCastReady(uint nodeId, int fd) {
          << "!" << "videoconvert"
          << "!" << "videorate"
          << "!" << "video/x-raw,framerate=30/1"
-         << "!" << "x264enc" << "tune=zerolatency"
-               << "speed-preset=ultrafast" << "bitrate=8000"
+         << "!" << "avenc_libx264" << "bitrate=8000000"
+         << "!" << "h264parse"
          << "!" << "mp4mux"
          << "!" << "filesink" << QString("location=%1").arg(m_screenFile);
 
