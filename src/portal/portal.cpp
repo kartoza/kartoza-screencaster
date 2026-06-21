@@ -23,6 +23,7 @@
 #include <QDBusMessage>
 #include <QDBusObjectPath>
 #include <QDBusReply>
+#include <QDBusVariant>
 #include <QDebug>
 #include <QEventLoop>
 #include <QRandomGenerator>
@@ -256,6 +257,13 @@ uint Portal::startScreenCast() {
 
     // results["streams"] is a(ua{sv}) — an array of (node_id, props) tuples.
     // QtDBus surfaces this as a QDBusArgument we must demarshal manually.
+    //
+    // We deliberately do NOT read the props dict into a QVariantMap. The
+    // portal puts complex types in there ("position":(ii), "size":(ii),
+    // "source_type":u, …) and QtDBus's auto-demarshalling of a{sv} crashes
+    // on those nested structs ("type struct 114 not a basic type" → SIGABRT).
+    // We don't need the props anyway — just the node id — so we walk the
+    // map manually and read each value as an opaque QDBusVariant.
     QVariant streamsVar = m_responseResults.value("streams");
     if (!streamsVar.isValid()) {
         qWarning() << "Portal: Start returned no streams";
@@ -268,8 +276,17 @@ uint Portal::startScreenCast() {
     while (!arg.atEnd()) {
         arg.beginStructure();
         uint id = 0;
-        QVariantMap props;
-        arg >> id >> props;
+        arg >> id;
+        // Skip the a{sv} props dict by iterating entries with opaque values.
+        arg.beginMap();
+        while (!arg.atEnd()) {
+            arg.beginMapEntry();
+            QString key;
+            QDBusVariant value;
+            arg >> key >> value;
+            arg.endMapEntry();
+        }
+        arg.endMap();
         arg.endStructure();
         if (nodeId == 0) nodeId = id;
     }
