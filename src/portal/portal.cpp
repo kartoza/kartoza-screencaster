@@ -64,9 +64,15 @@ Portal::Portal() {
 // walk it safely.
 QDBusArgument &operator<<(QDBusArgument &arg, const StartResults &) {
     // Marshalling is never used in our flow — the portal only ever
-    // sends these to us. Provide an empty implementation so the
-    // metatype system has a symmetric pair.
-    arg.beginMap(QMetaType(QMetaType::QString), QMetaType(QMetaType::QVariant));
+    // sends these to us — but qDBusRegisterMetaType invokes operator<<
+    // once to derive the D-Bus signature for the type. The value type
+    // of an a{sv} dict on the wire is `v` (variant), which QtDBus
+    // represents as QDBusVariant; using QMetaType::QVariant here makes
+    // QtDBus log "type QVariant is not registered with D-Bus" and
+    // the registered signature comes out empty, so dispatch falls
+    // through to the default QVariantMap walk and crashes again.
+    arg.beginMap(QMetaType(QMetaType::QString),
+                 QMetaType(qMetaTypeId<QDBusVariant>()));
     arg.endMap();
     return arg;
 }
