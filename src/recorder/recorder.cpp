@@ -8,6 +8,7 @@
 #endif
 #include <QCoreApplication>
 #include <QDebug>
+#include <QProcessEnvironment>
 #include <QDir>
 #include <QDateTime>
 #include <QThread>
@@ -440,32 +441,46 @@ void Recorder::onScreenCastReady(uint nodeId, int fd) {
     });
 
     // Encoder choice: `openh264enc` from gst-plugins-bad. Cisco's
-    // OpenH264 is the only H.264 encoder that's reliably present in
-    // our nixpkgs dev shell — gst-plugins-ugly (x264enc) isn't loaded
-    // and gst-libav (avenc_libx264) is built without libx264 there.
-    // OpenH264 is lower quality than libx264 at the same bitrate but
-    // is fine for screen recording. bitrate is in bits/sec.
+    // OpenH264 is the only H.264 encoder reliably present in our
+    // nixpkgs dev shell — gst-plugins-ugly (x264enc) isn't loaded and
+    // gst-libav (avenc_libx264) is built without libx264.
+    // Pipeline kept deliberately minimal — every extra caps filter is
+    // an opportunity for negotiation to fail silently. videoconvert
+    // alone lets pipewiresrc deliver whatever native format/framerate
+    // the portal stream uses (we re-encode anyway).
     QString cmd = "gst-launch-1.0";
     QStringList args;
     args << "-e"  // EOS on SIGINT so mp4mux finalises the moov atom
+         << "-v"  // verbose state changes — diagnostic for empty-file bugs
          << "pipewiresrc"
          << QString("path=%1").arg(nodeId)
          << QString("fd=%1").arg(kPwChildFd)
          << "do-timestamp=true"
          << "!" << "videoconvert"
-         << "!" << "videorate"
-         << "!" << "video/x-raw,framerate=30/1"
-         << "!" << "openh264enc" << "bitrate=8000000"
-                                 << "complexity=medium"
-                                 << "rate-control=bitrate"
+         << "!" << "openh264enc"
+                << "bitrate=8000000"
+                << "complexity=medium"
+                << "rate-control=bitrate"
          << "!" << "h264parse"
-         << "!" << "mp4mux"
+         << "!" << "mp4mux" << "fragment-duration=1000"  // periodic flush
          << "!" << "filesink" << QString("location=%1").arg(m_screenFile);
+
+    // GST_DEBUG=3 logs WARNING+INFO from every element — enough to see
+    // caps negotiation failures and openh264enc init issues but not
+    // overwhelming. We also capture stdout (gst-launch prints
+    // "Pipeline is PREROLLED" etc. on stdout when -v is set).
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    if (!env.contains("GST_DEBUG")) env.insert("GST_DEBUG", "3");
+    m_screenProc->setProcessEnvironment(env);
 
     qDebug() << "Starting portal screen recorder:" << cmd << args;
     connect(m_screenProc, &QProcess::readyReadStandardError, this, [this]() {
-        qDebug() << "Screen recorder stderr:"
-                 << m_screenProc->readAllStandardError();
+        qDebug().noquote() << "gst-launch stderr:"
+                           << QString::fromUtf8(m_screenProc->readAllStandardError()).trimmed();
+    });
+    connect(m_screenProc, &QProcess::readyReadStandardOutput, this, [this]() {
+        qDebug().noquote() << "gst-launch stdout:"
+                           << QString::fromUtf8(m_screenProc->readAllStandardOutput()).trimmed();
     });
     m_screenProc->start(cmd, args);
     if (!m_screenProc->waitForStarted(5000)) {
