@@ -483,6 +483,13 @@ void Recorder::onScreenCastFailed(const QString &reason) {
     delete m_screenProc;
     m_screenProc = nullptr;
 }
+#else
+// MOC-generated meta-object code references these slot symbols even on
+// builds without QtDBus, so they need definitions to link. The portal
+// path is unreachable when HAS_DBUS isn't set, but the slots still
+// have to exist as symbols.
+void Recorder::onScreenCastReady(uint, int) {}
+void Recorder::onScreenCastFailed(const QString &) {}
 #endif
 
 void Recorder::startAudioRecorder(const RecordingOptions &opts) {
