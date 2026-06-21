@@ -94,30 +94,26 @@ const QDBusArgument &operator>>(const QDBusArgument &arg, StartResults &v) {
         if (key == "restore_token") {
             v.restoreToken = value.variant().toString();
         } else if (key == "streams") {
-            // streams: a(ua{sv}). For each (uint, dict) pair we keep the
-            // uint (node id) and walk the dict only to advance the
-            // iterator — reading each value as QDBusVariant so the
-            // (ii) structs inside (position, size) never enter Qt's
-            // auto-demarshall path.
+            // streams: a(ua{sv}). Read only the first struct's uint
+            // (the PipeWire node id) and bail. We deliberately do NOT
+            // walk the inner a{sv} props dict: it contains (ii) structs
+            // for position and size, and even our manual walk with
+            // QDBusVariant for values crashes inside Qt's QDBusVariant
+            // operator>> when it tries to handle the (ii) inner type.
+            //
+            // Leaving the streams arg partially-consumed is safe — it
+            // is a copy taken via value<QDBusArgument>() and nothing
+            // else touches it after we return.
             QDBusArgument streams = value.variant().value<QDBusArgument>();
             streams.beginArray();
-            while (!streams.atEnd()) {
+            if (!streams.atEnd()) {
                 streams.beginStructure();
                 uint id = 0;
                 streams >> id;
                 if (v.nodeId == 0) v.nodeId = id;
-                streams.beginMap();
-                while (!streams.atEnd()) {
-                    streams.beginMapEntry();
-                    QString propKey;
-                    QDBusVariant propVal;
-                    streams >> propKey >> propVal;
-                    streams.endMapEntry();
-                }
-                streams.endMap();
-                streams.endStructure();
+                // No streams.endStructure() / streams.endArray() — those
+                // would walk the remaining bytes and hit the same crash.
             }
-            streams.endArray();
         }
     }
     arg.endMap();
