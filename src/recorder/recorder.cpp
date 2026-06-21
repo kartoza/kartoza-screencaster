@@ -439,11 +439,12 @@ void Recorder::onScreenCastReady(uint nodeId, int fd) {
         }
     });
 
-    // We use `avenc_libx264` from gst-libav rather than `x264enc` from
-    // gst-plugins-ugly. Both wrap libx264; libav is in the base
-    // flake.nix dev shell and the installed wrapProgram env, ugly is
-    // not always present in older shells / packaging paths. avenc takes
-    // bitrate in bits/sec (not kbits/sec like x264enc), hence 8000000.
+    // Encoder choice: `openh264enc` from gst-plugins-bad. Cisco's
+    // OpenH264 is the only H.264 encoder that's reliably present in
+    // our nixpkgs dev shell — gst-plugins-ugly (x264enc) isn't loaded
+    // and gst-libav (avenc_libx264) is built without libx264 there.
+    // OpenH264 is lower quality than libx264 at the same bitrate but
+    // is fine for screen recording. bitrate is in bits/sec.
     QString cmd = "gst-launch-1.0";
     QStringList args;
     args << "-e"  // EOS on SIGINT so mp4mux finalises the moov atom
@@ -454,7 +455,9 @@ void Recorder::onScreenCastReady(uint nodeId, int fd) {
          << "!" << "videoconvert"
          << "!" << "videorate"
          << "!" << "video/x-raw,framerate=30/1"
-         << "!" << "avenc_libx264" << "bitrate=8000000"
+         << "!" << "openh264enc" << "bitrate=8000000"
+                                 << "complexity=medium"
+                                 << "rate-control=bitrate"
          << "!" << "h264parse"
          << "!" << "mp4mux"
          << "!" << "filesink" << QString("location=%1").arg(m_screenFile);
