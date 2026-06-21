@@ -3,6 +3,9 @@
 #include "merger/merger.h"
 #include "monitor/monitor.h"
 #include "platform/platform.h"
+#ifdef HAS_DBUS
+#include "portal/portal.h"
+#endif
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
@@ -17,10 +20,26 @@
 #include <QHostInfo>
 #include <QRegularExpression>
 #ifndef Q_OS_WIN
+#include <fcntl.h>
 #include <signal.h>
+#include <unistd.h>
 #endif
 
-Recorder::Recorder(QObject *parent) : QObject(parent) {}
+Recorder::Recorder(QObject *parent) : QObject(parent) {
+#ifdef HAS_DBUS
+    // GNOME/KDE Wayland recording path is async: startScreenRecorder
+    // fires Portal::requestScreenCast() and returns, the user takes
+    // however long they take to authorise the source picker, and the
+    // portal then emits screenCastReady() / screenCastFailed() back to
+    // us. We can't connect these lambdas inside startScreenRecorder
+    // because they'd be re-connected every time and we'd get duplicate
+    // gst-launch processes.
+    connect(&Portal::instance(), &Portal::screenCastReady, this,
+            &Recorder::onScreenCastReady);
+    connect(&Portal::instance(), &Portal::screenCastFailed, this,
+            &Recorder::onScreenCastFailed);
+#endif
+}
 
 Recorder::~Recorder() {
     // Disconnect all signals to prevent delivery to destroyed slots
@@ -155,6 +174,12 @@ void Recorder::stopAllProcesses() {
     if (m_screenProc) { m_screenProc->deleteLater(); m_screenProc = nullptr; }
     if (m_audioProc) { m_audioProc->deleteLater(); m_audioProc = nullptr; }
     if (m_webcamProc) { m_webcamProc->deleteLater(); m_webcamProc = nullptr; }
+
+#ifdef HAS_DBUS
+    // Close the portal screencast session so the compositor stops the stream
+    // and the green "screen sharing" indicator goes away.
+    Portal::instance().stopScreenCast();
+#endif
 }
 
 void Recorder::writeRecordingJson(const QString &status) {
@@ -286,11 +311,37 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
     switch (Platform::os()) {
     case Platform::OS::Linux:
         if (Platform::isWayland()) {
-            // wl-screenrec for wlroots compositors
-            cmd = "wl-screenrec";
-            if (!opts.hwAccel) args << "--no-hw";
-            args << QString("--output=%1").arg(opts.monitor)
-                 << QString("--filename=%1").arg(m_screenFile);
+            if (Platform::supportsWlrCapture()) {
+                // wlroots compositors (Hyprland, Sway, COSMIC) — native tool.
+                cmd = "wl-screenrec";
+                if (!opts.hwAccel) args << "--no-hw";
+                args << QString("--output=%1").arg(opts.monitor)
+                     << QString("--filename=%1").arg(m_screenFile);
+                break;
+            }
+
+#ifdef HAS_DBUS
+            // GNOME/KDE Wayland — request a portal screencast session
+            // asynchronously. Portal::requestScreenCast returns
+            // immediately; the actual gst-launch process is spawned
+            // later in onScreenCastReady() once the user has clicked
+            // through the source picker. We pre-allocated m_screenProc
+            // above so subsequent code paths that probe its existence
+            // still see "a recording is set up". If the session is
+            // already active (multi-part / resume), onScreenCastReady
+            // will fire synchronously from inside requestScreenCast
+            // and we'll spawn gst-launch before this method returns.
+            Portal::instance().requestScreenCast();
+            return;
+#else
+            emit recordingError(
+                "This build has no D-Bus support — cannot use the "
+                "xdg-desktop-portal recording fallback required on "
+                "GNOME/KDE Wayland.");
+            delete m_screenProc;
+            m_screenProc = nullptr;
+            return;
+#endif
         } else {
             // ffmpeg x11grab for X11
             cmd = "ffmpeg";
@@ -361,6 +412,88 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
         emit recordingError(err);
     }
 }
+
+#if defined(HAS_DBUS) && defined(Q_OS_LINUX)
+void Recorder::onScreenCastReady(uint nodeId, int fd) {
+    // Only act if a recording is set up but the screen process hasn't
+    // been spawned yet — guards against stray signals (e.g. an old
+    // session that's still alive when the user toggles options).
+    if (!m_screenProc || m_screenProc->state() != QProcess::NotRunning) {
+        return;
+    }
+    if (m_screenFile.isEmpty()) {
+        return;
+    }
+
+    // pipewiresrc must read via the portal's private PipeWire connection
+    // (the default socket sees the node but the screencast permission
+    // grant is bound to this FD). QProcess closes non-stdio fds in the
+    // forked child by default, so we dup2 onto a fixed slot in the
+    // child-process modifier before exec(). Both
+    // setChildProcessModifier and the fcntl block are POSIX-only —
+    // hence the Q_OS_LINUX guard around the whole function (the portal
+    // recording path is Linux-only anyway).
+    constexpr int kPwChildFd = 23;
+    int portalFd = fd;
+    m_screenProc->setChildProcessModifier([portalFd, kPwChildFd]() {
+        if (::dup2(portalFd, kPwChildFd) >= 0) {
+            int f = ::fcntl(kPwChildFd, F_GETFD);
+            if (f >= 0) ::fcntl(kPwChildFd, F_SETFD, f & ~FD_CLOEXEC);
+        }
+    });
+
+    // Encoder choice: `openh264enc` from gst-plugins-bad. Cisco's
+    // OpenH264 is the only H.264 encoder reliably present in the
+    // nixpkgs dev shell — gst-plugins-ugly (x264enc) isn't loaded and
+    // gst-libav (avenc_libx264) is built without libx264.
+    QString cmd = "gst-launch-1.0";
+    QStringList args;
+    args << "-e"  // EOS on SIGINT so mp4mux finalises the moov atom
+         << "pipewiresrc"
+         << QString("path=%1").arg(nodeId)
+         << QString("fd=%1").arg(kPwChildFd)
+         << "do-timestamp=true"
+         << "!" << "videoconvert"
+         << "!" << "openh264enc"
+                << "bitrate=8000000"
+                << "complexity=medium"
+                << "rate-control=bitrate"
+         << "!" << "h264parse"
+         << "!" << "mp4mux" << "fragment-duration=1000"  // periodic moov flush
+         << "!" << "filesink" << QString("location=%1").arg(m_screenFile);
+
+    qDebug() << "Starting portal screen recorder:" << cmd << args;
+    connect(m_screenProc, &QProcess::readyReadStandardError, this, [this]() {
+        qDebug() << "gst-launch stderr:"
+                 << m_screenProc->readAllStandardError().trimmed();
+    });
+    m_screenProc->start(cmd, args);
+    if (!m_screenProc->waitForStarted(5000)) {
+        emit recordingError("Failed to start gst-launch: "
+                            + m_screenProc->errorString());
+    }
+}
+
+void Recorder::onScreenCastFailed(const QString &reason) {
+    // Only react if we're mid-startup waiting for the portal. After a
+    // successful session that later closes (e.g. user revokes
+    // permission) the recorder will see the gst-launch process exit
+    // and surface that separately.
+    if (!m_screenProc || m_screenProc->state() != QProcess::NotRunning) {
+        return;
+    }
+    emit recordingError("Portal screencast unavailable: " + reason);
+    delete m_screenProc;
+    m_screenProc = nullptr;
+}
+#else
+// MOC-generated meta-object code references these slot symbols on
+// every platform / build flavour, so they need definitions to link
+// even when the portal path isn't reachable (Windows, macOS, or
+// a non-DBus build).
+void Recorder::onScreenCastReady(uint, int) {}
+void Recorder::onScreenCastFailed(const QString &) {}
+#endif
 
 void Recorder::startAudioRecorder(const RecordingOptions &opts) {
     m_audioProc = new QProcess(this);

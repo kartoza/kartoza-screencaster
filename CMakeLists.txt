@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(kartoza-screencaster VERSION 1.8.1 LANGUAGES CXX)
+project(kartoza-screencaster VERSION 1.9.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -47,10 +47,16 @@ find_package(Qt6 REQUIRED COMPONENTS
     Network
 )
 
-# D-Bus is optional (Linux only — not available on Windows)
+# D-Bus is used for two Linux-only features: the xdg-desktop-portal
+# screencast/screenshot capture path, and the session-bus remote
+# control service. QtDBus actually ships on Windows/macOS too, but
+# desktop D-Bus IPC is a Linux-only ecosystem in practice, and the
+# Linux-only system headers (unistd.h, fcntl.h, etc.) we use in the
+# portal implementation make this an unambiguous gate.
 find_package(Qt6 COMPONENTS DBus QUIET)
-if(Qt6DBus_FOUND)
+if(Qt6DBus_FOUND AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_compile_definitions(HAS_DBUS)
+    set(HAS_DBUS_FEATURE TRUE)
 endif()
 
 set(SOURCES
@@ -87,8 +93,9 @@ set(SOURCES
     src/youtube/youtube.h
 )
 
-if(Qt6DBus_FOUND)
+if(HAS_DBUS_FEATURE)
     list(APPEND SOURCES src/dbus/dbusservice.cpp src/dbus/dbusservice.h)
+    list(APPEND SOURCES src/portal/portal.cpp src/portal/portal.h)
 endif()
 
 qt6_add_resources(RESOURCES resources/resources.qrc)
@@ -104,7 +111,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Network
 )
 
-if(Qt6DBus_FOUND)
+if(HAS_DBUS_FEATURE)
     target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::DBus)
 endif()
 
@@ -138,9 +145,18 @@ if(Qt6Test_FOUND)
         src/youtube/youtube.h
     )
 
+    # Portal pulls in QtDBus and is referenced from recorder.cpp under
+    # HAS_DBUS, so tests that link recorder.cpp must also link Portal.
+    if(HAS_DBUS_FEATURE)
+        list(APPEND TEST_SOURCES src/portal/portal.cpp src/portal/portal.h)
+    endif()
+
     macro(add_unit_test name source)
         add_executable(${name} ${source} ${TEST_SOURCES})
         target_link_libraries(${name} PRIVATE Qt6::Core Qt6::Test Qt6::Multimedia Qt6::Widgets Qt6::Network)
+        if(HAS_DBUS_FEATURE)
+            target_link_libraries(${name} PRIVATE Qt6::DBus)
+        endif()
         target_include_directories(${name} PRIVATE src)
         add_test(NAME ${name} COMMAND ${name})
     endmacro()
@@ -159,6 +175,9 @@ if(Qt6Test_FOUND)
         src/gui/historypage.cpp src/gui/historypage.h
         ${TEST_SOURCES})
     target_link_libraries(test_history PRIVATE Qt6::Core Qt6::Test Qt6::Multimedia Qt6::MultimediaWidgets Qt6::Widgets Qt6::Concurrent)
+    if(HAS_DBUS_FEATURE)
+        target_link_libraries(test_history PRIVATE Qt6::DBus)
+    endif()
     target_include_directories(test_history PRIVATE src)
     add_test(NAME test_history COMMAND test_history)
 
@@ -167,6 +186,9 @@ if(Qt6Test_FOUND)
         src/gui/canvas.cpp src/gui/canvas.h
         ${TEST_SOURCES})
     target_link_libraries(test_canvas PRIVATE Qt6::Core Qt6::Test Qt6::Multimedia Qt6::Widgets Qt6::Concurrent)
+    if(HAS_DBUS_FEATURE)
+        target_link_libraries(test_canvas PRIVATE Qt6::DBus)
+    endif()
     target_include_directories(test_canvas PRIVATE src)
     add_test(NAME test_canvas COMMAND test_canvas)
 endif()

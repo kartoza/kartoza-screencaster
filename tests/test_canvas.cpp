@@ -1233,7 +1233,7 @@ private slots:
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     QString path = dir.path() + "/intro.wav";
-    QFile f(path); f.open(QIODevice::WriteOnly); f.write("fake"); f.close();
+    QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("fake"); f.close();
 
     Canvas c;
     c.addSound(path, false);
@@ -1248,7 +1248,7 @@ private slots:
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     QString path = dir.path() + "/outro.wav";
-    QFile f(path); f.open(QIODevice::WriteOnly); f.write("fake"); f.close();
+    QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("fake"); f.close();
 
     Canvas c;
     c.addSound(path, true);
@@ -1264,8 +1264,8 @@ private slots:
     QVERIFY(dir.isValid());
     QString path1 = dir.path() + "/intro1.wav";
     QString path2 = dir.path() + "/intro2.wav";
-    QFile f1(path1); f1.open(QIODevice::WriteOnly); f1.write("fake"); f1.close();
-    QFile f2(path2); f2.open(QIODevice::WriteOnly); f2.write("fake"); f2.close();
+    QFile f1(path1); QVERIFY(f1.open(QIODevice::WriteOnly)); f1.write("fake"); f1.close();
+    QFile f2(path2); QVERIFY(f2.open(QIODevice::WriteOnly)); f2.write("fake"); f2.close();
 
     Canvas c;
     c.addSound(path1, false);
@@ -1280,8 +1280,8 @@ private slots:
     QVERIFY(dir.isValid());
     QString intro = dir.path() + "/intro.wav";
     QString outro = dir.path() + "/outro.wav";
-    QFile f1(intro); f1.open(QIODevice::WriteOnly); f1.write("fake"); f1.close();
-    QFile f2(outro); f2.open(QIODevice::WriteOnly); f2.write("fake"); f2.close();
+    QFile f1(intro); QVERIFY(f1.open(QIODevice::WriteOnly)); f1.write("fake"); f1.close();
+    QFile f2(outro); QVERIFY(f2.open(QIODevice::WriteOnly)); f2.write("fake"); f2.close();
 
     Canvas c;
     c.addSound(intro, false);
@@ -1302,7 +1302,7 @@ private slots:
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     QString path = dir.path() + "/sfx.wav";
-    QFile f(path); f.open(QIODevice::WriteOnly); f.write("fake"); f.close();
+    QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("fake"); f.close();
 
     Canvas c;
     Canvas::ItemExport e;
@@ -1327,7 +1327,7 @@ private slots:
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     QString path = dir.path() + "/intro.wav";
-    QFile f(path); f.open(QIODevice::WriteOnly); f.write("fake"); f.close();
+    QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("fake"); f.close();
 
     Canvas c;
     c.addSound(path, false);
@@ -1341,7 +1341,7 @@ private slots:
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     QString path = dir.path() + "/sfx.wav";
-    QFile f(path); f.open(QIODevice::WriteOnly); f.write("fake"); f.close();
+    QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("fake"); f.close();
 
     Canvas c;
     c.addSound(path, false);

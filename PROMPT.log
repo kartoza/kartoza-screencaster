@@ -1534,3 +1534,7 @@ there have been some regressions. Let's revisit the expectations of a user:
 
 ---
 Fri May  1 01:37:35 WEST 2026: Implement Tasks 2-6: Refactor logos from fixed fields (leftLogo/rightLogo/bannerLogo) to QVector<LogoOpts> and update all consumers (recorder.h, recorder.cpp, merger.cpp, recordpage.cpp, test_pipeline.cpp)
+when the application launches and it is minimized and not recording it should not be recording from the web cam
+
+---
+2026-06-21: On Ubuntu 24.04 (GNOME Wayland), adding a screen produced no preview and recording did not capture the screen. Root cause: shipped grim and wl-screenrec are wlroots-only (Mutter doesn't implement wlr-screencopy). Fix: added Platform::compositor()/supportsWlrCapture(), new src/portal/portal.{h,cpp} wrapping xdg-desktop-portal Screenshot + ScreenCast over QtDBus, wired as fallback in Canvas::captureScreen() and Recorder::startScreenRecorder() (gst-launch-1.0 pipewiresrc ! ... ! x264enc ! mp4mux). wlroots path kept intact. flake.nix runtimeDeps gained gst-plugins-{base,good,bad,ugly,libav}, pipewire, xorg.xrandr; GST_PLUGIN_SYSTEM_PATH_1_0 set via wrapProgram.

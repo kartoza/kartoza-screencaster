@@ -2,6 +2,9 @@
 #include "config/config.h"
 #include "monitor/monitor.h"
 #include "platform/platform.h"
+#ifdef HAS_DBUS
+#include "portal/portal.h"
+#endif
 #include <QApplication>
 #include <QPainter>
 #include <QPainterPath>
@@ -66,6 +69,34 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
     });
     m_refreshTimer->start();
     m_lastFrameRect = frameRect();
+
+#ifdef HAS_DBUS
+    // GNOME/KDE preview path — Portal::requestScreenshot() returns
+    // immediately and emits one of these signals when the portal
+    // eventually responds (which may be many seconds after the first
+    // call while the user clicks through the permission dialog). We
+    // route the result onto the same m_pendingScreenPath the timer
+    // already drains, so the rendering side is identical to the
+    // wlroots/X11/macOS paths.
+    connect(&Portal::instance(), &Portal::screenshotReady, this,
+            [this](const QString &shot) {
+                QPixmap pix(shot);
+                QFile::remove(shot);
+                if (pix.isNull() || m_monitorName.isEmpty()) return;
+                QPixmap scaled = pix.scaled(960, 540, Qt::KeepAspectRatio,
+                                            Qt::SmoothTransformation);
+                QString path = QDir::tempPath() + "/kartoza-canvas-"
+                               + m_monitorName + ".png";
+                scaled.save(path, "PNG");
+                m_mutex.lock();
+                m_pendingScreenPath = path;
+                m_mutex.unlock();
+            });
+    connect(&Portal::instance(), &Portal::screenshotFailed, this,
+            [](const QString &reason) {
+                qDebug() << "Portal screenshot failed:" << reason;
+            });
+#endif
 }
 
 Canvas::~Canvas() {
@@ -511,15 +542,34 @@ void Canvas::captureScreen() {
 
 #if defined(Q_OS_LINUX)
     if (Platform::isWayland()) {
-        // Wayland: must use grim (can't grab windows directly)
-        QProcess proc;
-        proc.start("grim", {"-o", m_monitorName, "-t", "png", "-l", "0", path});
-        if (proc.waitForFinished(5000) && proc.exitCode() == 0) {
-            m_mutex.lock();
-            m_pendingScreenPath = path;
-            m_mutex.unlock();
+        if (Platform::supportsWlrCapture()) {
+            // wlroots compositors (Hyprland, Sway, COSMIC, …) — use grim.
+            QProcess proc;
+            proc.start("grim", {"-o", m_monitorName, "-t", "png", "-l", "0", path});
+            if (proc.waitForFinished(5000) && proc.exitCode() == 0) {
+                m_mutex.lock();
+                m_pendingScreenPath = path;
+                m_mutex.unlock();
+            }
+            return;
         }
+
+#ifdef HAS_DBUS
+        // GNOME (Mutter) / KDE (KWin) — no wlr-screencopy. Fire an
+        // async screenshot request; the Portal singleton emits
+        // screenshotReady() when the portal responds (potentially
+        // after a long user-interaction delay on first run). The
+        // signal is wired in the Canvas constructor and writes the
+        // result into m_pendingScreenPath. We must hop to the main
+        // thread to touch the D-Bus session bus.
+        QMetaObject::invokeMethod(&Portal::instance(),
+                                  &Portal::requestScreenshot,
+                                  Qt::QueuedConnection);
         return;
+#else
+        // No D-Bus in this build — preview is unavailable on GNOME/KDE.
+        return;
+#endif
     }
 #endif
 

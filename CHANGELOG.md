@@ -5,6 +5,39 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-06-21
+
+### Added
+
+#### xdg-desktop-portal capture path for GNOME and KDE Wayland
+Screen preview and recording now work on Wayland compositors that do not implement the `wlr-screencopy` protocol — most notably GNOME (Mutter) and KDE (KWin). Previously these compositors produced a blank canvas preview and an empty screen recording because the shipped `grim` and `wl-screenrec` tools are wlroots-only.
+
+- New `src/platform/platform.{h,cpp}` helpers `Platform::compositor()` and `Platform::supportsWlrCapture()` based on `XDG_CURRENT_DESKTOP` / `XDG_SESSION_DESKTOP`.
+- New `src/portal/portal.{h,cpp}` module wraps the `org.freedesktop.portal.Screenshot` and `org.freedesktop.portal.ScreenCast` D-Bus interfaces over QtDBus. The API is fully asynchronous (`requestScreenshot()` / `requestScreenCast()` return immediately and emit `screenshotReady` / `screenCastReady` signals when the portal eventually responds) so the UI never blocks on a portal dialog that may take many seconds.
+- `Canvas::captureScreen()` falls back to the Screenshot portal on GNOME/KDE; the existing `grim` path is preserved unchanged for wlroots.
+- `Recorder::startScreenRecorder()` opens a ScreenCast session and pipes the PipeWire stream through `gst-launch-1.0 pipewiresrc path=<node> fd=<portal-fd> ! videoconvert ! openh264enc ! h264parse ! mp4mux ! filesink`. The portal FD from `OpenPipeWireRemote` is `dup`'d, passed via `QProcess::setChildProcessModifier` to the forked gst-launch on a fixed slot (23), and used by `pipewiresrc` to read the screencast stream over its private permission-bound connection. The `restore_token` is persisted to QSettings so the source-picker dialog only appears on first run.
+- `flake.nix` runtime deps gained GStreamer + plugins-base/good/bad/ugly + gst-libav + pipewire (for the `pipewiresrc` element) and `xorg.xrandr`. `GST_PLUGIN_SYSTEM_PATH_1_0` is set both by `wrapProgram` for the installed binary and by the dev shell hook so the `cr` command works without re-entering the shell.
+- New `diagnose.sh` script prints a full system-capture diagnostic (display server, portal status, PipeWire status, GStreamer plugin paths and element presence, ffmpeg encoders, audio sources, V4L2 devices, fallback tools) for quick triage on user-reported recording failures.
+
+#### Workaround for Qt 6.10 / Mutter ScreenCast Start demarshalling
+The portal's Start response carries `streams: a(ua{sv})` with `(ii)` structs for `position` and `size` in the inner props dict. Qt 6.10's `QDBusMetaType::signatureToMetaType("(ii)")` returns a metatype whose demarshaller calls `dbus_message_iter_get_basic` while libdbus is at a struct iter position, aborting the process with `type struct 114 not a basic type`. Working around this required hand-rolled QDBus types at every nested layer:
+
+- `IntPair` registered for signature `(ii)` so the inner props dict walks cleanly.
+- `StreamEntry` registered for signature `(ua{sv})` so each stream element demarshalls cleanly.
+- `StreamList = QList<StreamEntry>` registered for signature `a(ua{sv})` so Qt's auto-walk routes the outer streams field through the correct path.
+
+With these three registrations in place, `onStartResponse(uint, QVariantMap)` reads the streams field as a real `QList<StreamEntry>` from the auto-walked dict — no manual demarshalling, no `QDBusMessage` slot, no crash.
+
+### Fixed
+
+#### Qt 6.10 `-Wunused-result` warnings in `test_canvas`
+- `QFile::open()` is `[[nodiscard]]` in Qt 6.10. Wrapped the nine short-form open calls in the sound-related canvas tests with `QVERIFY`.
+
+### Known limitations
+
+- **OpenH264 encoder quality**: nixpkgs builds `gst-libav` without libx264, so we use Cisco's OpenH264 (`openh264enc`) which is lower quality than `x264enc` at the same bitrate. Acceptable for screen recording; revisit if/when gst-plugins-ugly's `x264enc` becomes routinely available.
+- **No screen preview during portal source-picker first run**: while the user is choosing a screen in GNOME's portal dialog, the canvas preview can't refresh (the portal handshake holds the only screenshot-grant path). Once authorisation completes the preview resumes; subsequent runs are unaffected.
+
 ## [1.8.1] - 2026-06-07
 
 ### Fixed
