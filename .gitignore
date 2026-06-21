@@ -62,6 +62,16 @@ dist/
 .env.local
 .secrets.baseline
 
+# Assistant scratch files
+# claude.sh is rewritten each turn for one-shot VM tasks; claude.out
+# is its output. Neither belongs in version control.
+claude.sh
+claude.out
+
+# Release notes drafts staged for `gh release create --notes-file`.
+# The canonical record lives in CHANGELOG.md.
+RELEASE_NOTES_*.md
+
 # Package build artifacts
 packaging/debian/*.deb
 packaging/rpm/RPMS/
