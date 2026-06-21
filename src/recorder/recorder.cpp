@@ -413,7 +413,7 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
     }
 }
 
-#ifdef HAS_DBUS
+#if defined(HAS_DBUS) && defined(Q_OS_LINUX)
 void Recorder::onScreenCastReady(uint nodeId, int fd) {
     // Only act if a recording is set up but the screen process hasn't
     // been spawned yet — guards against stray signals (e.g. an old
@@ -429,7 +429,10 @@ void Recorder::onScreenCastReady(uint nodeId, int fd) {
     // (the default socket sees the node but the screencast permission
     // grant is bound to this FD). QProcess closes non-stdio fds in the
     // forked child by default, so we dup2 onto a fixed slot in the
-    // child-process modifier before exec().
+    // child-process modifier before exec(). Both
+    // setChildProcessModifier and the fcntl block are POSIX-only —
+    // hence the Q_OS_LINUX guard around the whole function (the portal
+    // recording path is Linux-only anyway).
     constexpr int kPwChildFd = 23;
     int portalFd = fd;
     m_screenProc->setChildProcessModifier([portalFd, kPwChildFd]() {
@@ -484,10 +487,10 @@ void Recorder::onScreenCastFailed(const QString &reason) {
     m_screenProc = nullptr;
 }
 #else
-// MOC-generated meta-object code references these slot symbols even on
-// builds without QtDBus, so they need definitions to link. The portal
-// path is unreachable when HAS_DBUS isn't set, but the slots still
-// have to exist as symbols.
+// MOC-generated meta-object code references these slot symbols on
+// every platform / build flavour, so they need definitions to link
+// even when the portal path isn't reachable (Windows, macOS, or
+// a non-DBus build).
 void Recorder::onScreenCastReady(uint, int) {}
 void Recorder::onScreenCastFailed(const QString &) {}
 #endif
