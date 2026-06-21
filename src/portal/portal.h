@@ -61,6 +61,17 @@ public:
     uint pipeWireNodeId() const { return m_pwNodeId; }
 
     /**
+     * @brief True while another Portal call is in flight on this thread.
+     *
+     * Portal calls run a nested QEventLoop while waiting for a Response
+     * signal, which keeps the Qt event loop pumping. Without this guard
+     * a canvas-refresh-driven screenshot() can land in the middle of a
+     * startScreenCast() wait and clobber its m_responseResults — Start
+     * then sees Screenshot's response and reports "no streams".
+     */
+    bool isBusy() const { return m_callInFlight; }
+
+    /**
      * @brief Private PipeWire connection FD from OpenPipeWireRemote().
      * @return A valid file descriptor (>=0) or -1 if no session is open.
      *
@@ -89,6 +100,9 @@ private:
     QString m_sessionHandle;
     uint m_pwNodeId = 0;
     int m_pwFd = -1;
+
+    // Re-entrancy guard — see isBusy().
+    bool m_callInFlight = false;
 };
 
 #endif // HAS_DBUS

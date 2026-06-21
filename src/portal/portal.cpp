@@ -26,6 +26,7 @@
 #include <QDBusUnixFileDescriptor>
 #include <QDBusVariant>
 #include <QDebug>
+#include <QScopeGuard>
 #include <fcntl.h>
 #include <unistd.h>
 #include <QEventLoop>
@@ -80,6 +81,14 @@ void Portal::onResponse(uint response, const QVariantMap &results) {
 }
 
 QString Portal::screenshot() {
+    if (m_callInFlight) {
+        // Yielding instead of nesting: see isBusy() docs. Canvas just
+        // keeps showing whatever shot is already on screen.
+        return {};
+    }
+    m_callInFlight = true;
+    auto guard = qScopeGuard([this]() { m_callInFlight = false; });
+
     auto bus = QDBusConnection::sessionBus();
     if (!bus.isConnected()) return {};
 
@@ -143,6 +152,14 @@ QString Portal::screenshot() {
 }
 
 uint Portal::startScreenCast() {
+    if (m_callInFlight) {
+        qWarning() << "Portal::startScreenCast called while another portal "
+                      "call is in flight — refusing to re-enter.";
+        return 0;
+    }
+    m_callInFlight = true;
+    auto guard = qScopeGuard([this]() { m_callInFlight = false; });
+
     auto bus = QDBusConnection::sessionBus();
     if (!bus.isConnected()) return 0;
     if (m_pwNodeId != 0 && !m_sessionHandle.isEmpty()) {
