@@ -81,33 +81,59 @@ void Portal::disconnectResponse(const QString &path, const char *slot) {
         kPortalBus, path, kRequestIface, "Response", this, slot);
 }
 
+// Unwrap a value that may have come back wrapped in QDBusVariant.
+// QtDBus's `a{sv}` -> QVariantMap auto-conversion stores each value as
+// `QDBusVariant` rather than unwrapping to the inner QVariant — calling
+// .toString() on the outer variant returns empty in that case, which is
+// why "uri" looked missing after the slot-signature change.
+static QVariant unwrapDBusVariant(const QVariant &v) {
+    if (v.userType() == qMetaTypeId<QDBusVariant>()) {
+        return v.value<QDBusVariant>().variant();
+    }
+    return v;
+}
+
 bool Portal::decodeResponse(const QDBusMessage &msg,
                             uint &code, QVariantMap &results) {
     const QList<QVariant> args = msg.arguments();
     if (args.size() < 2) return false;
     code = args.at(0).toUInt();
 
-    // args[1] is signature a{sv}. We avoid letting QtDBus auto-walk
-    // it (which is the source of the "type struct 114" SIGABRT) by
-    // demarshalling the dict ourselves, reading each value as a
-    // QDBusVariant. The actual inner type (struct / array / basic)
-    // stays opaque inside the QVariant — we read what we need
-    // (session_handle, uri, streams, restore_token) by key later.
-    QVariant raw = args.at(1);
+    const QVariant raw = args.at(1);
+    qDebug() << "Portal::decodeResponse: code=" << code
+             << "args[1] typeName=" << raw.typeName()
+             << "userType=" << raw.userType();
+
     if (raw.userType() == QMetaType::QVariantMap) {
-        results = raw.toMap();
+        // QtDBus auto-converted the a{sv} but stored each value as a
+        // QDBusVariant; unwrap them so downstream `.toString()` works.
+        const QVariantMap raw_map = raw.toMap();
+        for (auto it = raw_map.cbegin(); it != raw_map.cend(); ++it) {
+            results.insert(it.key(), unwrapDBusVariant(it.value()));
+        }
+        qDebug() << "Portal::decodeResponse: QVariantMap path, keys=" << results.keys();
         return true;
     }
+
+    // Manual walk — QtDBus left the dict opaque (typical for slots that
+    // take QDBusMessage). Reading each value as QDBusVariant lets us
+    // capture both basic and complex inner types without recursing into
+    // them (which is what trips the "type struct 114" abort).
     QDBusArgument arg = raw.value<QDBusArgument>();
-    if (arg.currentSignature().isEmpty()) return false;
+    qDebug() << "Portal::decodeResponse: QDBusArgument path, signature="
+             << arg.currentSignature();
     arg.beginMap();
+    int n = 0;
     while (!arg.atEnd()) {
         arg.beginMapEntry();
         QString key;
         QDBusVariant value;
         arg >> key >> value;
         arg.endMapEntry();
-        results.insert(key, value.variant());
+        QVariant inner = value.variant();
+        qDebug() << "  entry" << n++ << "key=" << key
+                 << "valueType=" << inner.typeName();
+        results.insert(key, inner);
     }
     arg.endMap();
     return true;
