@@ -89,39 +89,25 @@ const QDBusArgument &operator>>(const QDBusArgument &arg, StartResults &v) {
         qDebug() << "  entry" << n++ << "key =" << key
                  << "valueSig =" << arg.currentSignature();
 
-        if (key == "streams") {
-            // Manually walk the variant value WITHOUT going through
-            // QDBusVariant. Qt 6.10's QDBusVariant operator>> captures
-            // unknown signatures into a sub-QDBusArgument whose state
-            // is left in some half-broken mode ("write from a read-only
-            // object" -> SIGABRT) when we try to read from it. Doing
-            // the walk on the outer arg in place avoids that capture.
-            //
-            // signature here is 'v'. beginVariant enters it; the next
-            // currentSignature() then reports the inner 'a(ua{sv})'.
-            arg.beginVariant();
-            arg.beginArray();
-            if (!arg.atEnd()) {
-                arg.beginStructure();
-                uint id = 0;
-                arg >> id;
-                if (v.nodeId == 0) v.nodeId = id;
-            }
-            // Bail mid-walk. We deliberately do NOT call endStructure /
-            // endArray / endVariant / endMapEntry / endMap: those would
-            // try to consume the per-stream props dict bytes that we
-            // can't read without hitting the (ii)-struct crash. The
-            // outer arg is our local copy from msg.arguments()[1] and
-            // is discarded by the caller.
-            return arg;
-        }
-
+        // Read the value. For non-streams keys this gives us the data.
+        // For "streams" we know reading from the resulting captured
+        // sub-QDBusArgument is what triggers the SIGABRT, so we don't
+        // touch it — we'll get the node id by an out-of-band route
+        // (gdbus subprocess) in a follow-up commit. For now, just bail
+        // when we hit streams so the caller can decide how to recover.
         QDBusVariant value;
         arg >> value;
+        arg.endMapEntry();
+
         if (key == "restore_token") {
             v.restoreToken = value.variant().toString();
+        } else if (key == "streams") {
+            qWarning() << "Portal: streams field seen — Qt 6.10's "
+                          "QDBusArgument extraction is broken for the "
+                          "captured a(ua{sv}). No node id; recorder "
+                          "will surface an error.";
+            return arg;
         }
-        arg.endMapEntry();
     }
     arg.endMap();
     return arg;
