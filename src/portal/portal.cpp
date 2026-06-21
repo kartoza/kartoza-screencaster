@@ -78,13 +78,18 @@ QDBusArgument &operator<<(QDBusArgument &arg, const StartResults &) {
 }
 
 const QDBusArgument &operator>>(const QDBusArgument &arg, StartResults &v) {
+    qDebug() << "StartResults operator>> entered, signature ="
+             << arg.currentSignature();
     arg.beginMap();
+    int n = 0;
     while (!arg.atEnd()) {
         arg.beginMapEntry();
         QString key;
         QDBusVariant value;
         arg >> key >> value;
         arg.endMapEntry();
+        qDebug() << "  entry" << n++ << "key =" << key
+                 << "valueType =" << value.variant().typeName();
 
         if (key == "restore_token") {
             v.restoreToken = value.variant().toString();
@@ -358,7 +363,7 @@ void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
 
     if (!bus.connect(kPortalBus, m_screenCastReqPath, kRequestIface,
                      "Response", this,
-                     SLOT(onStartResponse(uint, StartResults)))) {
+                     SLOT(onStartResponse(QDBusMessage)))) {
         abortScreenCast("failed to subscribe to Start Response");
         return;
     }
@@ -382,15 +387,41 @@ void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
     // the Response signal for as long as the user takes to act.
 }
 
-void Portal::onStartResponse(uint code, StartResults results) {
+void Portal::onStartResponse(const QDBusMessage &msg) {
     disconnectResponse(m_screenCastReqPath,
-                       SLOT(onStartResponse(uint, StartResults)));
+                       SLOT(onStartResponse(QDBusMessage)));
     m_screenCastReqPath.clear();
+
+    const QList<QVariant> args = msg.arguments();
+    qDebug() << "Portal::onStartResponse fired —"
+             << "args.size =" << args.size();
+    if (args.size() < 2) {
+        abortScreenCast("Start response had no a{sv} field");
+        return;
+    }
+
+    uint code = args.at(0).toUInt();
+    qDebug() << "Portal::onStartResponse: code =" << code
+             << "args[1] typeName =" << args.at(1).typeName();
 
     if (code != 0) {
         abortScreenCast(code == 1 ? "user cancelled Start"
                                   : QString("portal error %1").arg(code));
         return;
+    }
+
+    // Manual demarshal of args[1] (signature a{sv}). We extract the
+    // QDBusArgument and call our registered operator>> on it. This
+    // sidesteps Qt's QVariantMap auto-walk which crashes on the
+    // streams field's nested (ii) structs.
+    StartResults results;
+    QVariant raw = args.at(1);
+    if (raw.canConvert<QDBusArgument>()) {
+        QDBusArgument arg = raw.value<QDBusArgument>();
+        arg >> results;
+    } else {
+        qWarning() << "Portal: args[1] is not a QDBusArgument, type ="
+                   << raw.typeName();
     }
 
     qDebug() << "Portal: Start results — nodeId =" << results.nodeId

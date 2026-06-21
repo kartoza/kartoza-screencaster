@@ -140,11 +140,14 @@ private slots:
     void onCreateSessionResponse(uint code, const QVariantMap &results);
     void onSelectSourcesResponse(uint code, const QVariantMap &results);
 
-    // Custom-type second argument: our `operator>>` (registered via
-    // qDBusRegisterMetaType) walks the dict by hand and reads the
-    // streams array's first node id plus the restore token, while
-    // skipping the (ii) struct values that crash Qt's auto-walk.
-    void onStartResponse(uint code, StartResults results);
+    // Slot takes the raw QDBusMessage and we call qdbus_cast<StartResults>
+    // ourselves. Two reasons we don't use (uint, StartResults) directly:
+    //   (1) Qt 6.10's signal->slot dispatcher does not reliably pick up
+    //       custom-demarshaller types for a{sv}, so it falls back to the
+    //       broken QVariantMap walk anyway.
+    //   (2) Doing the cast explicitly lets us log + diagnose if the
+    //       walk produces an empty nodeId.
+    void onStartResponse(const QDBusMessage &msg);
 
 private:
     Portal();
