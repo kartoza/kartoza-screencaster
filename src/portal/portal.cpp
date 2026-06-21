@@ -440,10 +440,14 @@ void Portal::finalizeScreenCastFromStart() {
 
     if (m_pwFd >= 0) ::close(m_pwFd);
     m_pwFd = dupFd;
-    m_pwNodeId = 0;  // unknown — pipewiresrc auto-picks from the private fd
     m_screenCastInFlight = false;
-    qDebug() << "Portal: ScreenCast ready, fd =" << m_pwFd
-             << "(node id: auto-pick)";
+    // m_pwNodeId was set in onStartResponse from the streams field;
+    // keep it. (An earlier revision tried to leave this 0 and let
+    // pipewiresrc auto-pick, but pw_stream_connect treats 0 as a
+    // literal target id, not PW_ID_ANY, and fails with "target not
+    // found".)
+    qDebug() << "Portal: ScreenCast ready, nodeId =" << m_pwNodeId
+             << "fd =" << m_pwFd;
     emit screenCastReady(m_pwNodeId, m_pwFd);
 }
 
