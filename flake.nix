@@ -114,9 +114,18 @@
 
         # Runtime dependencies wrapped into PATH
         runtimeDeps = with pkgs; [
-          wl-screenrec         # Wayland screen recording
-          ffmpeg               # Video/audio processing (includes ffprobe)
-          grim                 # Screenshot capture for canvas preview
+          wl-screenrec                # Wayland (wlroots) screen recording
+          ffmpeg                      # Video/audio processing (includes ffprobe)
+          grim                        # Wayland (wlroots) screenshot
+          xorg.xrandr                 # X11 monitor enumeration
+          # GStreamer + plugins for the xdg-desktop-portal recording path
+          # (GNOME/KDE Wayland — reads from PipeWire screencast node).
+          gst_all_1.gstreamer
+          gst_all_1.gst-plugins-base  # videoconvert
+          gst_all_1.gst-plugins-good  # mp4mux
+          gst_all_1.gst-plugins-ugly  # x264enc
+          gst_all_1.gst-libav
+          pipewire                    # provides gst-plugin-pipewire (pipewiresrc)
         ];
 
         # CMake/Qt6-based package
@@ -151,9 +160,22 @@
             ];
 
             postInstall = ''
-              # Wrap binary with runtime tools in PATH
+              # GStreamer plugins live in <pkg>/lib/gstreamer-1.0 — they are
+              # only discoverable when GST_PLUGIN_SYSTEM_PATH_1_0 points at
+              # each plugin package. Needed for the portal recording path
+              # (pipewiresrc, x264enc, mp4mux) and QtMultimedia playback.
+              gstPluginPath="${pkgs.lib.makeSearchPath "lib/gstreamer-1.0" [
+                pkgs.gst_all_1.gst-plugins-base
+                pkgs.gst_all_1.gst-plugins-good
+                pkgs.gst_all_1.gst-plugins-bad
+                pkgs.gst_all_1.gst-plugins-ugly
+                pkgs.gst_all_1.gst-libav
+                pkgs.pipewire
+              ]}"
+
               wrapProgram $out/bin/kartoza-screencaster \
-                --prefix PATH : ${pkgs.lib.makeBinPath runtimeDeps}
+                --prefix PATH : ${pkgs.lib.makeBinPath runtimeDeps} \
+                --prefix GST_PLUGIN_SYSTEM_PATH_1_0 : "$gstPluginPath"
             '';
 
             meta = with pkgs.lib; {

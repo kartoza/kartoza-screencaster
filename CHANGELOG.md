@@ -5,6 +5,23 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-06-21
+
+### Added
+
+#### xdg-desktop-portal capture path for GNOME and KDE Wayland
+- Screen preview and recording now work on Wayland compositors that do not implement the `wlr-screencopy` protocol — most notably GNOME (Mutter) and KDE (KWin). Previously these compositors produced a blank canvas preview and an empty screen recording because the shipped `grim` and `wl-screenrec` tools are wlroots-only.
+- Added `Platform::compositor()` and `Platform::supportsWlrCapture()` based on `XDG_CURRENT_DESKTOP` / `XDG_SESSION_DESKTOP`.
+- New `src/portal/portal.{h,cpp}` module wraps the `org.freedesktop.portal.Screenshot` and `org.freedesktop.portal.ScreenCast` D-Bus interfaces over QtDBus, exposed as synchronous calls backed by a local `QEventLoop`.
+- `Canvas::captureScreen()` falls back to the Screenshot portal on GNOME/KDE; the existing `grim` path is preserved unchanged for wlroots.
+- `Recorder::startScreenRecorder()` opens a ScreenCast session and pipes the PipeWire stream through `gst-launch-1.0 pipewiresrc ! videoconvert ! videorate ! x264enc ! mp4mux ! filesink` when wlroots is unavailable. The persistent `restore_token` is saved to QSettings so the user only sees the portal's source-picker on first run.
+- `flake.nix` runtime deps gained GStreamer + plugins-base/good/bad/ugly + gst-libav + pipewire (for the `pipewiresrc` GStreamer element) and `xorg.xrandr`. `GST_PLUGIN_SYSTEM_PATH_1_0` is now set by `wrapProgram` so gst-launch can find the plugins.
+
+### Fixed
+
+#### Qt 6.10 `-Wunused-result` warnings in `test_canvas`
+- `QFile::open()` is `[[nodiscard]]` in Qt 6.10. Wrapped the nine short-form open calls in the sound-related canvas tests with `QVERIFY`.
+
 ## [1.8.1] - 2026-06-07
 
 ### Fixed

@@ -26,6 +26,35 @@ DisplayServer displayServer() {
 #endif
 }
 
+Compositor compositor() {
+#if defined(Q_OS_LINUX)
+  auto env = QProcessEnvironment::systemEnvironment();
+  // XDG_CURRENT_DESKTOP is colon-separated on some distros (e.g. "ubuntu:GNOME")
+  QString desktop = env.value("XDG_CURRENT_DESKTOP").toLower();
+  // XDG_SESSION_DESKTOP is single-token, often more reliable
+  QString session = env.value("XDG_SESSION_DESKTOP").toLower();
+  QString combined = desktop + ":" + session;
+
+  if (combined.contains("gnome") || combined.contains("unity")) {
+    return Compositor::Mutter;
+  }
+  if (combined.contains("kde") || combined.contains("plasma")) {
+    return Compositor::KWin;
+  }
+  if (combined.contains("cosmic")) {
+    return Compositor::Cosmic;
+  }
+  if (combined.contains("hyprland") || combined.contains("sway") ||
+      combined.contains("wayfire") || combined.contains("river") ||
+      combined.contains("niri") || combined.contains("labwc")) {
+    return Compositor::Wlroots;
+  }
+  return Compositor::Unknown;
+#else
+  return Compositor::Unknown;
+#endif
+}
+
 QString platformString() {
   QString s;
   switch (os()) {

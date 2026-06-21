@@ -2,6 +2,9 @@
 #include "config/config.h"
 #include "monitor/monitor.h"
 #include "platform/platform.h"
+#ifdef HAS_DBUS
+#include "portal/portal.h"
+#endif
 #include <QApplication>
 #include <QPainter>
 #include <QPainterPath>
@@ -511,15 +514,47 @@ void Canvas::captureScreen() {
 
 #if defined(Q_OS_LINUX)
     if (Platform::isWayland()) {
-        // Wayland: must use grim (can't grab windows directly)
-        QProcess proc;
-        proc.start("grim", {"-o", m_monitorName, "-t", "png", "-l", "0", path});
-        if (proc.waitForFinished(5000) && proc.exitCode() == 0) {
+        if (Platform::supportsWlrCapture()) {
+            // wlroots compositors (Hyprland, Sway, COSMIC, …) — use grim.
+            QProcess proc;
+            proc.start("grim", {"-o", m_monitorName, "-t", "png", "-l", "0", path});
+            if (proc.waitForFinished(5000) && proc.exitCode() == 0) {
+                m_mutex.lock();
+                m_pendingScreenPath = path;
+                m_mutex.unlock();
+            }
+            return;
+        }
+
+#ifdef HAS_DBUS
+        // GNOME (Mutter) / KDE (KWin) — no wlr-screencopy. Use the
+        // xdg-desktop-portal Screenshot interface. The portal call must
+        // run on the main thread (D-Bus session bus is thread-affine in
+        // our usage), so we hop there and copy the result into the
+        // pending path.
+        QMetaObject::invokeMethod(this, [this, path]() {
+            QString shot = Portal::instance().screenshot();
+            if (shot.isEmpty()) return;
+
+            // The portal writes a full-resolution PNG into XDG_PICTURES.
+            // Scale it down to preview size to keep the canvas snappy,
+            // then drop it where the refresh tick picks it up.
+            QPixmap pix(shot);
+            if (pix.isNull()) return;
+            QPixmap scaled = pix.scaled(960, 540, Qt::KeepAspectRatio,
+                                        Qt::SmoothTransformation);
+            scaled.save(path, "PNG");
+            QFile::remove(shot);
+
             m_mutex.lock();
             m_pendingScreenPath = path;
             m_mutex.unlock();
-        }
+        }, Qt::QueuedConnection);
         return;
+#else
+        // No D-Bus in this build — preview is unavailable on GNOME/KDE.
+        return;
+#endif
     }
 #endif
 

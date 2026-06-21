@@ -3,6 +3,9 @@
 #include "merger/merger.h"
 #include "monitor/monitor.h"
 #include "platform/platform.h"
+#ifdef HAS_DBUS
+#include "portal/portal.h"
+#endif
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
@@ -155,6 +158,12 @@ void Recorder::stopAllProcesses() {
     if (m_screenProc) { m_screenProc->deleteLater(); m_screenProc = nullptr; }
     if (m_audioProc) { m_audioProc->deleteLater(); m_audioProc = nullptr; }
     if (m_webcamProc) { m_webcamProc->deleteLater(); m_webcamProc = nullptr; }
+
+#ifdef HAS_DBUS
+    // Close the portal screencast session so the compositor stops the stream
+    // and the green "screen sharing" indicator goes away.
+    Portal::instance().stopScreenCast();
+#endif
 }
 
 void Recorder::writeRecordingJson(const QString &status) {
@@ -286,11 +295,51 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
     switch (Platform::os()) {
     case Platform::OS::Linux:
         if (Platform::isWayland()) {
-            // wl-screenrec for wlroots compositors
-            cmd = "wl-screenrec";
-            if (!opts.hwAccel) args << "--no-hw";
-            args << QString("--output=%1").arg(opts.monitor)
-                 << QString("--filename=%1").arg(m_screenFile);
+            if (Platform::supportsWlrCapture()) {
+                // wlroots compositors (Hyprland, Sway, COSMIC) — native tool.
+                cmd = "wl-screenrec";
+                if (!opts.hwAccel) args << "--no-hw";
+                args << QString("--output=%1").arg(opts.monitor)
+                     << QString("--filename=%1").arg(m_screenFile);
+                break;
+            }
+
+#ifdef HAS_DBUS
+            // GNOME/KDE Wayland — open a ScreenCast portal session and
+            // pipe the PipeWire stream through GStreamer. The portal
+            // shows its source-picker on first run; the restore_token
+            // we stored in QSettings makes subsequent runs silent.
+            uint nodeId = Portal::instance().startScreenCast();
+            if (nodeId == 0) {
+                emit recordingError(
+                    "Could not start xdg-desktop-portal screencast session. "
+                    "Check that xdg-desktop-portal-gnome or "
+                    "xdg-desktop-portal-kde is installed and running.");
+                delete m_screenProc;
+                m_screenProc = nullptr;
+                return;
+            }
+            cmd = "gst-launch-1.0";
+            args << "-e"  // send EOS on SIGINT so mp4mux finalises the moov atom
+                 << "pipewiresrc" << QString("path=%1").arg(nodeId)
+                 << "do-timestamp=true"
+                 << "!" << "videoconvert"
+                 << "!" << "videorate"
+                 << "!" << "video/x-raw,framerate=30/1"
+                 << "!" << "x264enc" << "tune=zerolatency"
+                       << "speed-preset=ultrafast" << "bitrate=8000"
+                 << "!" << "mp4mux"
+                 << "!" << "filesink" << QString("location=%1").arg(m_screenFile);
+            break;
+#else
+            emit recordingError(
+                "This build has no D-Bus support — cannot use the "
+                "xdg-desktop-portal recording fallback required on "
+                "GNOME/KDE Wayland.");
+            delete m_screenProc;
+            m_screenProc = nullptr;
+            return;
+#endif
         } else {
             // ffmpeg x11grab for X11
             cmd = "ffmpeg";
