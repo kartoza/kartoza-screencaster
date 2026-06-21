@@ -27,31 +27,50 @@
 #include <QString>
 #include <QVariantMap>
 
-/**
- * @struct StartResults
- * @brief Demarshalled view of org.freedesktop.portal.ScreenCast.Start's
- *        Response signal payload.
- *
- * We can't let Qt auto-convert the response's `a{sv}` into a QVariantMap
- * because the `streams` value (a(ua{sv})) carries inner `(ii)` structs
- * (position, size) that crash QtDBus's auto-walk with
- * "type struct 114 not a basic type" -> SIGABRT. Instead we register
- * this type with `qDBusRegisterMetaType` so QtDBus uses our `operator>>`
- * for the slot's second argument — and that operator walks the dict by
- * hand, reading each value as a `QDBusVariant` so inner complex types
- * stay opaque.
- */
-struct StartResults {
-    /** First PipeWire node id from the streams array (the screencast). */
-    uint nodeId = 0;
-    /** Restore token to save in QSettings so the next run skips the picker. */
-    QString restoreToken;
+// =============================================================================
+// Registered demarshaller types for Mutter's ScreenCast.Start response
+// =============================================================================
+//
+// Start's results dict ('a{sv}') carries a `streams` value with signature
+// `a(ua{sv})`, and the per-stream props dict contains `position: (ii)` and
+// `size: (ii)`. Qt 6.10's QDBusMetaType::signatureToMetaType returns
+// *some* metatype for `(ii)` whose demarshall handler then asks libdbus
+// for a basic type at a struct iter position — libdbus aborts with
+// "type struct 114 not a basic type".
+//
+// We override the resolution by registering three custom types with
+// qDBusRegisterMetaType. Each one has a hand-written operator>> that
+// drives the QDBusArgument state machine correctly. Once registered,
+// Qt's QDBusVariant / QVariantMap auto-walk has a clean type at every
+// level of nesting and never falls through to the broken path.
+//
+//   IntPair      -> "(ii)"        (position, size)
+//   StreamEntry  -> "(ua{sv})"    (one element of the streams array)
+//   StreamList   -> "a(ua{sv})"   (the streams array itself; QList<T>)
+//
+// `StreamList` is a typedef so Q_DECLARE_METATYPE doesn't choke on the
+// comma inside `QList<StreamEntry>`.
+
+struct IntPair {
+    int x = 0;
+    int y = 0;
 };
 
-Q_DECLARE_METATYPE(StartResults)
+struct StreamEntry {
+    uint nodeId = 0;
+    QVariantMap props;
+};
 
-QDBusArgument &operator<<(QDBusArgument &arg, const StartResults &v);
-const QDBusArgument &operator>>(const QDBusArgument &arg, StartResults &v);
+using StreamList = QList<StreamEntry>;
+
+Q_DECLARE_METATYPE(IntPair)
+Q_DECLARE_METATYPE(StreamEntry)
+Q_DECLARE_METATYPE(StreamList)
+
+QDBusArgument &operator<<(QDBusArgument &arg, const IntPair &v);
+const QDBusArgument &operator>>(const QDBusArgument &arg, IntPair &v);
+QDBusArgument &operator<<(QDBusArgument &arg, const StreamEntry &v);
+const QDBusArgument &operator>>(const QDBusArgument &arg, StreamEntry &v);
 
 /**
  * @class Portal
@@ -139,15 +158,10 @@ private slots:
     void onScreenshotResponse(uint code, const QVariantMap &results);
     void onCreateSessionResponse(uint code, const QVariantMap &results);
     void onSelectSourcesResponse(uint code, const QVariantMap &results);
-
-    // Slot takes the raw QDBusMessage and we call qdbus_cast<StartResults>
-    // ourselves. Two reasons we don't use (uint, StartResults) directly:
-    //   (1) Qt 6.10's signal->slot dispatcher does not reliably pick up
-    //       custom-demarshaller types for a{sv}, so it falls back to the
-    //       broken QVariantMap walk anyway.
-    //   (2) Doing the cast explicitly lets us log + diagnose if the
-    //       walk produces an empty nodeId.
-    void onStartResponse(const QDBusMessage &msg);
+    // With the three IntPair / StreamEntry / StreamList registrations in
+    // place, Qt's a{sv} auto-walk can convert Start's response cleanly,
+    // so we go back to the same shape as Screenshot/CreateSession.
+    void onStartResponse(uint code, const QVariantMap &results);
 
 private:
     Portal();

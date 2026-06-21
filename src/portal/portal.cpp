@@ -53,65 +53,49 @@ Portal &Portal::instance() {
 }
 
 Portal::Portal() {
-    qDBusRegisterMetaType<StartResults>();
+    // Order matters here. Each registration runs the type's operator<<
+    // once to derive its D-Bus signature; registering an outer type
+    // before its inner type works because QtDBus only resolves the inner
+    // signature when it actually demarshalls, not at registration time.
+    // We still register inner-first as a precaution.
+    qDBusRegisterMetaType<IntPair>();      // "(ii)"
+    qDBusRegisterMetaType<StreamEntry>();  // "(ua{sv})"
+    qDBusRegisterMetaType<StreamList>();   // "a(ua{sv})"
 }
 
-// Custom demarshaller for Start's results dict. Qt's auto-walk of
-// a{sv} -> QVariantMap crashes inside libdbus on the (ii) structs
-// nested in the per-stream props dict; we sidestep that by reading
-// each top-level value as QDBusVariant (which keeps inner bytes
-// opaque) and only descending into "streams" where we know how to
-// walk it safely.
-QDBusArgument &operator<<(QDBusArgument &arg, const StartResults &) {
-    // Marshalling is never used in our flow — the portal only ever
-    // sends these to us — but qDBusRegisterMetaType invokes operator<<
-    // once to derive the D-Bus signature for the type. The value type
-    // of an a{sv} dict on the wire is `v` (variant), which QtDBus
-    // represents as QDBusVariant; using QMetaType::QVariant here makes
-    // QtDBus log "type QVariant is not registered with D-Bus" and
-    // the registered signature comes out empty, so dispatch falls
-    // through to the default QVariantMap walk and crashes again.
-    arg.beginMap(QMetaType(QMetaType::QString),
-                 QMetaType(qMetaTypeId<QDBusVariant>()));
-    arg.endMap();
+// (ii) — used by Mutter for stream position and size.
+QDBusArgument &operator<<(QDBusArgument &arg, const IntPair &v) {
+    arg.beginStructure();
+    arg << v.x << v.y;
+    arg.endStructure();
+    return arg;
+}
+const QDBusArgument &operator>>(const QDBusArgument &arg, IntPair &v) {
+    arg.beginStructure();
+    arg >> v.x >> v.y;
+    arg.endStructure();
     return arg;
 }
 
-const QDBusArgument &operator>>(const QDBusArgument &arg, StartResults &v) {
-    qDebug() << "StartResults operator>> entered, signature ="
-             << arg.currentSignature();
-    arg.beginMap();
-    int n = 0;
-    while (!arg.atEnd()) {
-        arg.beginMapEntry();
-        QString key;
-        arg >> key;
-        qDebug() << "  entry" << n++ << "key =" << key
-                 << "valueSig =" << arg.currentSignature();
-
-        // Read the value. For non-streams keys this gives us the data.
-        // For "streams" we know reading from the resulting captured
-        // sub-QDBusArgument is what triggers the SIGABRT, so we don't
-        // touch it — we'll get the node id by an out-of-band route
-        // (gdbus subprocess) in a follow-up commit. For now, just bail
-        // when we hit streams so the caller can decide how to recover.
-        QDBusVariant value;
-        arg >> value;
-        arg.endMapEntry();
-
-        if (key == "restore_token") {
-            v.restoreToken = value.variant().toString();
-        } else if (key == "streams") {
-            qWarning() << "Portal: streams field seen — Qt 6.10's "
-                          "QDBusArgument extraction is broken for the "
-                          "captured a(ua{sv}). No node id; recorder "
-                          "will surface an error.";
-            return arg;
-        }
-    }
-    arg.endMap();
+// (ua{sv}) — one entry in the streams array. The inner a{sv] is read
+// as QVariantMap, which Qt walks correctly once IntPair has taken over
+// the (ii) demarshaller from whatever broken default Qt 6.10 was using.
+QDBusArgument &operator<<(QDBusArgument &arg, const StreamEntry &v) {
+    arg.beginStructure();
+    arg << v.nodeId << v.props;
+    arg.endStructure();
     return arg;
 }
+const QDBusArgument &operator>>(const QDBusArgument &arg, StreamEntry &v) {
+    arg.beginStructure();
+    arg >> v.nodeId >> v.props;
+    arg.endStructure();
+    return arg;
+}
+
+// StreamList = QList<StreamEntry> — Qt provides the templated
+// operator<< / operator>> for QList<T>, so we don't need to define
+// them ourselves.
 
 bool Portal::isAvailable() {
     auto bus = QDBusConnection::sessionBus();
@@ -352,7 +336,7 @@ void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
 
     if (!bus.connect(kPortalBus, m_screenCastReqPath, kRequestIface,
                      "Response", this,
-                     SLOT(onStartResponse(QDBusMessage)))) {
+                     SLOT(onStartResponse(uint, QVariantMap)))) {
         abortScreenCast("failed to subscribe to Start Response");
         return;
     }
@@ -376,22 +360,13 @@ void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
     // the Response signal for as long as the user takes to act.
 }
 
-void Portal::onStartResponse(const QDBusMessage &msg) {
+void Portal::onStartResponse(uint code, const QVariantMap &results) {
     disconnectResponse(m_screenCastReqPath,
-                       SLOT(onStartResponse(QDBusMessage)));
+                       SLOT(onStartResponse(uint, QVariantMap)));
     m_screenCastReqPath.clear();
 
-    const QList<QVariant> args = msg.arguments();
-    qDebug() << "Portal::onStartResponse fired —"
-             << "args.size =" << args.size();
-    if (args.size() < 2) {
-        abortScreenCast("Start response had no a{sv} field");
-        return;
-    }
-
-    uint code = args.at(0).toUInt();
     qDebug() << "Portal::onStartResponse: code =" << code
-             << "args[1] typeName =" << args.at(1).typeName();
+             << "result keys =" << results.keys();
 
     if (code != 0) {
         abortScreenCast(code == 1 ? "user cancelled Start"
@@ -399,33 +374,39 @@ void Portal::onStartResponse(const QDBusMessage &msg) {
         return;
     }
 
-    // Manual demarshal of args[1] (signature a{sv}). We extract the
-    // QDBusArgument and call our registered operator>> on it. This
-    // sidesteps Qt's QVariantMap auto-walk which crashes on the
-    // streams field's nested (ii) structs.
-    StartResults results;
-    QVariant raw = args.at(1);
-    if (raw.canConvert<QDBusArgument>()) {
-        QDBusArgument arg = raw.value<QDBusArgument>();
-        arg >> results;
-    } else {
-        qWarning() << "Portal: args[1] is not a QDBusArgument, type ="
-                   << raw.typeName();
-    }
-
-    qDebug() << "Portal: Start results — nodeId =" << results.nodeId
-             << "restoreToken size =" << results.restoreToken.size();
-
-    if (!results.restoreToken.isEmpty()) {
+    // Persist the restore token so the source-picker dialog only
+    // appears on first run on GNOME.
+    QString newRestore = unwrap(results.value("restore_token")).toString();
+    if (!newRestore.isEmpty()) {
         QSettings settings;
-        settings.setValue("portal/screencast_restore_token",
-                          results.restoreToken);
+        settings.setValue("portal/screencast_restore_token", newRestore);
     }
-    if (results.nodeId == 0) {
-        abortScreenCast("Start response carried no usable node id");
+
+    // With IntPair / StreamEntry / StreamList all registered with
+    // qDBusRegisterMetaType, Qt's auto-walk of Start's a{sv} should
+    // have demarshalled streams into a real StreamList. If it didn't
+    // (some Qt-internal precedence with built-in (ii) registrations
+    // for QPoint/QSize), fall back to a manual cast through the
+    // QDBusArgument the unwrapper gives us.
+    QVariant streamsVar = unwrap(results.value("streams"));
+    qDebug() << "  streams variant typeName =" << streamsVar.typeName();
+
+    StreamList streams;
+    if (streamsVar.canConvert<StreamList>()) {
+        streams = streamsVar.value<StreamList>();
+    } else if (streamsVar.canConvert<QDBusArgument>()) {
+        QDBusArgument arg = streamsVar.value<QDBusArgument>();
+        arg >> streams;
+    }
+
+    qDebug() << "  streams entries =" << streams.size();
+    if (streams.isEmpty()) {
+        abortScreenCast("Start response had no usable streams entry");
         return;
     }
-    m_pwNodeId = results.nodeId;
+
+    m_pwNodeId = streams.first().nodeId;
+    qDebug() << "Portal: Start nodeId =" << m_pwNodeId;
     finalizeScreenCastFromStart();
 }
 
