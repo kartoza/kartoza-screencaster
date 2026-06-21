@@ -111,7 +111,16 @@ private slots:
     void onScreenshotResponse(uint code, const QVariantMap &results);
     void onCreateSessionResponse(uint code, const QVariantMap &results);
     void onSelectSourcesResponse(uint code, const QVariantMap &results);
-    void onStartResponse(uint code, const QVariantMap &results);
+
+    // Start's Response carries a `streams` field with signature
+    // a(ua{sv}) whose inner props dict (position, size) holds (ii)
+    // structs that crash Qt's QVariantMap auto-conversion inside
+    // libdbus ("type struct 114"). Taking the raw QDBusMessage stops
+    // Qt from walking the dict; we only need the response code
+    // because pipewiresrc reads the only stream visible on the
+    // portal's private PipeWire connection without us specifying a
+    // node id.
+    void onStartResponse(const QDBusMessage &msg);
 
 private:
     Portal();
@@ -120,7 +129,7 @@ private:
 
     void disconnectResponse(const QString &path, const char *slot);
     void abortScreenCast(const QString &reason);
-    void finalizeScreenCastFromStart(const QVariantMap &results);
+    void finalizeScreenCastFromStart();
 
     // Screenshot in-flight state.
     bool m_screenshotInFlight = false;

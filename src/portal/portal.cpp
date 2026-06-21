@@ -292,7 +292,7 @@ void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
 
     if (!bus.connect(kPortalBus, m_screenCastReqPath, kRequestIface,
                      "Response", this,
-                     SLOT(onStartResponse(uint, QVariantMap)))) {
+                     SLOT(onStartResponse(QDBusMessage)))) {
         abortScreenCast("failed to subscribe to Start Response");
         return;
     }
@@ -316,66 +316,39 @@ void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
     // the Response signal for as long as the user takes to act.
 }
 
-void Portal::onStartResponse(uint code, const QVariantMap &results) {
+void Portal::onStartResponse(const QDBusMessage &msg) {
     disconnectResponse(m_screenCastReqPath,
-                       SLOT(onStartResponse(uint, QVariantMap)));
+                       SLOT(onStartResponse(QDBusMessage)));
     m_screenCastReqPath.clear();
 
+    const QList<QVariant> args = msg.arguments();
+    if (args.isEmpty()) {
+        abortScreenCast("Start Response had no arguments");
+        return;
+    }
+    uint code = args.at(0).toUInt();
     if (code != 0) {
         abortScreenCast(code == 1 ? "user cancelled Start"
                                   : QString("portal error %1").arg(code));
         return;
     }
 
-    QSettings settings;
-    QString newRestore = unwrap(results.value("restore_token")).toString();
-    if (!newRestore.isEmpty()) {
-        settings.setValue("portal/screencast_restore_token", newRestore);
-    }
-
-    finalizeScreenCastFromStart(results);
+    // We deliberately do NOT walk args[1]. Mutter's Start response
+    // includes the "streams" field (signature a(ua{sv})) whose inner
+    // props dict carries (ii) structs (position, size) — Qt's
+    // QVariantMap auto-conversion crashes inside libdbus walking
+    // those ("type struct 114 not a basic type" -> SIGABRT). The
+    // same problem makes the restore_token field unreachable on
+    // GNOME, so the user has to authorise the source picker on each
+    // run there. (X11 / wlroots are unaffected.)
+    //
+    // We don't need the streams field anyway: OpenPipeWireRemote
+    // returns a private FD on which only the screencast stream is
+    // visible, and pipewiresrc auto-picks the first one it sees.
+    finalizeScreenCastFromStart();
 }
 
-void Portal::finalizeScreenCastFromStart(const QVariantMap &results) {
-    // results["streams"] is a(ua{sv}). QtDBus's auto-conversion wraps
-    // this in QDBusVariant<QDBusArgument>, so unwrap before pulling out
-    // the QDBusArgument. We then walk the array manually and read the
-    // inner props dict with QDBusVariant for the values, because the
-    // dict contains nested (ii) structs (position, size) that crash
-    // QtDBus's QVariantMap operator>> ("type struct 114").
-    QVariant streamsVar = unwrap(results.value("streams"));
-    if (!streamsVar.isValid()) {
-        abortScreenCast("Start returned no streams field");
-        return;
-    }
-    QDBusArgument arg = streamsVar.value<QDBusArgument>();
-    arg.beginArray();
-    uint nodeId = 0;
-    while (!arg.atEnd()) {
-        arg.beginStructure();
-        uint id = 0;
-        arg >> id;
-        arg.beginMap();
-        while (!arg.atEnd()) {
-            arg.beginMapEntry();
-            QString key;
-            QDBusVariant value;
-            arg >> key >> value;
-            arg.endMapEntry();
-        }
-        arg.endMap();
-        arg.endStructure();
-        if (nodeId == 0) nodeId = id;
-    }
-    arg.endArray();
-
-    if (nodeId == 0) {
-        abortScreenCast("Start streams array was empty");
-        return;
-    }
-
-    // OpenPipeWireRemote is a plain method call (no Request indirection)
-    // so we can issue it synchronously here.
+void Portal::finalizeScreenCastFromStart() {
     auto bus = QDBusConnection::sessionBus();
     QDBusMessage openMsg = QDBusMessage::createMethodCall(
         kPortalBus, kPortalPath, kScreenCastIface, "OpenPipeWireRemote");
@@ -405,10 +378,10 @@ void Portal::finalizeScreenCastFromStart(const QVariantMap &results) {
 
     if (m_pwFd >= 0) ::close(m_pwFd);
     m_pwFd = dupFd;
-    m_pwNodeId = nodeId;
+    m_pwNodeId = 0;  // unknown — pipewiresrc auto-picks from the private fd
     m_screenCastInFlight = false;
-    qDebug() << "Portal: ScreenCast ready, node id =" << nodeId
-             << "fd =" << m_pwFd;
+    qDebug() << "Portal: ScreenCast ready, fd =" << m_pwFd
+             << "(node id: auto-pick)";
     emit screenCastReady(m_pwNodeId, m_pwFd);
 }
 
