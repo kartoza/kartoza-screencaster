@@ -6,6 +6,15 @@
  * protocol — most notably GNOME (Mutter) and KDE (KWin). On wlroots
  * compositors we prefer grim/wl-screenrec because they are simpler and
  * avoid the portal permission flow.
+ *
+ * The portal protocol is fundamentally asynchronous: every interactive
+ * call (Screenshot, Start) returns a Request object and the result
+ * arrives later as a Response signal — often many seconds later because
+ * the user has to authorise the request in a dialog. We expose this
+ * directly: callers fire-and-forget and connect to the result signals.
+ * Trying to make the API synchronous (nested QEventLoop) freezes the UI
+ * for the duration of the portal dialog and lets canvas-refresh ticks
+ * re-enter mid-wait, which corrupts shared state.
  */
 #pragma once
 
@@ -17,14 +26,11 @@
 
 /**
  * @class Portal
- * @brief Synchronous wrappers around xdg-desktop-portal D-Bus calls.
+ * @brief Asynchronous wrappers around xdg-desktop-portal D-Bus calls.
  *
- * The portal is asynchronous (each call returns a Request object whose
- * Response signal carries the result). We hide that behind blocking
- * methods backed by a local QEventLoop.
- *
- * Singleton because the ScreenCast session and persistent restore token
- * must be reused across the app lifetime.
+ * Singleton — the ScreenCast session and its persistent restore token
+ * must be reused across the app lifetime. All methods are non-blocking;
+ * results arrive via the signals on this object.
  */
 class Portal : public QObject {
     Q_OBJECT
@@ -35,41 +41,35 @@ public:
     bool isAvailable();
 
     /**
-     * @brief Take a screenshot via org.freedesktop.portal.Screenshot.
-     * @return Absolute path to a PNG, or empty string on failure/cancellation.
+     * @brief Request a screenshot via org.freedesktop.portal.Screenshot.
      *
-     * Blocks until the portal responds (timeout 30s). On GNOME the user
-     * is prompted to authorise screenshot access on the first call only;
-     * subsequent calls are silent for the session.
+     * Returns immediately. Emits screenshotReady() with the local path
+     * on success, or screenshotFailed() on cancel/error. If a screenshot
+     * is already in flight, the call is silently dropped (a canvas
+     * refresh tick during a slow portal prompt would otherwise queue up).
      */
-    QString screenshot();
+    void requestScreenshot();
 
     /**
-     * @brief Open a ScreenCast session and return the PipeWire node id.
-     * @return PipeWire node id (>0) on success, 0 on failure.
+     * @brief Open a ScreenCast session.
      *
-     * The session and a restore token are cached so the user is only
-     * shown the source-picker dialog on first run. The restore token
-     * is persisted to QSettings so it survives restarts.
+     * Returns immediately. Walks the CreateSession → SelectSources →
+     * Start → OpenPipeWireRemote handshake; emits screenCastReady()
+     * with the PipeWire node id and an FD when complete, or
+     * screenCastFailed() on error / user cancel. If a session is
+     * already active the existing values are re-emitted immediately
+     * via screenCastReady().
+     *
+     * The restore token is persisted to QSettings so subsequent runs
+     * skip the source-picker dialog.
      */
-    uint startScreenCast();
+    void requestScreenCast();
 
-    /** @brief Close the active ScreenCast session, if any. */
+    /** @brief Close the active ScreenCast session, if any (fire-and-forget). */
     void stopScreenCast();
 
-    /** @brief Last PipeWire node id from startScreenCast(), or 0. */
+    /** @brief Last PipeWire node id from a successful screencast, or 0. */
     uint pipeWireNodeId() const { return m_pwNodeId; }
-
-    /**
-     * @brief True while another Portal call is in flight on this thread.
-     *
-     * Portal calls run a nested QEventLoop while waiting for a Response
-     * signal, which keeps the Qt event loop pumping. Without this guard
-     * a canvas-refresh-driven screenshot() can land in the middle of a
-     * startScreenCast() wait and clobber its m_responseResults — Start
-     * then sees Screenshot's response and reports "no streams".
-     */
-    bool isBusy() const { return m_callInFlight; }
 
     /**
      * @brief Private PipeWire connection FD from OpenPipeWireRemote().
@@ -78,31 +78,52 @@ public:
      * Portal-issued stream nodes are only consumable through this private
      * connection; the default PipeWire socket sees the node but the
      * permission grant is bound to this FD. The FD is owned by Portal —
-     * consumers should `dup()` it before passing to a child process.
+     * consumers must dup() it before passing to a child process.
      */
     int pipeWireFd() const { return m_pwFd; }
 
+    /** @brief True if a screencast session is currently active. */
+    bool hasActiveScreenCast() const { return m_pwFd >= 0 && m_pwNodeId != 0; }
+
+signals:
+    /** @brief Screenshot finished; argument is an absolute local PNG path. */
+    void screenshotReady(const QString &path);
+    /** @brief Screenshot failed or was cancelled by the user. */
+    void screenshotFailed(const QString &reason);
+
+    /** @brief ScreenCast session active; PipeWire node id and private fd. */
+    void screenCastReady(uint nodeId, int fd);
+    /** @brief ScreenCast handshake failed or was cancelled. */
+    void screenCastFailed(const QString &reason);
+
 private slots:
-    void onResponse(uint response, const QVariantMap &results);
+    void onScreenshotResponse(uint code, const QVariantMap &results);
+    void onCreateSessionResponse(uint code, const QVariantMap &results);
+    void onSelectSourcesResponse(uint code, const QVariantMap &results);
+    void onStartResponse(uint code, const QVariantMap &results);
 
 private:
     Portal();
     QString senderToken() const;
     QString nextToken(const QString &prefix);
 
-    // Pending-call state. Only one call may be in flight at a time.
-    QString m_pendingPath;
-    bool m_responseReceived = false;
-    uint m_responseCode = 0;
-    QVariantMap m_responseResults;
+    void disconnectResponse(const QString &path, const char *slot);
+    void abortScreenCast(const QString &reason);
+    void finalizeScreenCastFromStart(const QVariantMap &results);
 
-    // Cached ScreenCast session state.
+    // Screenshot in-flight state.
+    bool m_screenshotInFlight = false;
+    QString m_screenshotPath;        // current Request object path
+
+    // ScreenCast handshake state.
+    bool m_screenCastInFlight = false;
+    QString m_screenCastReqPath;     // current Request object path
+    QString m_screenCastSessionToken; // for SelectSources / Start path generation
+
+    // Cached ScreenCast session state, valid once screenCastReady has fired.
     QString m_sessionHandle;
     uint m_pwNodeId = 0;
     int m_pwFd = -1;
-
-    // Re-entrancy guard — see isBusy().
-    bool m_callInFlight = false;
 };
 
 #endif // HAS_DBUS

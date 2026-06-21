@@ -25,7 +25,21 @@
 #include <unistd.h>
 #endif
 
-Recorder::Recorder(QObject *parent) : QObject(parent) {}
+Recorder::Recorder(QObject *parent) : QObject(parent) {
+#ifdef HAS_DBUS
+    // GNOME/KDE Wayland recording path is async: startScreenRecorder
+    // fires Portal::requestScreenCast() and returns, the user takes
+    // however long they take to authorise the source picker, and the
+    // portal then emits screenCastReady() / screenCastFailed() back to
+    // us. We can't connect these lambdas inside startScreenRecorder
+    // because they'd be re-connected every time and we'd get duplicate
+    // gst-launch processes.
+    connect(&Portal::instance(), &Portal::screenCastReady, this,
+            &Recorder::onScreenCastReady);
+    connect(&Portal::instance(), &Portal::screenCastFailed, this,
+            &Recorder::onScreenCastFailed);
+#endif
+}
 
 Recorder::~Recorder() {
     // Disconnect all signals to prevent delivery to destroyed slots
@@ -307,60 +321,18 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
             }
 
 #ifdef HAS_DBUS
-            // GNOME/KDE Wayland — open a ScreenCast portal session and
-            // pipe the PipeWire stream through GStreamer. The portal
-            // shows its source-picker on first run; the restore_token
-            // we stored in QSettings makes subsequent runs silent.
-            uint nodeId = Portal::instance().startScreenCast();
-            if (nodeId == 0) {
-                emit recordingError(
-                    "Could not start xdg-desktop-portal screencast session. "
-                    "Check that xdg-desktop-portal-gnome or "
-                    "xdg-desktop-portal-kde is installed and running.");
-                delete m_screenProc;
-                m_screenProc = nullptr;
-                return;
-            }
-            // pipewiresrc must connect via the portal-issued PipeWire FD,
-            // otherwise the screencast node is visible but unreadable and
-            // mp4mux receives no buffers — the file ends up empty / absent.
-            // QProcess closes non-stdio fds in the child by default; we
-            // dup the FD to a fixed slot via setChildProcessModifier so
-            // gst-launch can refer to it on its command line.
-            constexpr int kPwChildFd = 23;
-            int portalFd = Portal::instance().pipeWireFd();
-            if (portalFd < 0) {
-                emit recordingError(
-                    "Portal opened a screencast session but did not return "
-                    "a PipeWire FD — cannot record on this compositor.");
-                delete m_screenProc;
-                m_screenProc = nullptr;
-                return;
-            }
-            m_screenProc->setChildProcessModifier([portalFd, kPwChildFd]() {
-                // Runs in the forked child before exec(). dup2 the portal
-                // FD onto a known slot and clear FD_CLOEXEC so gst-launch
-                // can read from it after exec().
-                if (::dup2(portalFd, kPwChildFd) >= 0) {
-                    int f = ::fcntl(kPwChildFd, F_GETFD);
-                    if (f >= 0) ::fcntl(kPwChildFd, F_SETFD, f & ~FD_CLOEXEC);
-                }
-            });
-
-            cmd = "gst-launch-1.0";
-            args << "-e"  // send EOS on SIGINT so mp4mux finalises the moov atom
-                 << "pipewiresrc"
-                 << QString("path=%1").arg(nodeId)
-                 << QString("fd=%1").arg(kPwChildFd)
-                 << "do-timestamp=true"
-                 << "!" << "videoconvert"
-                 << "!" << "videorate"
-                 << "!" << "video/x-raw,framerate=30/1"
-                 << "!" << "x264enc" << "tune=zerolatency"
-                       << "speed-preset=ultrafast" << "bitrate=8000"
-                 << "!" << "mp4mux"
-                 << "!" << "filesink" << QString("location=%1").arg(m_screenFile);
-            break;
+            // GNOME/KDE Wayland — request a portal screencast session
+            // asynchronously. Portal::requestScreenCast returns
+            // immediately; the actual gst-launch process is spawned
+            // later in onScreenCastReady() once the user has clicked
+            // through the source picker. We pre-allocated m_screenProc
+            // above so subsequent code paths that probe its existence
+            // still see "a recording is set up". If the session is
+            // already active (multi-part / resume), onScreenCastReady
+            // will fire synchronously from inside requestScreenCast
+            // and we'll spawn gst-launch before this method returns.
+            Portal::instance().requestScreenCast();
+            return;
 #else
             emit recordingError(
                 "This build has no D-Bus support — cannot use the "
@@ -440,6 +412,73 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
         emit recordingError(err);
     }
 }
+
+#ifdef HAS_DBUS
+void Recorder::onScreenCastReady(uint nodeId, int fd) {
+    // Only act if a recording is set up but the screen process hasn't
+    // been spawned yet — guards against stray signals (e.g. an old
+    // session that's still alive when the user toggles options).
+    if (!m_screenProc || m_screenProc->state() != QProcess::NotRunning) {
+        return;
+    }
+    if (m_screenFile.isEmpty()) {
+        return;
+    }
+
+    // pipewiresrc must read via the portal's private PipeWire connection
+    // (the default socket sees the node but the screencast permission
+    // grant is bound to this FD). QProcess closes non-stdio fds in the
+    // forked child by default, so we dup2 onto a fixed slot in the
+    // child-process modifier before exec().
+    constexpr int kPwChildFd = 23;
+    int portalFd = fd;
+    m_screenProc->setChildProcessModifier([portalFd, kPwChildFd]() {
+        if (::dup2(portalFd, kPwChildFd) >= 0) {
+            int f = ::fcntl(kPwChildFd, F_GETFD);
+            if (f >= 0) ::fcntl(kPwChildFd, F_SETFD, f & ~FD_CLOEXEC);
+        }
+    });
+
+    QString cmd = "gst-launch-1.0";
+    QStringList args;
+    args << "-e"  // EOS on SIGINT so mp4mux finalises the moov atom
+         << "pipewiresrc"
+         << QString("path=%1").arg(nodeId)
+         << QString("fd=%1").arg(kPwChildFd)
+         << "do-timestamp=true"
+         << "!" << "videoconvert"
+         << "!" << "videorate"
+         << "!" << "video/x-raw,framerate=30/1"
+         << "!" << "x264enc" << "tune=zerolatency"
+               << "speed-preset=ultrafast" << "bitrate=8000"
+         << "!" << "mp4mux"
+         << "!" << "filesink" << QString("location=%1").arg(m_screenFile);
+
+    qDebug() << "Starting portal screen recorder:" << cmd << args;
+    connect(m_screenProc, &QProcess::readyReadStandardError, this, [this]() {
+        qDebug() << "Screen recorder stderr:"
+                 << m_screenProc->readAllStandardError();
+    });
+    m_screenProc->start(cmd, args);
+    if (!m_screenProc->waitForStarted(5000)) {
+        emit recordingError("Failed to start gst-launch: "
+                            + m_screenProc->errorString());
+    }
+}
+
+void Recorder::onScreenCastFailed(const QString &reason) {
+    // Only react if we're mid-startup waiting for the portal. After a
+    // successful session that later closes (e.g. user revokes
+    // permission) the recorder will see the gst-launch process exit
+    // and surface that separately.
+    if (!m_screenProc || m_screenProc->state() != QProcess::NotRunning) {
+        return;
+    }
+    emit recordingError("Portal screencast unavailable: " + reason);
+    delete m_screenProc;
+    m_screenProc = nullptr;
+}
+#endif
 
 void Recorder::startAudioRecorder(const RecordingOptions &opts) {
     m_audioProc = new QProcess(this);

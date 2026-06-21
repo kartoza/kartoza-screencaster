@@ -153,6 +153,25 @@ signals:
     /** @brief Emitted when all post-processing is finished. */
     void processingFinished(bool success);
 
+private slots:
+    /**
+     * @brief Portal screencast session is ready — spawn gst-launch.
+     *
+     * Fired (potentially much later than startScreenRecorder() returned)
+     * once the user has authorised the portal source picker on
+     * GNOME/KDE Wayland. nodeId is the PipeWire node and fd is the
+     * private connection FD; both are needed by pipewiresrc.
+     */
+    void onScreenCastReady(uint nodeId, int fd);
+
+    /**
+     * @brief Portal screencast handshake failed — surface the error.
+     *
+     * Recording may have audio/webcam already running because those
+     * paths don't depend on the portal; stopAllProcesses() tidies them.
+     */
+    void onScreenCastFailed(const QString &reason);
+
 private:
     /** @brief Launch the FFmpeg screen-capture process. */
     void startScreenRecorder(const RecordingOptions &opts);
