@@ -365,9 +365,6 @@ void Portal::onStartResponse(uint code, const QVariantMap &results) {
                        SLOT(onStartResponse(uint, QVariantMap)));
     m_screenCastReqPath.clear();
 
-    qDebug() << "Portal::onStartResponse: code =" << code
-             << "result keys =" << results.keys();
-
     if (code != 0) {
         abortScreenCast(code == 1 ? "user cancelled Start"
                                   : QString("portal error %1").arg(code));
@@ -383,14 +380,10 @@ void Portal::onStartResponse(uint code, const QVariantMap &results) {
     }
 
     // With IntPair / StreamEntry / StreamList all registered with
-    // qDBusRegisterMetaType, Qt's auto-walk of Start's a{sv} should
-    // have demarshalled streams into a real StreamList. If it didn't
-    // (some Qt-internal precedence with built-in (ii) registrations
-    // for QPoint/QSize), fall back to a manual cast through the
-    // QDBusArgument the unwrapper gives us.
+    // qDBusRegisterMetaType, Qt's auto-walk of Start's a{sv} demarshalls
+    // the streams field into a QVariant holding either a StreamList
+    // directly or a QDBusArgument we can cast through.
     QVariant streamsVar = unwrap(results.value("streams"));
-    qDebug() << "  streams variant typeName =" << streamsVar.typeName();
-
     StreamList streams;
     if (streamsVar.canConvert<StreamList>()) {
         streams = streamsVar.value<StreamList>();
@@ -399,14 +392,12 @@ void Portal::onStartResponse(uint code, const QVariantMap &results) {
         arg >> streams;
     }
 
-    qDebug() << "  streams entries =" << streams.size();
     if (streams.isEmpty()) {
         abortScreenCast("Start response had no usable streams entry");
         return;
     }
 
     m_pwNodeId = streams.first().nodeId;
-    qDebug() << "Portal: Start nodeId =" << m_pwNodeId;
     finalizeScreenCastFromStart();
 }
 
