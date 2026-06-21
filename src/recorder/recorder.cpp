@@ -450,15 +450,13 @@ void Recorder::onScreenCastReady(uint nodeId, int fd) {
     // the portal stream uses (we re-encode anyway).
     QString cmd = "gst-launch-1.0";
     QStringList args;
-    // pipewiresrc: pass only the FD. Setting `path` to a numeric value
-    // (including 0) makes pw_stream_connect use that as a literal
-    // target_id, which fails with "target not found" because the
-    // portal-issued node has a non-zero id we don't know. Omitting
-    // `path` and `target-object` defaults to PW_ID_ANY, which picks
-    // the only stream visible on the private FD connection.
+    // pipewiresrc with both the portal-issued private FD and the node
+    // id of the screencast stream (which the portal returned in Start's
+    // Response and we extracted via a custom QDBus type).
     args << "-e"  // EOS on SIGINT so mp4mux finalises the moov atom
          << "-v"  // verbose state changes — diagnostic for empty-file bugs
          << "pipewiresrc"
+         << QString("path=%1").arg(nodeId)
          << QString("fd=%1").arg(kPwChildFd)
          << "do-timestamp=true"
          << "!" << "videoconvert"

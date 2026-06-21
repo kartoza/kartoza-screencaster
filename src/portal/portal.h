@@ -20,10 +20,38 @@
 
 #ifdef HAS_DBUS
 
+#include <QDBusArgument>
 #include <QDBusMessage>
+#include <QMetaType>
 #include <QObject>
 #include <QString>
 #include <QVariantMap>
+
+/**
+ * @struct StartResults
+ * @brief Demarshalled view of org.freedesktop.portal.ScreenCast.Start's
+ *        Response signal payload.
+ *
+ * We can't let Qt auto-convert the response's `a{sv}` into a QVariantMap
+ * because the `streams` value (a(ua{sv})) carries inner `(ii)` structs
+ * (position, size) that crash QtDBus's auto-walk with
+ * "type struct 114 not a basic type" -> SIGABRT. Instead we register
+ * this type with `qDBusRegisterMetaType` so QtDBus uses our `operator>>`
+ * for the slot's second argument — and that operator walks the dict by
+ * hand, reading each value as a `QDBusVariant` so inner complex types
+ * stay opaque.
+ */
+struct StartResults {
+    /** First PipeWire node id from the streams array (the screencast). */
+    uint nodeId = 0;
+    /** Restore token to save in QSettings so the next run skips the picker. */
+    QString restoreToken;
+};
+
+Q_DECLARE_METATYPE(StartResults)
+
+QDBusArgument &operator<<(QDBusArgument &arg, const StartResults &v);
+const QDBusArgument &operator>>(const QDBusArgument &arg, StartResults &v);
 
 /**
  * @class Portal
@@ -112,15 +140,11 @@ private slots:
     void onCreateSessionResponse(uint code, const QVariantMap &results);
     void onSelectSourcesResponse(uint code, const QVariantMap &results);
 
-    // Start's Response carries a `streams` field with signature
-    // a(ua{sv}) whose inner props dict (position, size) holds (ii)
-    // structs that crash Qt's QVariantMap auto-conversion inside
-    // libdbus ("type struct 114"). Taking the raw QDBusMessage stops
-    // Qt from walking the dict; we only need the response code
-    // because pipewiresrc reads the only stream visible on the
-    // portal's private PipeWire connection without us specifying a
-    // node id.
-    void onStartResponse(const QDBusMessage &msg);
+    // Custom-type second argument: our `operator>>` (registered via
+    // qDBusRegisterMetaType) walks the dict by hand and reads the
+    // streams array's first node id plus the restore token, while
+    // skipping the (ii) struct values that crash Qt's auto-walk.
+    void onStartResponse(uint code, StartResults results);
 
 private:
     Portal();

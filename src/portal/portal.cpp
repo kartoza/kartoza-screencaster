@@ -27,6 +27,7 @@
 #include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusMessage>
+#include <QDBusMetaType>
 #include <QDBusObjectPath>
 #include <QDBusReply>
 #include <QDBusUnixFileDescriptor>
@@ -51,7 +52,66 @@ Portal &Portal::instance() {
     return p;
 }
 
-Portal::Portal() = default;
+Portal::Portal() {
+    qDBusRegisterMetaType<StartResults>();
+}
+
+// Custom demarshaller for Start's results dict. Qt's auto-walk of
+// a{sv} -> QVariantMap crashes inside libdbus on the (ii) structs
+// nested in the per-stream props dict; we sidestep that by reading
+// each top-level value as QDBusVariant (which keeps inner bytes
+// opaque) and only descending into "streams" where we know how to
+// walk it safely.
+QDBusArgument &operator<<(QDBusArgument &arg, const StartResults &) {
+    // Marshalling is never used in our flow — the portal only ever
+    // sends these to us. Provide an empty implementation so the
+    // metatype system has a symmetric pair.
+    arg.beginMap(QMetaType(QMetaType::QString), QMetaType(QMetaType::QVariant));
+    arg.endMap();
+    return arg;
+}
+
+const QDBusArgument &operator>>(const QDBusArgument &arg, StartResults &v) {
+    arg.beginMap();
+    while (!arg.atEnd()) {
+        arg.beginMapEntry();
+        QString key;
+        QDBusVariant value;
+        arg >> key >> value;
+        arg.endMapEntry();
+
+        if (key == "restore_token") {
+            v.restoreToken = value.variant().toString();
+        } else if (key == "streams") {
+            // streams: a(ua{sv}). For each (uint, dict) pair we keep the
+            // uint (node id) and walk the dict only to advance the
+            // iterator — reading each value as QDBusVariant so the
+            // (ii) structs inside (position, size) never enter Qt's
+            // auto-demarshall path.
+            QDBusArgument streams = value.variant().value<QDBusArgument>();
+            streams.beginArray();
+            while (!streams.atEnd()) {
+                streams.beginStructure();
+                uint id = 0;
+                streams >> id;
+                if (v.nodeId == 0) v.nodeId = id;
+                streams.beginMap();
+                while (!streams.atEnd()) {
+                    streams.beginMapEntry();
+                    QString propKey;
+                    QDBusVariant propVal;
+                    streams >> propKey >> propVal;
+                    streams.endMapEntry();
+                }
+                streams.endMap();
+                streams.endStructure();
+            }
+            streams.endArray();
+        }
+    }
+    arg.endMap();
+    return arg;
+}
 
 bool Portal::isAvailable() {
     auto bus = QDBusConnection::sessionBus();
@@ -292,7 +352,7 @@ void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
 
     if (!bus.connect(kPortalBus, m_screenCastReqPath, kRequestIface,
                      "Response", this,
-                     SLOT(onStartResponse(QDBusMessage)))) {
+                     SLOT(onStartResponse(uint, StartResults)))) {
         abortScreenCast("failed to subscribe to Start Response");
         return;
     }
@@ -316,35 +376,30 @@ void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
     // the Response signal for as long as the user takes to act.
 }
 
-void Portal::onStartResponse(const QDBusMessage &msg) {
+void Portal::onStartResponse(uint code, StartResults results) {
     disconnectResponse(m_screenCastReqPath,
-                       SLOT(onStartResponse(QDBusMessage)));
+                       SLOT(onStartResponse(uint, StartResults)));
     m_screenCastReqPath.clear();
 
-    const QList<QVariant> args = msg.arguments();
-    if (args.isEmpty()) {
-        abortScreenCast("Start Response had no arguments");
-        return;
-    }
-    uint code = args.at(0).toUInt();
     if (code != 0) {
         abortScreenCast(code == 1 ? "user cancelled Start"
                                   : QString("portal error %1").arg(code));
         return;
     }
 
-    // We deliberately do NOT walk args[1]. Mutter's Start response
-    // includes the "streams" field (signature a(ua{sv})) whose inner
-    // props dict carries (ii) structs (position, size) — Qt's
-    // QVariantMap auto-conversion crashes inside libdbus walking
-    // those ("type struct 114 not a basic type" -> SIGABRT). The
-    // same problem makes the restore_token field unreachable on
-    // GNOME, so the user has to authorise the source picker on each
-    // run there. (X11 / wlroots are unaffected.)
-    //
-    // We don't need the streams field anyway: OpenPipeWireRemote
-    // returns a private FD on which only the screencast stream is
-    // visible, and pipewiresrc auto-picks the first one it sees.
+    qDebug() << "Portal: Start results — nodeId =" << results.nodeId
+             << "restoreToken size =" << results.restoreToken.size();
+
+    if (!results.restoreToken.isEmpty()) {
+        QSettings settings;
+        settings.setValue("portal/screencast_restore_token",
+                          results.restoreToken);
+    }
+    if (results.nodeId == 0) {
+        abortScreenCast("Start response carried no usable node id");
+        return;
+    }
+    m_pwNodeId = results.nodeId;
     finalizeScreenCastFromStart();
 }
 
