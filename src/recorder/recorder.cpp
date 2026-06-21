@@ -20,7 +20,9 @@
 #include <QHostInfo>
 #include <QRegularExpression>
 #ifndef Q_OS_WIN
+#include <fcntl.h>
 #include <signal.h>
+#include <unistd.h>
 #endif
 
 Recorder::Recorder(QObject *parent) : QObject(parent) {}
@@ -319,9 +321,37 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
                 m_screenProc = nullptr;
                 return;
             }
+            // pipewiresrc must connect via the portal-issued PipeWire FD,
+            // otherwise the screencast node is visible but unreadable and
+            // mp4mux receives no buffers — the file ends up empty / absent.
+            // QProcess closes non-stdio fds in the child by default; we
+            // dup the FD to a fixed slot via setChildProcessModifier so
+            // gst-launch can refer to it on its command line.
+            constexpr int kPwChildFd = 23;
+            int portalFd = Portal::instance().pipeWireFd();
+            if (portalFd < 0) {
+                emit recordingError(
+                    "Portal opened a screencast session but did not return "
+                    "a PipeWire FD — cannot record on this compositor.");
+                delete m_screenProc;
+                m_screenProc = nullptr;
+                return;
+            }
+            m_screenProc->setChildProcessModifier([portalFd, kPwChildFd]() {
+                // Runs in the forked child before exec(). dup2 the portal
+                // FD onto a known slot and clear FD_CLOEXEC so gst-launch
+                // can read from it after exec().
+                if (::dup2(portalFd, kPwChildFd) >= 0) {
+                    int f = ::fcntl(kPwChildFd, F_GETFD);
+                    if (f >= 0) ::fcntl(kPwChildFd, F_SETFD, f & ~FD_CLOEXEC);
+                }
+            });
+
             cmd = "gst-launch-1.0";
             args << "-e"  // send EOS on SIGINT so mp4mux finalises the moov atom
-                 << "pipewiresrc" << QString("path=%1").arg(nodeId)
+                 << "pipewiresrc"
+                 << QString("path=%1").arg(nodeId)
+                 << QString("fd=%1").arg(kPwChildFd)
                  << "do-timestamp=true"
                  << "!" << "videoconvert"
                  << "!" << "videorate"

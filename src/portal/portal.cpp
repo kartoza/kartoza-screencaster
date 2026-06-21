@@ -23,8 +23,11 @@
 #include <QDBusMessage>
 #include <QDBusObjectPath>
 #include <QDBusReply>
+#include <QDBusUnixFileDescriptor>
 #include <QDBusVariant>
 #include <QDebug>
+#include <fcntl.h>
+#include <unistd.h>
 #include <QEventLoop>
 #include <QRandomGenerator>
 #include <QSettings>
@@ -298,18 +301,67 @@ uint Portal::startScreenCast() {
         return 0;
     }
 
+    // --- 4. OpenPipeWireRemote ---
+    // Portal screencast nodes are only consumable through a private
+    // PipeWire connection opened here. The default PW socket sees the
+    // node but the screencast permission grant is bound to this FD,
+    // so a `pipewiresrc path=N` without `fd=…` connects but never
+    // receives buffers — recordings come out empty.
+    QDBusMessage openMsg = QDBusMessage::createMethodCall(
+        kPortalBus, kPortalPath, kScreenCastIface, "OpenPipeWireRemote");
+    openMsg << QVariant::fromValue(QDBusObjectPath(session))
+            << QVariant::fromValue(QVariantMap{});
+
+    QDBusMessage openReply = bus.call(openMsg, QDBus::Block, 5000);
+    if (openReply.type() != QDBusMessage::ReplyMessage) {
+        qWarning() << "Portal: OpenPipeWireRemote failed:"
+                   << openReply.errorMessage();
+        m_sessionHandle.clear();
+        return 0;
+    }
+    QDBusUnixFileDescriptor pwFdWrap =
+        openReply.arguments().value(0).value<QDBusUnixFileDescriptor>();
+    if (!pwFdWrap.isValid()) {
+        qWarning() << "Portal: OpenPipeWireRemote returned invalid fd";
+        m_sessionHandle.clear();
+        return 0;
+    }
+    // QDBusUnixFileDescriptor closes the wrapped fd in its destructor.
+    // dup() so the fd outlives the wrapper and we can hand it to a
+    // child process that will keep it open for the recording.
+    int rawFd = pwFdWrap.fileDescriptor();
+    int dupFd = ::dup(rawFd);
+    if (dupFd < 0) {
+        qWarning() << "Portal: dup() of PipeWire fd failed:" << errno;
+        m_sessionHandle.clear();
+        return 0;
+    }
+    // Make sure the fd survives fork+exec. (dup() copies the open file
+    // entry but does NOT copy FD_CLOEXEC, so this is just belt-and-braces.)
+    int flags = fcntl(dupFd, F_GETFD);
+    if (flags >= 0) fcntl(dupFd, F_SETFD, flags & ~FD_CLOEXEC);
+
+    if (m_pwFd >= 0) ::close(m_pwFd);
+    m_pwFd = dupFd;
     m_pwNodeId = nodeId;
-    qDebug() << "Portal: ScreenCast started, PipeWire node id =" << nodeId;
+    qDebug() << "Portal: ScreenCast started, PipeWire node id =" << nodeId
+             << "fd =" << m_pwFd;
     return nodeId;
 }
 
 void Portal::stopScreenCast() {
-    if (m_sessionHandle.isEmpty()) return;
-    auto bus = QDBusConnection::sessionBus();
-    QDBusMessage msg = QDBusMessage::createMethodCall(
-        kPortalBus, m_sessionHandle,
-        "org.freedesktop.portal.Session", "Close");
-    bus.call(msg, QDBus::Block, 2000);
+    if (m_sessionHandle.isEmpty() && m_pwFd < 0) return;
+    if (!m_sessionHandle.isEmpty()) {
+        auto bus = QDBusConnection::sessionBus();
+        QDBusMessage msg = QDBusMessage::createMethodCall(
+            kPortalBus, m_sessionHandle,
+            "org.freedesktop.portal.Session", "Close");
+        bus.call(msg, QDBus::Block, 2000);
+    }
+    if (m_pwFd >= 0) {
+        ::close(m_pwFd);
+        m_pwFd = -1;
+    }
     m_sessionHandle.clear();
     m_pwNodeId = 0;
 }

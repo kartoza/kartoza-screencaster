@@ -60,6 +60,17 @@ public:
     /** @brief Last PipeWire node id from startScreenCast(), or 0. */
     uint pipeWireNodeId() const { return m_pwNodeId; }
 
+    /**
+     * @brief Private PipeWire connection FD from OpenPipeWireRemote().
+     * @return A valid file descriptor (>=0) or -1 if no session is open.
+     *
+     * Portal-issued stream nodes are only consumable through this private
+     * connection; the default PipeWire socket sees the node but the
+     * permission grant is bound to this FD. The FD is owned by Portal —
+     * consumers should `dup()` it before passing to a child process.
+     */
+    int pipeWireFd() const { return m_pwFd; }
+
 private slots:
     void onResponse(uint response, const QVariantMap &results);
 
@@ -77,6 +88,7 @@ private:
     // Cached ScreenCast session state.
     QString m_sessionHandle;
     uint m_pwNodeId = 0;
+    int m_pwFd = -1;
 };
 
 #endif // HAS_DBUS
