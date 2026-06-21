@@ -81,62 +81,15 @@ void Portal::disconnectResponse(const QString &path, const char *slot) {
         kPortalBus, path, kRequestIface, "Response", this, slot);
 }
 
-// Unwrap a value that may have come back wrapped in QDBusVariant.
-// QtDBus's `a{sv}` -> QVariantMap auto-conversion stores each value as
-// `QDBusVariant` rather than unwrapping to the inner QVariant — calling
-// .toString() on the outer variant returns empty in that case, which is
-// why "uri" looked missing after the slot-signature change.
-static QVariant unwrapDBusVariant(const QVariant &v) {
+// QtDBus's a{sv} -> QVariantMap conversion sometimes stores the value
+// of an entry as a QDBusVariant rather than unwrapping to the inner
+// QVariant. Calling .toString() on the outer variant returns empty in
+// that case, so always unwrap before reading.
+static QVariant unwrap(const QVariant &v) {
     if (v.userType() == qMetaTypeId<QDBusVariant>()) {
         return v.value<QDBusVariant>().variant();
     }
     return v;
-}
-
-bool Portal::decodeResponse(const QDBusMessage &msg,
-                            uint &code, QVariantMap &results) {
-    const QList<QVariant> args = msg.arguments();
-    if (args.size() < 2) return false;
-    code = args.at(0).toUInt();
-
-    const QVariant raw = args.at(1);
-    qDebug() << "Portal::decodeResponse: code=" << code
-             << "args[1] typeName=" << raw.typeName()
-             << "userType=" << raw.userType();
-
-    if (raw.userType() == QMetaType::QVariantMap) {
-        // QtDBus auto-converted the a{sv} but stored each value as a
-        // QDBusVariant; unwrap them so downstream `.toString()` works.
-        const QVariantMap raw_map = raw.toMap();
-        for (auto it = raw_map.cbegin(); it != raw_map.cend(); ++it) {
-            results.insert(it.key(), unwrapDBusVariant(it.value()));
-        }
-        qDebug() << "Portal::decodeResponse: QVariantMap path, keys=" << results.keys();
-        return true;
-    }
-
-    // Manual walk — QtDBus left the dict opaque (typical for slots that
-    // take QDBusMessage). Reading each value as QDBusVariant lets us
-    // capture both basic and complex inner types without recursing into
-    // them (which is what trips the "type struct 114" abort).
-    QDBusArgument arg = raw.value<QDBusArgument>();
-    qDebug() << "Portal::decodeResponse: QDBusArgument path, signature="
-             << arg.currentSignature();
-    arg.beginMap();
-    int n = 0;
-    while (!arg.atEnd()) {
-        arg.beginMapEntry();
-        QString key;
-        QDBusVariant value;
-        arg >> key >> value;
-        arg.endMapEntry();
-        QVariant inner = value.variant();
-        qDebug() << "  entry" << n++ << "key=" << key
-                 << "valueType=" << inner.typeName();
-        results.insert(key, inner);
-    }
-    arg.endMap();
-    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,7 +112,7 @@ void Portal::requestScreenshot() {
                             .arg(senderToken(), token);
 
     if (!bus.connect(kPortalBus, m_screenshotPath, kRequestIface, "Response",
-                     this, SLOT(onScreenshotResponse(QDBusMessage)))) {
+                     this, SLOT(onScreenshotResponse(uint, QVariantMap)))) {
         emit screenshotFailed("failed to subscribe to Response signal");
         m_screenshotPath.clear();
         return;
@@ -178,7 +131,7 @@ void Portal::requestScreenshot() {
     if (reply.type() != QDBusMessage::ReplyMessage) {
         QString err = reply.errorMessage();
         disconnectResponse(m_screenshotPath,
-                           SLOT(onScreenshotResponse(QDBusMessage)));
+                           SLOT(onScreenshotResponse(uint, QVariantMap)));
         m_screenshotPath.clear();
         emit screenshotFailed("method call failed: " + err);
         return;
@@ -188,25 +141,18 @@ void Portal::requestScreenshot() {
     // user takes their time at the permission dialog).
 }
 
-void Portal::onScreenshotResponse(const QDBusMessage &msg) {
+void Portal::onScreenshotResponse(uint code, const QVariantMap &results) {
     disconnectResponse(m_screenshotPath,
-                       SLOT(onScreenshotResponse(QDBusMessage)));
+                       SLOT(onScreenshotResponse(uint, QVariantMap)));
     m_screenshotPath.clear();
     m_screenshotInFlight = false;
-
-    uint code = 0;
-    QVariantMap results;
-    if (!decodeResponse(msg, code, results)) {
-        emit screenshotFailed("malformed Response message");
-        return;
-    }
 
     if (code != 0) {
         emit screenshotFailed(code == 1 ? "user cancelled"
                                         : QString("portal error %1").arg(code));
         return;
     }
-    QString uri = results.value("uri").toString();
+    QString uri = unwrap(results.value("uri")).toString();
     if (uri.isEmpty()) {
         emit screenshotFailed("portal returned no URI");
         return;
@@ -248,7 +194,7 @@ void Portal::requestScreenCast() {
 
     if (!bus.connect(kPortalBus, m_screenCastReqPath, kRequestIface,
                      "Response", this,
-                     SLOT(onCreateSessionResponse(QDBusMessage)))) {
+                     SLOT(onCreateSessionResponse(uint, QVariantMap)))) {
         emit screenCastFailed("failed to subscribe to CreateSession Response");
         m_screenCastReqPath.clear();
         return;
@@ -266,7 +212,7 @@ void Portal::requestScreenCast() {
     if (reply.type() != QDBusMessage::ReplyMessage) {
         QString err = reply.errorMessage();
         disconnectResponse(m_screenCastReqPath,
-                           SLOT(onCreateSessionResponse(QDBusMessage)));
+                           SLOT(onCreateSessionResponse(uint, QVariantMap)));
         m_screenCastReqPath.clear();
         emit screenCastFailed("CreateSession call failed: " + err);
         return;
@@ -274,24 +220,17 @@ void Portal::requestScreenCast() {
     m_screenCastInFlight = true;
 }
 
-void Portal::onCreateSessionResponse(const QDBusMessage &msg) {
+void Portal::onCreateSessionResponse(uint code, const QVariantMap &results) {
     disconnectResponse(m_screenCastReqPath,
-                       SLOT(onCreateSessionResponse(QDBusMessage)));
+                       SLOT(onCreateSessionResponse(uint, QVariantMap)));
     m_screenCastReqPath.clear();
-
-    uint code = 0;
-    QVariantMap results;
-    if (!decodeResponse(msg, code, results)) {
-        abortScreenCast("malformed CreateSession Response");
-        return;
-    }
 
     if (code != 0) {
         abortScreenCast(code == 1 ? "user cancelled CreateSession"
                                   : QString("portal error %1").arg(code));
         return;
     }
-    QString session = results.value("session_handle").toString();
+    QString session = unwrap(results.value("session_handle")).toString();
     if (session.isEmpty()) {
         abortScreenCast("CreateSession returned no session_handle");
         return;
@@ -306,7 +245,7 @@ void Portal::onCreateSessionResponse(const QDBusMessage &msg) {
 
     if (!bus.connect(kPortalBus, m_screenCastReqPath, kRequestIface,
                      "Response", this,
-                     SLOT(onSelectSourcesResponse(QDBusMessage)))) {
+                     SLOT(onSelectSourcesResponse(uint, QVariantMap)))) {
         abortScreenCast("failed to subscribe to SelectSources Response");
         return;
     }
@@ -333,17 +272,11 @@ void Portal::onCreateSessionResponse(const QDBusMessage &msg) {
     }
 }
 
-void Portal::onSelectSourcesResponse(const QDBusMessage &msg) {
+void Portal::onSelectSourcesResponse(uint code, const QVariantMap &results) {
+    Q_UNUSED(results);
     disconnectResponse(m_screenCastReqPath,
-                       SLOT(onSelectSourcesResponse(QDBusMessage)));
+                       SLOT(onSelectSourcesResponse(uint, QVariantMap)));
     m_screenCastReqPath.clear();
-
-    uint code = 0;
-    QVariantMap unused;
-    if (!decodeResponse(msg, code, unused)) {
-        abortScreenCast("malformed SelectSources Response");
-        return;
-    }
 
     if (code != 0) {
         abortScreenCast(code == 1 ? "user cancelled SelectSources"
@@ -359,7 +292,7 @@ void Portal::onSelectSourcesResponse(const QDBusMessage &msg) {
 
     if (!bus.connect(kPortalBus, m_screenCastReqPath, kRequestIface,
                      "Response", this,
-                     SLOT(onStartResponse(QDBusMessage)))) {
+                     SLOT(onStartResponse(uint, QVariantMap)))) {
         abortScreenCast("failed to subscribe to Start Response");
         return;
     }
@@ -383,17 +316,10 @@ void Portal::onSelectSourcesResponse(const QDBusMessage &msg) {
     // the Response signal for as long as the user takes to act.
 }
 
-void Portal::onStartResponse(const QDBusMessage &msg) {
+void Portal::onStartResponse(uint code, const QVariantMap &results) {
     disconnectResponse(m_screenCastReqPath,
-                       SLOT(onStartResponse(QDBusMessage)));
+                       SLOT(onStartResponse(uint, QVariantMap)));
     m_screenCastReqPath.clear();
-
-    uint code = 0;
-    QVariantMap results;
-    if (!decodeResponse(msg, code, results)) {
-        abortScreenCast("malformed Start Response");
-        return;
-    }
 
     if (code != 0) {
         abortScreenCast(code == 1 ? "user cancelled Start"
@@ -402,7 +328,7 @@ void Portal::onStartResponse(const QDBusMessage &msg) {
     }
 
     QSettings settings;
-    QString newRestore = results.value("restore_token").toString();
+    QString newRestore = unwrap(results.value("restore_token")).toString();
     if (!newRestore.isEmpty()) {
         settings.setValue("portal/screencast_restore_token", newRestore);
     }
@@ -411,11 +337,13 @@ void Portal::onStartResponse(const QDBusMessage &msg) {
 }
 
 void Portal::finalizeScreenCastFromStart(const QVariantMap &results) {
-    // results["streams"] is a(ua{sv}). We must demarshal manually — and
-    // we deliberately skip the props dict because Mutter puts (ii)
-    // structs inside it (position/size) which crash QtDBus's auto
-    // QVariantMap conversion.
-    QVariant streamsVar = results.value("streams");
+    // results["streams"] is a(ua{sv}). QtDBus's auto-conversion wraps
+    // this in QDBusVariant<QDBusArgument>, so unwrap before pulling out
+    // the QDBusArgument. We then walk the array manually and read the
+    // inner props dict with QDBusVariant for the values, because the
+    // dict contains nested (ii) structs (position, size) that crash
+    // QtDBus's QVariantMap operator>> ("type struct 114").
+    QVariant streamsVar = unwrap(results.value("streams"));
     if (!streamsVar.isValid()) {
         abortScreenCast("Start returned no streams field");
         return;

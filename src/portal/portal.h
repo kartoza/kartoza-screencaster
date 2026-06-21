@@ -98,15 +98,20 @@ signals:
     void screenCastFailed(const QString &reason);
 
 private slots:
-    // Slots take the raw QDBusMessage rather than (uint, QVariantMap).
-    // Qt's auto-conversion of a{sv} into QVariantMap walks every value
-    // and crashes inside libdbus when a value's signature contains a
-    // struct ("type struct 114 not a basic type" -> SIGABRT). We
-    // demarshal manually with QDBusVariant for opaque values.
-    void onScreenshotResponse(const QDBusMessage &msg);
-    void onCreateSessionResponse(const QDBusMessage &msg);
-    void onSelectSourcesResponse(const QDBusMessage &msg);
-    void onStartResponse(const QDBusMessage &msg);
+    // Slots use Qt's auto-conversion (u, a{sv}) -> (uint, QVariantMap).
+    // The previous QDBusMessage-based manual walk was hitting a Qt 6.10
+    // bug where reading the dict key as QString through a copied
+    // QDBusArgument returned empty — the value bytes were read correctly
+    // but the key bytes were lost. Qt's own QVariantMap operator>> does
+    // not hit this issue (presumably because it operates on the
+    // canonical internal arg, not a value<>-extracted copy). The earlier
+    // SIGABRT in screencast Start was caused by our streams demarshal
+    // walking into the (ii) structs inside the per-stream props dict,
+    // which finalizeScreenCastFromStart() now sidesteps with QDBusVariant.
+    void onScreenshotResponse(uint code, const QVariantMap &results);
+    void onCreateSessionResponse(uint code, const QVariantMap &results);
+    void onSelectSourcesResponse(uint code, const QVariantMap &results);
+    void onStartResponse(uint code, const QVariantMap &results);
 
 private:
     Portal();
@@ -116,11 +121,6 @@ private:
     void disconnectResponse(const QString &path, const char *slot);
     void abortScreenCast(const QString &reason);
     void finalizeScreenCastFromStart(const QVariantMap &results);
-
-    // Decode the Response(u, a{sv}) message into (code, results) without
-    // letting QtDBus auto-walk the dict. Returns true on success.
-    static bool decodeResponse(const QDBusMessage &msg,
-                               uint &code, QVariantMap &results);
 
     // Screenshot in-flight state.
     bool m_screenshotInFlight = false;
