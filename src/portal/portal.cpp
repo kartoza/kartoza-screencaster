@@ -85,36 +85,43 @@ const QDBusArgument &operator>>(const QDBusArgument &arg, StartResults &v) {
     while (!arg.atEnd()) {
         arg.beginMapEntry();
         QString key;
-        QDBusVariant value;
-        arg >> key >> value;
-        arg.endMapEntry();
+        arg >> key;
         qDebug() << "  entry" << n++ << "key =" << key
-                 << "valueType =" << value.variant().typeName();
+                 << "valueSig =" << arg.currentSignature();
 
+        if (key == "streams") {
+            // Manually walk the variant value WITHOUT going through
+            // QDBusVariant. Qt 6.10's QDBusVariant operator>> captures
+            // unknown signatures into a sub-QDBusArgument whose state
+            // is left in some half-broken mode ("write from a read-only
+            // object" -> SIGABRT) when we try to read from it. Doing
+            // the walk on the outer arg in place avoids that capture.
+            //
+            // signature here is 'v'. beginVariant enters it; the next
+            // currentSignature() then reports the inner 'a(ua{sv})'.
+            arg.beginVariant();
+            arg.beginArray();
+            if (!arg.atEnd()) {
+                arg.beginStructure();
+                uint id = 0;
+                arg >> id;
+                if (v.nodeId == 0) v.nodeId = id;
+            }
+            // Bail mid-walk. We deliberately do NOT call endStructure /
+            // endArray / endVariant / endMapEntry / endMap: those would
+            // try to consume the per-stream props dict bytes that we
+            // can't read without hitting the (ii)-struct crash. The
+            // outer arg is our local copy from msg.arguments()[1] and
+            // is discarded by the caller.
+            return arg;
+        }
+
+        QDBusVariant value;
+        arg >> value;
         if (key == "restore_token") {
             v.restoreToken = value.variant().toString();
-        } else if (key == "streams") {
-            // streams: a(ua{sv}). Read only the first struct's uint
-            // (the PipeWire node id) and bail. We deliberately do NOT
-            // walk the inner a{sv} props dict: it contains (ii) structs
-            // for position and size, and even our manual walk with
-            // QDBusVariant for values crashes inside Qt's QDBusVariant
-            // operator>> when it tries to handle the (ii) inner type.
-            //
-            // Leaving the streams arg partially-consumed is safe — it
-            // is a copy taken via value<QDBusArgument>() and nothing
-            // else touches it after we return.
-            QDBusArgument streams = value.variant().value<QDBusArgument>();
-            streams.beginArray();
-            if (!streams.atEnd()) {
-                streams.beginStructure();
-                uint id = 0;
-                streams >> id;
-                if (v.nodeId == 0) v.nodeId = id;
-                // No streams.endStructure() / streams.endArray() — those
-                // would walk the remaining bytes and hit the same crash.
-            }
         }
+        arg.endMapEntry();
     }
     arg.endMap();
     return arg;
