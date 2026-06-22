@@ -82,8 +82,10 @@ build-dir/
 site/
 
 # Doxygen output
-docs/doxygen/
 build/
+# Stale path — Doxygen now writes to build/doxygen/ (Doxyfile updated
+# in v2.0.0). Left in place as a safety net for partial-pull worktrees.
+docs/doxygen/
 @DEFAULT_SOURCE@
 
 # Test output renders (for visual review, regenerated each run)

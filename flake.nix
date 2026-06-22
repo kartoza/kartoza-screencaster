@@ -309,11 +309,11 @@
             echo "  ctr  - Run merger tests + play renders for visual review"
             echo ""
             echo "Documentation:"
-            echo "  nix run .#docs-serve  - Serve docs site at localhost:8000 (live reload)"
-            echo "  nix run .#docs-build  - Strict build into ./site (matches CI)"
-            echo "  docs                  - Same as 'mkdocs serve' inside this shell"
-            echo "  doxygen-build         - Generate Doxygen API docs"
-            echo "  doxygen-open          - Generate + open Doxygen in browser"
+            echo "  nix run .#docs-serve       - mkdocs serve, live reload (no API ref)"
+            echo "  nix run .#docs-build       - Strict mkdocs build into ./site (no API ref)"
+            echo "  nix run .#docs-doxygen     - C++ API ref into ./build/doxygen"
+            echo "  nix run .#docs-full-build  - mkdocs + doxygen, merged at ./site (+/api)"
+            echo "  docs                       - Same as 'mkdocs serve' inside this shell"
             echo ""
             echo "Neovim: <leader>p for all project commands"
             echo ""
@@ -348,6 +348,47 @@
               set -euo pipefail
               cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
               exec ${mkdocsEnv}/bin/mkdocs build --strict --site-dir site "$@"
+            '');
+          };
+
+          # `nix run .#docs-doxygen` — generate the C++ API reference
+          # into ./build/doxygen/html. Used by docs-full-build below.
+          docs-doxygen = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "docs-doxygen" ''
+              #!${pkgs.bash}/bin/bash
+              set -euo pipefail
+              cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
+              mkdir -p build/doxygen
+              exec ${pkgs.doxygen}/bin/doxygen Doxyfile
+            '');
+          };
+
+          # `nix run .#docs-full-build` — combined build for publish.
+          # Doxygen output is generated into build/doxygen/html and
+          # merged into the final site at site/api/. This is what the
+          # Docs.yml CI workflow does in a single step.
+          docs-full-build = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "docs-full-build" ''
+              #!${pkgs.bash}/bin/bash
+              set -euo pipefail
+              cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
+
+              echo "==> Generating Doxygen API reference (build/doxygen/html)..."
+              mkdir -p build/doxygen
+              ${pkgs.doxygen}/bin/doxygen Doxyfile >/dev/null
+
+              echo "==> Building MkDocs site (site/)..."
+              ${mkdocsEnv}/bin/mkdocs build --strict --site-dir site
+
+              echo "==> Merging Doxygen HTML into site/api/..."
+              rm -rf site/api
+              cp -r build/doxygen/html site/api
+
+              echo
+              echo "Done. Open site/index.html for the user docs"
+              echo "      or  site/api/index.html for the C++ API reference."
             '');
           };
 

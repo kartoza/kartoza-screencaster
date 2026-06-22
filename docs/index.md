@@ -158,6 +158,15 @@ upload to YouTube once you've authorised an account.
 
     [:octicons-arrow-right-24: YouTube upload](user-guide/youtube.md)
 
+-   :material-code-tags:{ .lg .middle } __C++ API reference__
+
+    ---
+
+    Full Doxygen-generated browser of every class, function and macro
+    the codebase exposes. Published alongside this site.
+
+    [:octicons-arrow-right-24: API reference](developer-guide/api.md)
+
 </div>
 
 ## QA status

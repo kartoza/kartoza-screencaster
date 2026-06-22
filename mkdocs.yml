@@ -167,6 +167,7 @@ nav:
     - Build: developer-guide/build.md
     - Architecture: developer-guide/architecture.md
     - Capture pipelines: developer-guide/capture-pipelines.md
+    - C++ API reference: developer-guide/api.md
     - Contributing: developer-guide/contributing.md
   - About:
     - about/index.md
