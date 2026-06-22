@@ -309,9 +309,11 @@
             echo "  ctr  - Run merger tests + play renders for visual review"
             echo ""
             echo "Documentation:"
-            echo "  docs          - Serve mkdocs (localhost:8000)"
-            echo "  doxygen-build - Generate Doxygen API docs"
-            echo "  doxygen-open  - Generate + open Doxygen in browser"
+            echo "  nix run .#docs-serve  - Serve docs site at localhost:8000 (live reload)"
+            echo "  nix run .#docs-build  - Strict build into ./site (matches CI)"
+            echo "  docs                  - Same as 'mkdocs serve' inside this shell"
+            echo "  doxygen-build         - Generate Doxygen API docs"
+            echo "  doxygen-open          - Generate + open Doxygen in browser"
             echo ""
             echo "Neovim: <leader>p for all project commands"
             echo ""
@@ -322,6 +324,31 @@
           default = {
             type = "app";
             program = "${self.packages.${system}.default}/bin/kartoza-screencaster";
+          };
+
+          # `nix run .#docs-serve` — live-reload preview on
+          # http://localhost:8000. Uses mkdocsEnv so the plugin set
+          # matches both the dev shell and the Docs.yml CI workflow.
+          docs-serve = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "docs-serve" ''
+              #!${pkgs.bash}/bin/bash
+              set -euo pipefail
+              cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
+              exec ${mkdocsEnv}/bin/mkdocs serve "$@"
+            '');
+          };
+
+          # `nix run .#docs-build` — one-shot strict build into ./site/.
+          # Matches `mkdocs build --strict` in Docs.yml exactly.
+          docs-build = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "docs-build" ''
+              #!${pkgs.bash}/bin/bash
+              set -euo pipefail
+              cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
+              exec ${mkdocsEnv}/bin/mkdocs build --strict --site-dir site "$@"
+            '');
           };
 
           release-upload = {
