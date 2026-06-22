@@ -354,11 +354,13 @@
 
           # `nix run .#docs-doxygen` — generate the C++ API reference
           # into ./build/doxygen/html. Used by docs-full-build below.
+          # graphviz must be on PATH for HAVE_DOT / call graphs to work.
           docs-doxygen = {
             type = "app";
             program = toString (pkgs.writeShellScript "docs-doxygen" ''
               #!${pkgs.bash}/bin/bash
               set -euo pipefail
+              export PATH="${pkgs.graphviz}/bin:$PATH"
               cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
               mkdir -p build/doxygen
               exec ${pkgs.doxygen}/bin/doxygen Doxyfile
@@ -367,13 +369,14 @@
 
           # `nix run .#docs-full-build` — combined build for publish.
           # Doxygen output is generated into build/doxygen/html and
-          # merged into the final site at site/api/. This is what the
-          # Docs.yml CI workflow does in a single step.
+          # merged into the final site at site/api/. This is exactly
+          # what the Docs.yml CI workflow invokes.
           docs-full-build = {
             type = "app";
             program = toString (pkgs.writeShellScript "docs-full-build" ''
               #!${pkgs.bash}/bin/bash
               set -euo pipefail
+              export PATH="${pkgs.graphviz}/bin:$PATH"
               cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
 
               echo "==> Generating Doxygen API reference (build/doxygen/html)..."
@@ -405,6 +408,7 @@
             program = toString (pkgs.writeShellScript "docs-full-serve" ''
               #!${pkgs.bash}/bin/bash
               set -euo pipefail
+              export PATH="${pkgs.graphviz}/bin:$PATH"
               cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
               ROOT="$(pwd)"
 
