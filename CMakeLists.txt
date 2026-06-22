@@ -226,7 +226,7 @@ if(DOXYGEN_FOUND)
         VERBATIM
     )
     add_custom_target(docs-open
-        COMMAND xdg-open ${CMAKE_SOURCE_DIR}/docs/doxygen/html/index.html
+        COMMAND xdg-open ${CMAKE_SOURCE_DIR}/build/doxygen/html/index.html
         DEPENDS docs
         COMMENT "Opening Doxygen docs in browser"
     )

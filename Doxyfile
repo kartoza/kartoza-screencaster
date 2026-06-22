@@ -1,7 +1,10 @@
 PROJECT_NAME           = "Kartoza Screencaster"
-PROJECT_NUMBER         = 0.9.0
-PROJECT_BRIEF          = "Professional screen recording with canvas WYSIWYG editor"
-OUTPUT_DIRECTORY       = docs/doxygen
+PROJECT_NUMBER         = 1.9.0
+PROJECT_BRIEF          = "Qt-based screen recorder for Linux, macOS and Windows"
+# Doxygen output lives outside docs/ so MkDocs doesn't pick it up as
+# orphan files. The combined Docs.yml workflow copies build/doxygen/html
+# into site/api/ before publishing to GitHub Pages.
+OUTPUT_DIRECTORY       = build/doxygen
 INPUT                  = src/
 RECURSIVE              = YES
 FILE_PATTERNS          = *.cpp *.h
