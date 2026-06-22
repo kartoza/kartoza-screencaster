@@ -10,10 +10,11 @@ hide:
 
 <span class="kz-eyebrow">KARTOZA · SCREENCASTER</span>
 
-# A Qt screen recorder for Linux, macOS and Windows
+# Record. Don't edit.
 
-Compose your shot on a WYSIWYG canvas. Drop in a webcam, logos, an intro
-sound. Hit record. Ship straight to YouTube.
+A screen recorder that takes the post-production out of the loop.
+Compose the whole shot before you press record — screen, webcam,
+logos, intro music — and what you see is what gets saved.
 
 <div class="kz-cta" markdown>
 [:material-rocket-launch: Get started](getting-started/index.md){ .kz-cta__primary }
@@ -23,25 +24,38 @@ sound. Hit record. Ship straight to YouTube.
 
 </div>
 
-## What it is
+## Why it exists
 
-Kartoza Screencaster is a desktop screen recorder built around a
-**what-you-see-is-what-you-get canvas**. Lay out your screen, your
-webcam, intro and outro sounds, your logos and reactions — then record
-the composed view in one pass. No post-production crop, no manual
-overlay tracks.
+Most screen recorders give you a raw clip and leave the rest to a
+video editor. That editing step is where projects stall — open the
+NLE, set up tracks, crop, position the webcam, add the lower-third,
+sync the intro music, fade in, fade out, export, upload.
 
-The recorder captures:
+Kartoza Screencaster collapses that whole loop into the **moment
+before you press record**. Lay your screen, your webcam, your logo
+and your intro/outro sound out on a canvas, choose whether you're
+recording in **landscape** for YouTube or **vertical** for Shorts /
+Reels / TikTok, then hit Record. When you stop, you have an MP4
+that's ready to ship.
 
-- **Screen** — via wlroots (`wl-screenrec`), xdg-desktop-portal
-  (PipeWire) on GNOME / KDE Wayland, or `ffmpeg x11grab` on X11.
-- **Audio** — PulseAudio / PipeWire on Linux, system audio on macOS,
-  WASAPI on Windows.
-- **Webcam** — V4L2 on Linux, AVFoundation on macOS, DirectShow on
-  Windows.
+If you need an editor afterward, the raw streams are all there too.
+But the common case — recording a tutorial, a quick demo, a piece of
+explanation — should never need one.
 
-And produces a single, encoded MP4 ready to share — with one-click
-upload to YouTube once you've authorised an account.
+## What you can do with it
+
+- **Works on every common desktop**: Linux, macOS, and Windows. On
+  Linux that includes both modern GNOME and KDE sessions as well as
+  the more traditional setups.
+- **Record vertical or horizontal** by switching layouts in one click.
+  Vertical layouts are designed for Shorts, Reels and TikTok; you
+  don't need to re-crop afterward.
+- **Compose live**: the canvas shows your final shot before you've
+  recorded anything. Move the webcam, resize the logo, swap the
+  intro sting — what you arrange is what you get.
+- **Stop, upload, done**: when the recording finishes, one click
+  publishes it to YouTube with the title and description you've
+  already set.
 
 ## Download
 
@@ -67,7 +81,7 @@ upload to YouTube once you've authorised an account.
 
     ---
 
-    `.tar.gz` — distribution-neutral, requires Qt 6 and ffmpeg.
+    `.tar.gz` — distribution-neutral build for advanced users.
 
     [:octicons-download-24: Latest release](https://github.com/kartoza/kartoza-screencaster/releases/latest)
 
@@ -101,71 +115,65 @@ upload to YouTube once you've authorised an account.
 
 <div class="grid cards" markdown>
 
--   :material-view-quilt:{ .lg .middle } __WYSIWYG canvas__
+-   :material-view-quilt:{ .lg .middle } __Compose before you record__
 
     ---
 
-    Drag your screen, webcam, logos, GIFs and sounds onto the same
-    canvas as the recording. What you compose is exactly what comes
-    out the other end.
+    Lay out your screen, webcam, logos and sound effects on a canvas
+    and arrange them exactly how you want. The preview is your
+    finished video — no surprises after you press stop.
 
     [:octicons-arrow-right-24: Canvas editor](user-guide/canvas.md)
 
--   :material-record-circle:{ .lg .middle } __Multi-compositor capture__
+-   :material-phone-rotate-portrait:{ .lg .middle } __Landscape and vertical__
 
     ---
 
-    Recording works on wlroots Wayland, GNOME and KDE Wayland (via the
-    xdg-desktop-portal), and X11. The recorder picks the right path
-    automatically from your session.
+    Switch between a wide YouTube layout and a tall Shorts / Reels /
+    TikTok layout with a single click. Recordings come out the right
+    shape and resolution for the platform you're publishing to.
 
-    [:octicons-arrow-right-24: Capture pipelines](developer-guide/capture-pipelines.md)
+    [:octicons-arrow-right-24: Canvas editor](user-guide/canvas.md)
 
--   :material-webcam:{ .lg .middle } __Webcam overlay__
+-   :material-webcam:{ .lg .middle } __Webcam, your way__
 
     ---
 
-    Round, square or rectangle webcam thumbnail with live preview on
-    the canvas before you start recording. Position anywhere.
+    Drop a round, square or rectangle webcam thumbnail anywhere on
+    the canvas and resize to taste. Live preview before you record
+    means no awkward "oh wait, my face is cut off."
 
     [:octicons-arrow-right-24: Webcam](user-guide/webcam.md)
 
--   :material-image-multiple:{ .lg .middle } __Logos and GIFs__
+-   :material-image-multiple:{ .lg .middle } __Brand it once__
 
     ---
 
-    Multiple overlays. Animated GIFs with loop limits. Brand it once,
-    reuse the canvas across every recording.
+    Place your logo, animated GIF reactions, and lower-thirds, then
+    save the arrangement as a preset. Every future recording starts
+    fully branded.
 
     [:octicons-arrow-right-24: Logos and GIFs](user-guide/overlays.md)
 
--   :material-history:{ .lg .middle } __Local history + playback__
+-   :material-history:{ .lg .middle } __Local history + replay__
 
     ---
 
-    Every recording lands in `~/Videos/Screencasts/` with metadata.
-    Browse, replay, rename or upload later from the History tab.
+    Every recording lives on your computer with a title, description,
+    and one-click playback. Rename, reorganise, or upload later —
+    nothing leaves your machine unless you choose.
 
     [:octicons-arrow-right-24: History](user-guide/history.md)
 
--   :material-youtube:{ .lg .middle } __One-click YouTube upload__
+-   :material-youtube:{ .lg .middle } __Stop, click, published__
 
     ---
 
-    OAuth your YouTube account once, then upload from any recording
-    with a title, description, privacy and category — straight from
-    the app.
+    Link your YouTube account once. From then on, any recording can
+    be on YouTube with one click — title, description, privacy and
+    category already filled in.
 
     [:octicons-arrow-right-24: YouTube upload](user-guide/youtube.md)
-
--   :material-code-tags:{ .lg .middle } __C++ API reference__
-
-    ---
-
-    Full Doxygen-generated browser of every class, function and macro
-    the codebase exposes. Published alongside this site.
-
-    [:octicons-arrow-right-24: API reference](developer-guide/api.md)
 
 </div>
 

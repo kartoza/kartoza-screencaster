@@ -20,10 +20,16 @@ Your recording is now under `~/Videos/Screencasts/` with a timestamped
 folder name. Open the **History** tab to play it back, rename it, or
 upload it to YouTube.
 
-## What just happened
+## What now?
 
-The recorder picked one of three capture pipelines based on your
-session — `wl-screenrec` on wlroots, the xdg-desktop-portal +
-PipeWire path on GNOME/KDE Wayland, or `ffmpeg x11grab` on X11. See
-[Developer guide → Capture pipelines](../developer-guide/capture-pipelines.md)
-for the gory details.
+The recording is yours to keep, edit, or share:
+
+- **Replay it** — the History tab plays the file in your system's
+  default video player.
+- **Rename it** — click into the title and description fields and
+  type. The folder name updates with the slugged title.
+- **Publish it** — hit **Upload to YouTube** and the app handles
+  the upload while you go make coffee.
+
+If you want to learn what every part of the interface does, the
+[User Guide](../user-guide/index.md) walks each feature in turn.

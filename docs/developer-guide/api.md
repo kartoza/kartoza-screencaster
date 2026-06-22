@@ -4,12 +4,12 @@
 # C++ API reference
 
 The full Doxygen-generated API reference lives at
-[**`/api/`**](../api/index.html){ target=_self } — every class, struct,
+[**`/api/`**](https://kartoza.github.io/kartoza-screencaster/api/){ target=_self } — every class, struct,
 free function and macro the C++ codebase declares, with cross-linked
 include / inheritance / call graphs.
 
 <div class="kz-cta" markdown>
-[:material-book-open-variant: Open API Reference](../api/index.html){ .kz-cta__primary target=_self }
+[:material-book-open-variant: Open API Reference](https://kartoza.github.io/kartoza-screencaster/api/){ .kz-cta__primary target=_self }
 [:material-source-branch: src/ on GitHub](https://github.com/kartoza/kartoza-screencaster/tree/main/src){ .kz-cta__secondary }
 </div>
 

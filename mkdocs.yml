@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Tim Sutton
 # SPDX-License-Identifier: MIT
 site_name: Kartoza Screencaster
-site_description: A Qt-based screen recorder for Linux, macOS and Windows with WYSIWYG canvas editor and one-click YouTube upload.
+site_description: Record screen content without the editing — compose your shot on a canvas, hit record, and publish straight to YouTube.
 site_url: https://kartoza.github.io/kartoza-screencaster/
 site_author: Kartoza
 copyright: >

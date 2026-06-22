@@ -13,15 +13,16 @@ recording. Shape options: **round bubble**, **square**, or
 The preview is live — what you see on the canvas before pressing
 Record is exactly what lands in the MP4.
 
-## Performance
+## Smooth output
 
-The recorder uses `ffmpeg` with the appropriate platform backend
-(`v4l2` on Linux, `avfoundation` on macOS, `dshow` on Windows). The
-preview is sampled at 5 FPS to keep the UI responsive; the final
-recording captures at 30 FPS.
+The preview on the canvas updates a few times a second to keep the
+interface snappy. The actual recording captures at full frame rate —
+your audience won't see the preview rate, just the smooth final
+video.
 
 ## Privacy
 
-The webcam is only opened when the canvas widget is visible. Launching
-straight into the tray with `--tray` leaves the device closed (and
-the indicator LED off) until you open the main window.
+The webcam is only switched on when you can see it — when the main
+window is open and showing the canvas. If you launched the app
+straight into the system tray, the camera stays off (and its
+indicator light stays dark) until you bring the window up.

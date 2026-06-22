@@ -23,13 +23,17 @@ sudo dnf install ./kartoza-screencaster-<version>-1.x86_64.rpm
 
 ## Linux tarball
 
-Distribution-neutral. Requires Qt 6 (`qt6-base`, `qt6-multimedia`,
-`qt6-svg`) and `ffmpeg` from your distro.
+A distribution-neutral build for systems where the `.deb` or `.rpm`
+isn't a fit. Unpack and install:
 
 ```bash
 tar -xzf kartoza-screencaster-linux-x86_64.tar.gz
 sudo install -m 755 kartoza-screencaster /usr/local/bin/
 ```
+
+If anything's missing on your system, the app will tell you on first
+launch. (System administrators: the full dependency list lives in the
+[Administrator Guide → System dependencies](../admin-guide/dependencies.md).)
 
 ## macOS
 
@@ -41,7 +45,8 @@ mv kartoza-screencaster /Applications/
 ## Windows
 
 Unzip `kartoza-screencaster-windows-x86_64.zip` and run
-`kartoza-screencaster.exe`. The bundled Qt 6 runtime is included.
+`kartoza-screencaster.exe`. Everything the app needs is bundled in
+the zip.
 
 ## Nix flake
 

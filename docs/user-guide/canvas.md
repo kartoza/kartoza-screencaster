@@ -15,7 +15,7 @@ sting; arrange them; record.
 ## Adding elements
 
 - **Screen** — pick a monitor from the dropdown.
-- **Webcam** — pick a V4L2 / AVFoundation / DirectShow device.
+- **Webcam** — pick the camera you want to use.
 - **Logo** — drop any image (PNG, SVG, JPG).
 - **GIF** — drop an animated GIF with an optional loop limit.
 - **Intro / outro sound** — drop a WAV or MP3 to play once at the

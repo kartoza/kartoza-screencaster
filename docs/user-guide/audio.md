@@ -8,24 +8,24 @@
 
 ## Microphone
 
-Pick an input device in **Settings → Audio**. The recorder uses the
-platform-native source:
+Pick the microphone you want to use in **Settings → Audio**. The
+recorder uses your system's standard audio path, so any USB or
+Bluetooth mic you've already configured will appear in the list.
 
-- **Linux** — PulseAudio / PipeWire via `ffmpeg -f pulse`.
-- **macOS** — Core Audio via `ffmpeg -f avfoundation`.
-- **Windows** — WASAPI via `ffmpeg -f dshow`.
+## Intro and outro stings
 
-## Intro / outro stings
-
-Drop a WAV or MP3 onto the canvas to play it once at the start (intro)
-or end (outro) of the recording. The merger mixes the sting over the
-main audio track at -6 dB during post-processing.
+Drop a WAV or MP3 sound effect onto the canvas to play it once at the
+start (intro) or once at the end (outro) of your recording. The
+sound is mixed underneath your voice automatically — no manual
+balancing.
 
 ## Denoise
 
-After Stop, the recorder captures **5 seconds of room noise** with the
-microphone open but no input. The merger then runs `afftdn` against
-that noise profile to remove constant background hum.
+After you stop recording, the app captures a few seconds of "room
+tone" — silence with your microphone open — and uses it to scrub
+constant background hum (fans, fridges, AC units) from your audio
+in post-processing.
 
-If denoise fails (graph link error, missing input, etc.) the unprocessed
-audio is used and a warning is logged.
+The result is dramatically clearer narration with no effort on
+your part. If the process fails for any reason, the app falls back
+to your raw recording rather than losing audio.
