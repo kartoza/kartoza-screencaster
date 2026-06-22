@@ -1,64 +1,87 @@
+# SPDX-FileCopyrightText: Tim Sutton
+# SPDX-License-Identifier: MIT
 site_name: Kartoza Screencaster
-site_description: A beautiful TUI application for screen recording, video processing, and YouTube uploads
+site_description: A Qt-based screen recorder for Linux, macOS and Windows with WYSIWYG canvas editor and one-click YouTube upload.
+site_url: https://kartoza.github.io/kartoza-screencaster/
 site_author: Kartoza
+copyright: >
+  &copy; Kartoza — Made with 💗 by
+  <a href="https://kartoza.com">Kartoza</a>
+  &middot; <a href="https://github.com/sponsors/kartoza">Donate</a>
+  &middot; <a href="https://github.com/kartoza/kartoza-screencaster">GitHub</a>
+
 repo_url: https://github.com/kartoza/kartoza-screencaster
 repo_name: kartoza/kartoza-screencaster
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
 
 theme:
   name: material
-  custom_dir: docs/overrides
+  # Kartoza brand assets — drop a real logo + favicon under
+  # docs/assets/brand/ to replace the Material defaults.
+  # logo: assets/brand/kartoza-symbol-color.svg
+  # favicon: assets/brand/favicon.png
+  font:
+    text: Nunito
+    code: JetBrains Mono
+  language: en
   palette:
-    # Light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
       primary: custom
-      accent: cyan
+      accent: custom
       toggle:
-        icon: material/brightness-7
+        icon: material/weather-night
         name: Switch to dark mode
-    # Dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       primary: custom
-      accent: cyan
+      accent: custom
       toggle:
-        icon: material/brightness-4
+        icon: material/weather-sunny
         name: Switch to light mode
-  font:
-    text: Inter
-    code: JetBrains Mono
   features:
+    - announce.dismiss
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+    - content.tabs.link
+    - content.tooltips
+    - navigation.footer
+    - navigation.indexes
     - navigation.instant
-    - navigation.instant.prefetch
-    - navigation.tracking
+    - navigation.instant.progress
+    - navigation.path
+    - navigation.sections
     - navigation.tabs
     - navigation.tabs.sticky
-    - navigation.sections
-    - navigation.expand
-    - navigation.path
-    - navigation.indexes
     - navigation.top
-    - toc.follow
-    - toc.integrate
-    - search.suggest
+    - navigation.tracking
     - search.highlight
     - search.share
-    - content.code.copy
-    - content.code.annotate
-    - content.tabs.link
+    - search.suggest
+    - toc.follow
   icon:
     repo: fontawesome/brands/github
-    logo: material/video-vintage
-  favicon: assets/favicon.png
+    edit: material/file-edit-outline
+    view: material/eye-outline
 
 extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/kartoza/kartoza-screencaster
+      name: GitHub repository
+    - icon: fontawesome/solid/heart
+      link: https://github.com/sponsors/kartoza
+      name: Sponsor on GitHub
   generator: false
 
 extra_css:
-  - assets/css/extra.css
+  - stylesheets/kartoza-tokens.css
+  - stylesheets/extra.css
 
 markdown_extensions:
   - abbr
@@ -70,11 +93,8 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
-      toc_depth: 3
-  - pymdownx.arithmatex:
-      generic: true
-  - pymdownx.betterem:
-      smart_enable: all
+      toc_depth: 4
+  - pymdownx.betterem
   - pymdownx.caret
   - pymdownx.details
   - pymdownx.emoji:
@@ -86,10 +106,6 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.keys
-  - pymdownx.magiclink:
-      repo_url_shorthand: true
-      user: kartoza
-      repo: kartoza-screencaster
   - pymdownx.mark
   - pymdownx.smartsymbols
   - pymdownx.snippets
@@ -100,46 +116,60 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds: {case: lower}
   - pymdownx.tasklist:
       custom_checkbox: true
   - pymdownx.tilde
 
 plugins:
-  - search
-  - minify:
-      minify_html: false
+  - search:
+      lang: en
+  - glightbox:
+      touchNavigation: true
+      loop: false
+      effect: zoom
+      slide_effect: slide
+      width: 100%
+      height: auto
+      zoomable: true
+      draggable: true
+      skip_classes:
+        - no-lightbox
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: timeago
+      fallback_to_build_date: true
+      strict: false
 
 nav:
   - Home: index.md
   - Getting Started:
-    - Installation: getting-started/installation.md
-    - Quick Start: getting-started/quickstart.md
+    - getting-started/index.md
+    - Install: getting-started/install.md
+    - First recording: getting-started/first-recording.md
   - User Guide:
-    - Screens:
-      - Main Menu: screens/main-menu.md
-      - Recording Setup: screens/recording-setup.md
-      - Countdown: screens/countdown.md
-      - Recording: screens/recording.md
-      - Processing: screens/processing.md
-      - History: screens/history.md
-      - Options: screens/options.md
-      - YouTube Setup: screens/youtube-setup.md
-      - YouTube Upload: screens/youtube-upload.md
-      - Syndication Setup: screens/syndication-setup.md
-    - Workflows:
-      - Recording a Video: workflows/recording-workflow.md
-      - Uploading to YouTube: workflows/youtube-workflow.md
+    - user-guide/index.md
+    - Canvas editor: user-guide/canvas.md
+    - Recording: user-guide/recording.md
+    - Webcam overlay: user-guide/webcam.md
+    - Logos and GIFs: user-guide/overlays.md
+    - Audio: user-guide/audio.md
+    - History and playback: user-guide/history.md
+    - YouTube upload: user-guide/youtube.md
+  - Administrator Guide:
+    - admin-guide/index.md
+    - Packaging: admin-guide/packaging.md
+    - System dependencies: admin-guide/dependencies.md
   - Developer Guide:
-    - Architecture: developer/architecture.md
-    - Development Setup: developer/setup.md
-    - Libraries: developer/libraries.md
-    - Modules:
-      - Overview: developer/modules/index.md
-      - TUI Package: developer/modules/tui.md
-      - Recorder Package: developer/modules/recorder.md
-      - Audio Package: developer/modules/audio.md
-      - Webcam Package: developer/modules/webcam.md
-      - Merger Package: developer/modules/merger.md
-      - YouTube Package: developer/modules/youtube.md
-      - Config Package: developer/modules/config.md
-    - Design Decisions: developer/design-decisions.md
+    - developer-guide/index.md
+    - Dev shell: developer-guide/dev-shell.md
+    - Build: developer-guide/build.md
+    - Architecture: developer-guide/architecture.md
+    - Capture pipelines: developer-guide/capture-pipelines.md
+    - Contributing: developer-guide/contributing.md
+  - About:
+    - about/index.md
+    - Changelog: about/changelog.md
+    - License: about/license.md
+    - Sponsors: about/sponsors.md

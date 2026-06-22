@@ -61,11 +61,14 @@
         #   (jail.combinators.rw-bind "${homeDir}/.config/Antigravity" "${homeDir}/.config/Antigravity")
         # ];
 
-        # MkDocs with Material theme for documentation
+        # MkDocs with Material theme for documentation. The plugin set
+        # mirrors what the Docs.yml CI workflow installs.
         mkdocsEnv = pkgs.python3.withPackages (ps: with ps; [
           mkdocs
           mkdocs-material
           mkdocs-minify-plugin
+          mkdocs-glightbox
+          mkdocs-git-revision-date-localized-plugin
           pygments
           pymdown-extensions
         ]);

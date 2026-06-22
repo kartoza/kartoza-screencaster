@@ -1,237 +1,173 @@
-# Kartoza Screencaster
-
-<div class="hero" markdown>
-# Kartoza Screencaster
-**Create professional screen recordings with ease. Capture, process, and share your content in minutes.**
-</div>
-
-## Why Kartoza Screencaster?
-
-Kartoza Screencaster is a powerful, elegant TUI (Terminal User Interface) application designed for professionals who want to create high-quality screen recordings without the complexity of traditional video editing software. Whether you're creating tutorials, demos, or YouTube content, we've got you covered.
-
-<div class="stats-grid" markdown>
-<div class="stat-card">
-<div class="stat-number">4K</div>
-<div class="stat-label">Resolution Support</div>
-</div>
-<div class="stat-card">
-<div class="stat-number">H.264</div>
-<div class="stat-label">High Quality Codec</div>
-</div>
-<div class="stat-card">
-<div class="stat-number">1-Click</div>
-<div class="stat-label">YouTube Upload</div>
-</div>
-<div class="stat-card">
-<div class="stat-number">9:16</div>
-<div class="stat-label">Vertical Video</div>
-</div>
-</div>
-
 ---
-
-## Core Features
-
-<div class="feature-grid" markdown>
-
-<div class="feature-card" markdown>
-### Screen Recording
-Capture any monitor with high-quality video encoding using FFmpeg. Support for multiple monitors, custom resolutions, and hardware acceleration.
-</div>
-
-<div class="feature-card" markdown>
-### Professional Audio
-Simultaneous audio capture from your microphone with automatic EBU R128 loudness normalization, noise reduction, compression, and de-essing via Jivetalking.
-</div>
-
-<div class="feature-card" markdown>
-### Webcam Overlay
-Include your webcam feed as a picture-in-picture overlay. Choose from corner positions or circular overlay styles for a professional look.
-</div>
-
-<div class="feature-card" markdown>
-### Logo Branding
-Add professional branding with customizable logo positions - corners, edges, and more. Full support for animated GIFs and transparent PNGs.
-</div>
-
-<div class="feature-card" markdown>
-### Vertical Video
-Automatic conversion to vertical format (9:16) perfect for YouTube Shorts, TikTok, and Instagram Reels. Split-screen and full-screen modes available.
-</div>
-
-<div class="feature-card" markdown>
-### YouTube Integration
-Direct upload to YouTube with playlist management, privacy controls, metadata editing, and automatic thumbnail generation.
-</div>
-
-</div>
-
+hide:
+  - navigation
+  - toc
 ---
+<!-- SPDX-FileCopyrightText: Tim Sutton -->
+<!-- SPDX-License-Identifier: MIT -->
 
-## Quick Preview
+<div class="kz-hero" markdown>
 
-Here's what the main menu looks like:
+<span class="kz-eyebrow">KARTOZA · SCREENCASTER</span>
 
-<div class="terminal-mockup">
-<div class="terminal-header">
-<div class="terminal-buttons">
-<div class="terminal-button red"></div>
-<div class="terminal-button yellow"></div>
-<div class="terminal-button green"></div>
+# A Qt screen recorder for Linux, macOS and Windows
+
+Compose your shot on a WYSIWYG canvas. Drop in a webcam, logos, an intro
+sound. Hit record. Ship straight to YouTube.
+
+<div class="kz-cta" markdown>
+[:material-rocket-launch: Get started](getting-started/index.md){ .kz-cta__primary }
+[:material-book-open-page-variant: User guide](user-guide/index.md){ .kz-cta__secondary }
+[:simple-github: GitHub](https://github.com/kartoza/kartoza-screencaster){ .kz-cta__secondary }
 </div>
-<div class="terminal-title">Kartoza Screencaster</div>
-</div>
-<div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
-<span class="t-header">                    Main Menu</span>
-<span class="t-header">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
-
-<span class="t-selected">  <span class="t-orange">→ New Recording</span></span>
-    <span class="t-blue">Recording History</span>
-    <span class="t-blue">Options</span>
-    <span class="t-blue">Quit</span>
-
-<span class="t-gray">↑/k: up • ↓/j: down • enter/space: select • q: quit</span>
-</div>
-</div>
-
----
-
-## Get Started in 3 Steps
-
-<div class="workflow-step">
-<div class="workflow-step-number">1</div>
-<div>
-<strong>Install</strong><br>
-Get Kartoza Screencaster up and running on your system in minutes. Available for Linux, macOS, and Windows.
-</div>
-</div>
-
-<div class="workflow-step">
-<div class="workflow-step-number">2</div>
-<div>
-<strong>Configure</strong><br>
-Set up your recording preferences - choose your monitor, audio device, webcam position, and branding logos.
-</div>
-</div>
-
-<div class="workflow-step">
-<div class="workflow-step-number">3</div>
-<div>
-<strong>Record & Share</strong><br>
-Hit record, capture your content, and upload directly to YouTube - all from one elegant interface.
-</div>
-</div>
-
-[Get Started :material-arrow-right:](getting-started/installation.md){ .md-button .md-button--primary }
-[Quick Start Guide](getting-started/quickstart.md){ .md-button }
-
----
-
-## Documentation Guide
-
-### For Users
-
-<div class="quick-links" markdown>
-
-<a href="screens/main-menu.md" class="quick-link">
-<div class="quick-link-icon">:material-menu:</div>
-<div class="quick-link-title">Main Menu</div>
-<div class="quick-link-desc">Navigate the application</div>
-</a>
-
-<a href="screens/recording-setup.md" class="quick-link">
-<div class="quick-link-icon">:material-cog:</div>
-<div class="quick-link-title">Recording Setup</div>
-<div class="quick-link-desc">Configure your recording</div>
-</a>
-
-<a href="screens/recording.md" class="quick-link">
-<div class="quick-link-icon">:material-record-circle:</div>
-<div class="quick-link-title">Recording</div>
-<div class="quick-link-desc">Manage active recordings</div>
-</a>
-
-<a href="screens/history.md" class="quick-link">
-<div class="quick-link-icon">:material-history:</div>
-<div class="quick-link-title">History</div>
-<div class="quick-link-desc">Browse past recordings</div>
-</a>
-
-<a href="screens/options.md" class="quick-link">
-<div class="quick-link-icon">:material-tune:</div>
-<div class="quick-link-title">Options</div>
-<div class="quick-link-desc">Application settings</div>
-</a>
-
-<a href="screens/youtube-upload.md" class="quick-link">
-<div class="quick-link-icon">:material-youtube:</div>
-<div class="quick-link-title">YouTube Upload</div>
-<div class="quick-link-desc">Upload your videos</div>
-</a>
 
 </div>
 
-### Workflows
+## What it is
 
-Step-by-step guides for common tasks:
+Kartoza Screencaster is a desktop screen recorder built around a
+**what-you-see-is-what-you-get canvas**. Lay out your screen, your
+webcam, intro and outro sounds, your logos and reactions — then record
+the composed view in one pass. No post-production crop, no manual
+overlay tracks.
 
-- **[Recording a Video](workflows/recording-workflow.md)** - Complete recording workflow from setup to final output
-- **[Uploading to YouTube](workflows/youtube-workflow.md)** - YouTube upload process with playlist management
+The recorder captures:
 
-### For Developers
+- **Screen** — via wlroots (`wl-screenrec`), xdg-desktop-portal
+  (PipeWire) on GNOME / KDE Wayland, or `ffmpeg x11grab` on X11.
+- **Audio** — PulseAudio / PipeWire on Linux, system audio on macOS,
+  WASAPI on Windows.
+- **Webcam** — V4L2 on Linux, AVFoundation on macOS, DirectShow on
+  Windows.
 
-<div class="quick-links" markdown>
+And produces a single, encoded MP4 ready to share — with one-click
+upload to YouTube once you've authorised an account.
 
-<a href="developer/architecture.md" class="quick-link">
-<div class="quick-link-icon">:material-chart-tree:</div>
-<div class="quick-link-title">Architecture</div>
-<div class="quick-link-desc">System design overview</div>
-</a>
+## Download
 
-<a href="developer/setup.md" class="quick-link">
-<div class="quick-link-icon">:material-code-braces:</div>
-<div class="quick-link-title">Dev Setup</div>
-<div class="quick-link-desc">Development environment</div>
-</a>
+<div class="grid cards" markdown>
 
-<a href="developer/libraries.md" class="quick-link">
-<div class="quick-link-icon">:material-package-variant:</div>
-<div class="quick-link-title">Libraries</div>
-<div class="quick-link-desc">Third-party dependencies</div>
-</a>
+-   :material-debian:{ .lg .middle } __Debian / Ubuntu__
 
-<a href="developer/modules/index.md" class="quick-link">
-<div class="quick-link-icon">:material-puzzle:</div>
-<div class="quick-link-title">Modules</div>
-<div class="quick-link-desc">Package documentation</div>
-</a>
+    ---
+
+    `.deb` package — Ubuntu 24.04 amd64 and derivatives.
+
+    [:octicons-download-24: Latest release](https://github.com/kartoza/kartoza-screencaster/releases/latest)
+
+-   :material-redhat:{ .lg .middle } __Fedora / RHEL__
+
+    ---
+
+    `.rpm` package — Fedora 39+, RHEL 9+ and derivatives.
+
+    [:octicons-download-24: Latest release](https://github.com/kartoza/kartoza-screencaster/releases/latest)
+
+-   :material-linux:{ .lg .middle } __Linux tarball__
+
+    ---
+
+    `.tar.gz` — distribution-neutral, requires Qt 6 and ffmpeg.
+
+    [:octicons-download-24: Latest release](https://github.com/kartoza/kartoza-screencaster/releases/latest)
+
+-   :material-apple:{ .lg .middle } __macOS__
+
+    ---
+
+    `.tar.gz` — arm64 universal binary.
+
+    [:octicons-download-24: Latest release](https://github.com/kartoza/kartoza-screencaster/releases/latest)
+
+-   :material-microsoft-windows:{ .lg .middle } __Windows__
+
+    ---
+
+    `.zip` — x86_64, MSVC build.
+
+    [:octicons-download-24: Latest release](https://github.com/kartoza/kartoza-screencaster/releases/latest)
+
+-   :material-snowflake:{ .lg .middle } __Nix / NixOS__
+
+    ---
+
+    Run straight from the flake: `nix run github:kartoza/kartoza-screencaster`.
+
+    [:octicons-arrow-right-24: Dev shell](developer-guide/dev-shell.md)
 
 </div>
 
----
+## What's in the box
 
-## System Requirements
+<div class="grid cards" markdown>
 
-| Component | Requirement |
-|-----------|-------------|
-| **Operating System** | Linux (primary), macOS, Windows (experimental) |
-| **Go** | 1.21 or later |
-| **FFmpeg** | Required for all video operations |
-| **Audio** | PipeWire, PulseAudio, or ALSA |
-| **Optional** | Jivetalking for professional audio processing |
+-   :material-view-quilt:{ .lg .middle } __WYSIWYG canvas__
 
----
+    ---
 
-## Support & Community
+    Drag your screen, webcam, logos, GIFs and sounds onto the same
+    canvas as the recording. What you compose is exactly what comes
+    out the other end.
 
-Have questions or need help? We're here for you!
+    [:octicons-arrow-right-24: Canvas editor](user-guide/canvas.md)
 
-- **Issues**: Report bugs on [GitHub Issues](https://github.com/kartoza/kartoza-screencaster/issues)
-- **Discussions**: Join the conversation on [GitHub Discussions](https://github.com/kartoza/kartoza-screencaster/discussions)
-- **Source Code**: Contribute on [GitHub](https://github.com/kartoza/kartoza-screencaster)
+-   :material-record-circle:{ .lg .middle } __Multi-compositor capture__
 
----
+    ---
 
-<div style="text-align: center; margin-top: 3rem; padding: 2rem 0;">
-<p style="font-size: 1.1rem; color: var(--ksc-gray-600);">Made with :orange_heart: by <a href="https://kartoza.com" style="color: var(--ksc-orange-500); font-weight: 600;">Kartoza</a></p>
+    Recording works on wlroots Wayland, GNOME and KDE Wayland (via the
+    xdg-desktop-portal), and X11. The recorder picks the right path
+    automatically from your session.
+
+    [:octicons-arrow-right-24: Capture pipelines](developer-guide/capture-pipelines.md)
+
+-   :material-webcam:{ .lg .middle } __Webcam overlay__
+
+    ---
+
+    Round, square or rectangle webcam thumbnail with live preview on
+    the canvas before you start recording. Position anywhere.
+
+    [:octicons-arrow-right-24: Webcam](user-guide/webcam.md)
+
+-   :material-image-multiple:{ .lg .middle } __Logos and GIFs__
+
+    ---
+
+    Multiple overlays. Animated GIFs with loop limits. Brand it once,
+    reuse the canvas across every recording.
+
+    [:octicons-arrow-right-24: Logos and GIFs](user-guide/overlays.md)
+
+-   :material-history:{ .lg .middle } __Local history + playback__
+
+    ---
+
+    Every recording lands in `~/Videos/Screencasts/` with metadata.
+    Browse, replay, rename or upload later from the History tab.
+
+    [:octicons-arrow-right-24: History](user-guide/history.md)
+
+-   :material-youtube:{ .lg .middle } __One-click YouTube upload__
+
+    ---
+
+    OAuth your YouTube account once, then upload from any recording
+    with a title, description, privacy and category — straight from
+    the app.
+
+    [:octicons-arrow-right-24: YouTube upload](user-guide/youtube.md)
+
+</div>
+
+## QA status
+
+[![CI](https://github.com/kartoza/kartoza-screencaster/actions/workflows/ci.yml/badge.svg)](https://github.com/kartoza/kartoza-screencaster/actions/workflows/ci.yml)
+[![Docs](https://github.com/kartoza/kartoza-screencaster/actions/workflows/Docs.yml/badge.svg)](https://github.com/kartoza/kartoza-screencaster/actions/workflows/Docs.yml)
+[![Release](https://github.com/kartoza/kartoza-screencaster/actions/workflows/release.yml/badge.svg)](https://github.com/kartoza/kartoza-screencaster/actions/workflows/release.yml)
+
+<div class="kz-footer-credits" markdown>
+Made with 💗 by [Kartoza](https://kartoza.com) &middot;
+[Sponsor on GitHub](https://github.com/sponsors/kartoza) &middot;
+[Repository](https://github.com/kartoza/kartoza-screencaster)
 </div>
