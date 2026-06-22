@@ -4,14 +4,22 @@
 # C++ API reference
 
 The full Doxygen-generated API reference lives at
-[**`/api/`**](../api/){ target=_self } — every class, struct,
-free function and macro the C++ codebase declares, with cross-linked
+[**`/api/`**](../api/){ target=_self } — every class, struct, free
+function and macro the C++ codebase declares, with cross-linked
 include / inheritance / call graphs.
 
 <div class="kz-cta" markdown>
 [:material-book-open-variant: Open API Reference](../api/){ .kz-cta__primary target=_self }
 [:material-source-branch: src/ on GitHub](https://github.com/kartoza/kartoza-screencaster/tree/main/src){ .kz-cta__secondary }
 </div>
+
+!!! tip "Previewing locally?"
+    `mkdocs serve` / `nix run .#docs-serve` only renders the user
+    docs — clicking the link above shows a placeholder. To browse the
+    real API output locally, run
+    **`nix run .#docs-full-serve`** instead and reload. (Same flake
+    app, but it generates Doxygen, merges it in, and static-serves
+    the combined site on the right path.)
 
 ## When to use this
 
@@ -43,6 +51,7 @@ workflow, copied into `site/api/`, and published as part of the same
 GitHub Pages deploy as the rest of this site. Locally:
 
 ```bash
+nix run .#docs-full-serve   # builds + serves the combined site (the link above works)
 nix run .#docs-full-build   # builds doxygen + mkdocs and merges into ./site
 nix run .#docs-doxygen      # only builds doxygen into ./build/doxygen
 ```

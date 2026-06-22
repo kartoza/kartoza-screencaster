@@ -309,10 +309,11 @@
             echo "  ctr  - Run merger tests + play renders for visual review"
             echo ""
             echo "Documentation:"
-            echo "  nix run .#docs-serve       - mkdocs serve, live reload (no API ref)"
-            echo "  nix run .#docs-build       - Strict mkdocs build into ./site (no API ref)"
+            echo "  nix run .#docs-serve       - mkdocs serve, live reload (mkdocs only; /api/ stub)"
+            echo "  nix run .#docs-build       - Strict mkdocs build into ./site (mkdocs only)"
             echo "  nix run .#docs-doxygen     - C++ API ref into ./build/doxygen"
             echo "  nix run .#docs-full-build  - mkdocs + doxygen, merged at ./site (+/api)"
+            echo "  nix run .#docs-full-serve  - docs-full-build + static-serve so /api/ works"
             echo "  docs                       - Same as 'mkdocs serve' inside this shell"
             echo ""
             echo "Neovim: <leader>p for all project commands"
@@ -389,6 +390,41 @@
               echo
               echo "Done. Open site/index.html for the user docs"
               echo "      or  site/api/index.html for the C++ API reference."
+            '');
+          };
+
+          # `nix run .#docs-full-serve` — combined build + static serve.
+          # Unlike docs-serve (which is mkdocs live-reload over docs/ only
+          # and so 404s on /api/), this serves the merged site/ so the
+          # /api/ link from the Developer Guide opens the real Doxygen
+          # output. Trade-off: no live-reload — re-run to pick up edits.
+          # Uses a symlinked tmpdir so paths under /kartoza-screencaster/
+          # (mkdocs's site_url subpath) resolve correctly.
+          docs-full-serve = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "docs-full-serve" ''
+              #!${pkgs.bash}/bin/bash
+              set -euo pipefail
+              cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
+              ROOT="$(pwd)"
+
+              echo "==> Building merged site (mkdocs + doxygen)..."
+              mkdir -p build/doxygen
+              ${pkgs.doxygen}/bin/doxygen Doxyfile >/dev/null
+              ${mkdocsEnv}/bin/mkdocs build --strict --site-dir site
+              rm -rf site/api
+              cp -r build/doxygen/html site/api
+
+              SERVE_ROOT="$(mktemp -d)"
+              trap 'rm -rf "$SERVE_ROOT"' EXIT
+              ln -s "$ROOT/site" "$SERVE_ROOT/kartoza-screencaster"
+
+              PORT="''${1:-8000}"
+              echo
+              echo "==> Serving on http://127.0.0.1:$PORT/kartoza-screencaster/"
+              echo "    /api/ now opens the real Doxygen output."
+              cd "$SERVE_ROOT"
+              exec ${mkdocsEnv}/bin/python -m http.server "$PORT" --bind 127.0.0.1
             '');
           };
 
