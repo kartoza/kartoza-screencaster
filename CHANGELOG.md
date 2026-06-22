@@ -5,6 +5,20 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2026-06-22
+
+### Fixed
+
+#### `.deb` and `.rpm` packages now pull the portal capture runtime stack
+The 1.9.0 Debian and RPM packages declared only the basic Qt libraries and `ffmpeg`. That was enough to launch the app, but the canvas preview stayed blank and recording produced no file on the default Ubuntu (GNOME Wayland) and Fedora (GNOME Wayland) configurations, because the `xdg-desktop-portal` + PipeWire + GStreamer stack the portal capture path depends on at runtime was not installed alongside the binary. (The flake build was unaffected because every dependency is wrapped into the binary's `PATH` and `GST_PLUGIN_SYSTEM_PATH_1_0` at install time.)
+
+This patch release adds the missing runtime dependencies to both packaging formats:
+
+- **Required**: `libqt6dbus6t64`, `libqt6svg6`, `libqt6network6t64`, `xdg-desktop-portal`, `pipewire`, `gstreamer1.0-tools`, `gstreamer1.0-plugins-{base,good,bad}`, `gstreamer1.0-libav`, `gstreamer1.0-pipewire`, `x11-xserver-utils` (for `xrandr`). RPM counterparts added in the `.rpm` spec.
+- **Recommended**: `wl-screenrec`, `grim`, and one of `xdg-desktop-portal-gnome` / `xdg-desktop-portal-kde`.
+
+Users who installed the 1.9.0 `.deb` and saw a blank preview can either upgrade to 1.9.1 or manually install the same package list to fix their existing install.
+
 ## [1.9.0] - 2026-06-21
 
 ### Added
