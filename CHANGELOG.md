@@ -5,19 +5,36 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.9.1] - 2026-06-22
+## [2.0.0] - 2026-06-24
+
+### Added
+
+#### MkDocs documentation site with integrated Doxygen API browser
+A full project documentation site is now built and published to GitHub Pages at https://kartoza.github.io/kartoza-screencaster/. The site combines a Material-themed MkDocs handbook (project overview, user guide, administrator guide, developer guide) with the Doxygen-generated C++ API reference mounted under `/api/`.
+
+- New `mkdocs.yml` and `docs/` tree following the Kartoza brand pack (Nunito / JetBrains Mono, tokenised palette in `docs/stylesheets/kartoza-tokens.css`).
+- `Doxyfile` rewired to emit to `build/doxygen/` so the API tree can be symlinked into the MkDocs `site/api/` output without polluting the docs source.
+- `flake.nix` `mkdocsEnv` package bundles `mkdocs-material`, `mkdocs-glightbox`, `mkdocs-git-revision-date-localized-plugin` and Doxygen + Graphviz so docs build entirely from nixpkgs — no `pip install` step anywhere in dev or CI.
+- New `nix run` commands surfaced in the dev shell help text:
+  - `nix run .#docs-serve` — MkDocs only, fastest iteration loop.
+  - `nix run .#docs-build` — MkDocs only, strict mode.
+  - `nix run .#docs-doxygen` — Doxygen only.
+  - `nix run .#docs-full-build` — MkDocs + Doxygen combined into a single `site/` tree.
+  - `nix run .#docs-full-serve` — combined build served on `http://127.0.0.1:8000` so the `/api/` link resolves locally exactly as it does on GitHub Pages.
+- `.github/workflows/Docs.yml` rewritten to use `DeterminateSystems/nix-installer-action` and `nix run .#docs-full-build` — no `pip` or `apt` on the docs CI path. Publishes to `gh-pages` via `actions/deploy-pages`.
+- Landing page (`docs/index.md`) rewritten around end-user value ("Record. Don't edit.") — no Qt/portal/PipeWire/V4L2 references on user-facing pages, all that detail lives under the developer guide.
 
 ### Fixed
 
 #### `.deb` and `.rpm` packages now pull the portal capture runtime stack
 The 1.9.0 Debian and RPM packages declared only the basic Qt libraries and `ffmpeg`. That was enough to launch the app, but the canvas preview stayed blank and recording produced no file on the default Ubuntu (GNOME Wayland) and Fedora (GNOME Wayland) configurations, because the `xdg-desktop-portal` + PipeWire + GStreamer stack the portal capture path depends on at runtime was not installed alongside the binary. (The flake build was unaffected because every dependency is wrapped into the binary's `PATH` and `GST_PLUGIN_SYSTEM_PATH_1_0` at install time.)
 
-This patch release adds the missing runtime dependencies to both packaging formats:
+This release adds the missing runtime dependencies to both packaging formats:
 
 - **Required**: `libqt6dbus6t64`, `libqt6svg6`, `libqt6network6t64`, `xdg-desktop-portal`, `pipewire`, `gstreamer1.0-tools`, `gstreamer1.0-plugins-{base,good,bad}`, `gstreamer1.0-libav`, `gstreamer1.0-pipewire`, `x11-xserver-utils` (for `xrandr`). RPM counterparts added in the `.rpm` spec.
 - **Recommended**: `wl-screenrec`, `grim`, and one of `xdg-desktop-portal-gnome` / `xdg-desktop-portal-kde`.
 
-Users who installed the 1.9.0 `.deb` and saw a blank preview can either upgrade to 1.9.1 or manually install the same package list to fix their existing install.
+Users who installed the 1.9.0 `.deb` and saw a blank preview can either upgrade to 2.0.0 or manually install the same package list to fix their existing install.
 
 ## [1.9.0] - 2026-06-21
 
