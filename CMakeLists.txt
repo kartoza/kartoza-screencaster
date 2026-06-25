@@ -1,5 +1,20 @@
 cmake_minimum_required(VERSION 3.20)
-project(kartoza-screencaster VERSION 2.0.2 LANGUAGES CXX)
+
+# Single source of truth for the project version. Read at configure time
+# from the repo-root `VERSION` file so the same value flows to the binary
+# (APP_VERSION), the .deb / .rpm metadata (CPACK_PACKAGE_VERSION), the
+# Nix flake, the docs (Doxyfile PROJECT_NUMBER via the KSC_VERSION env
+# var), and the release.yml tag-check job. Bump VERSION and every
+# consumer follows.
+file(STRINGS "${CMAKE_SOURCE_DIR}/VERSION" KSC_VERSION
+     LIMIT_COUNT 1 REGEX "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+if(NOT KSC_VERSION)
+    message(FATAL_ERROR
+        "Could not read X.Y.Z from ${CMAKE_SOURCE_DIR}/VERSION. "
+        "The file must exist and its first line must be a semver string.")
+endif()
+
+project(kartoza-screencaster VERSION ${KSC_VERSION} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

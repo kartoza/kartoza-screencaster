@@ -33,8 +33,10 @@
           inherit system;
           config.allowUnfree = true;  # Required for Claude Code
         };
-        # Version extracted from CMakeLists.txt (single source of truth)
-        version = builtins.head (builtins.match ".*project\\(kartoza-screencaster VERSION ([0-9.]+).*" (builtins.readFile ./CMakeLists.txt));
+        # Single source of truth for the version: repo-root VERSION file.
+        # Every consumer (CMake, release.yml, Doxygen, mkdocs) reads it
+        # directly so bumping the version is a one-line edit.
+        version = pkgs.lib.removeSuffix "\n" (builtins.readFile ./VERSION);
 
         # Initialize jail.nix for sandboxing AI agents
         jail = jail-nix.lib.init pkgs;
@@ -363,6 +365,9 @@
               export PATH="${pkgs.graphviz}/bin:$PATH"
               cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
               mkdir -p build/doxygen
+              # Doxyfile reads PROJECT_NUMBER from $(KSC_VERSION) so the
+              # generated API ref always matches the repo's VERSION file.
+              export KSC_VERSION="$(cat VERSION)"
               exec ${pkgs.doxygen}/bin/doxygen Doxyfile
             '');
           };
@@ -381,6 +386,7 @@
 
               echo "==> Generating Doxygen API reference (build/doxygen/html)..."
               mkdir -p build/doxygen
+              export KSC_VERSION="$(cat VERSION)"
               ${pkgs.doxygen}/bin/doxygen Doxyfile >/dev/null
 
               echo "==> Building MkDocs site (site/)..."
@@ -414,6 +420,7 @@
 
               echo "==> Building merged site (mkdocs + doxygen)..."
               mkdir -p build/doxygen
+              export KSC_VERSION="$(cat VERSION)"
               ${pkgs.doxygen}/bin/doxygen Doxyfile >/dev/null
               ${mkdocsEnv}/bin/mkdocs build --strict --site-dir site
               rm -rf site/api

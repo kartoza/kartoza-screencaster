@@ -1,5 +1,5 @@
 PROJECT_NAME           = "Kartoza Screencaster"
-PROJECT_NUMBER         = 1.9.0
+PROJECT_NUMBER         = $(KSC_VERSION)
 PROJECT_BRIEF          = "Qt-based screen recorder for Linux, macOS and Windows"
 # Doxygen output lives outside docs/ so MkDocs doesn't pick it up as
 # orphan files. The combined Docs.yml workflow copies build/doxygen/html

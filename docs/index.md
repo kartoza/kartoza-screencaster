@@ -10,6 +10,10 @@ hide:
 
 <span class="kz-eyebrow">KARTOZA · SCREENCASTER</span>
 
+[![Latest release](https://img.shields.io/github/v/release/kartoza/kartoza-screencaster?label=release&color=blue)](https://github.com/kartoza/kartoza-screencaster/releases/latest)
+[![Release date](https://img.shields.io/github/release-date/kartoza/kartoza-screencaster?color=informational)](https://github.com/kartoza/kartoza-screencaster/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/kartoza/kartoza-screencaster)](https://github.com/kartoza/kartoza-screencaster/blob/main/LICENSE)
+
 # Record. Don't edit.
 
 A screen recorder that takes the post-production out of the loop.
