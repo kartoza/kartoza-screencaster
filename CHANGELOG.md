@@ -5,6 +5,46 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-06-25
+
+### Fixed
+
+#### `.deb` package is now installable on Ubuntu 26.04 (and 22.04, Debian 12)
+The 2.0.0 `.deb` hard-pinned the `t64`-suffixed Qt library names
+(`libqt6gui6t64`, `libqt6widgets6t64`, `libqt6dbus6t64`,
+`libqt6network6t64`, `libqt6core6t64`) because the GitHub Actions
+runner that builds the package is Ubuntu 24.04, where those names
+were in force during the in-flight time_t 64-bit transition. On
+Ubuntu 26.04 the transition is complete and those packages have been
+renamed back to the originals (`libqt6gui6`, …); on Ubuntu 22.04 LTS
+and Debian 12 the suffixed names never existed. In both cases
+`sudo apt install ./kartoza-screencaster_2.0.0_amd64.deb` failed with
+`Depends: libqt6gui6t64 but it is not installable`.
+
+The release workflow now declares every transitioned Qt dependency
+as a Debian alternative (`libqt6gui6 | libqt6gui6t64`, etc.) so the
+same `.deb` resolves cleanly across Ubuntu 22.04, 24.04, 26.04, and
+Debian 12/13.
+
+#### `.deb` now declares the Qt Wayland platform plugin
+`qt6-wayland` was missing from the dependency list. The app would
+fall back to XCB on pure-Wayland sessions, which only works if
+XWayland is running. The plugin is now a hard dependency.
+
+### Documentation
+
+- `docs/getting-started/install.md` rewritten with concrete per-distro
+  install commands (Ubuntu / Debian, Fedora, Arch), a clear note on
+  which Ubuntu releases use the `t64`-suffixed names, and a manual
+  `dpkg -i --ignore-depends` workaround for users stuck on 2.0.0 on
+  Ubuntu 26.04 until 2.0.1 ships.
+- `docs/admin-guide/dependencies.md` extended with full `apt` / `dnf`
+  / `pacman` commands for every runtime dependency so fleet operators
+  can install dependencies by hand without going through the `.deb`
+  or `.rpm`.
+- Removed the orphan `docs/getting-started/installation.md` (a stale
+  Go-era page from before the rewrite).
+
 ## [2.0.0] - 2026-06-24
 
 ### Added
