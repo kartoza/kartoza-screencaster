@@ -3,16 +3,36 @@
  * @brief Runtime platform and display server detection.
  */
 #include "platform/platform.h"
+#include <QGuiApplication>
 #include <QProcessEnvironment>
 
 namespace Platform {
 
 DisplayServer displayServer() {
 #if defined(Q_OS_LINUX)
+  // Qt's platform plugin name is the authoritative answer: it tells us
+  // which platform Qt itself loaded at startup. Env-var sniffing alone
+  // is unreliable from .desktop launches on Ubuntu, where gnome-shell's
+  // systemd-user environment sometimes ships without WAYLAND_DISPLAY
+  // or XDG_SESSION_TYPE — which would otherwise misdetect a Wayland
+  // session as Unknown and silently break the screen-preview capture
+  // path (Canvas::captureScreen falls through to QScreen::grabWindow,
+  // which on Wayland returns an empty pixmap).
+  if (QGuiApplication::instance()) {
+    QString platform = QGuiApplication::platformName();
+    if (platform == "wayland") {
+      return DisplayServer::Wayland;
+    }
+    if (platform == "xcb") {
+      return DisplayServer::X11;
+    }
+  }
+
+  // Fallback: pre-QGuiApplication callers (none today, but cheap to
+  // keep) and unusual platform plugin names (eglfs, offscreen, …).
   auto env = QProcessEnvironment::systemEnvironment();
   QString wayland = env.value("WAYLAND_DISPLAY");
   QString xdgSession = env.value("XDG_SESSION_TYPE");
-
   if (!wayland.isEmpty() || xdgSession == "wayland") {
     return DisplayServer::Wayland;
   }

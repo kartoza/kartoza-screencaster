@@ -5,6 +5,43 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - 2026-06-25
+
+### Changed
+
+#### Single source of truth for the project version
+The version number used to live in `CMakeLists.txt` and was re-derived in several places by regex (`flake.nix`, `release.yml`), each one a separate failure mode if a future edit broke the syntax. Other tools that should have read it — `Doxyfile`'s `PROJECT_NUMBER`, `mkdocs.yml`, `README.md` — drifted instead (the Doxygen API reference was still labelled 1.9.0 at the 2.0.2 release).
+
+This release consolidates the version into a single plain-text `VERSION` file at the repo root. Every consumer reads it directly:
+
+- `CMakeLists.txt` reads `VERSION` via `file(STRINGS)` and feeds it into `project(... VERSION ...)`, so `APP_VERSION` and `CPACK_PACKAGE_VERSION` follow automatically.
+- `flake.nix` reads it via `builtins.readFile ./VERSION` (replacing the previous CMakeLists.txt regex).
+- `.github/workflows/release.yml`'s tag-check job reads it via `cat VERSION`.
+- `Doxyfile` `PROJECT_NUMBER` is now `$(KSC_VERSION)`; the three `nix run .#docs-*` apps that invoke Doxygen all `export KSC_VERSION="$(cat VERSION)"` first, so the generated C++ API reference always matches the repo's version.
+- `README.md` and `docs/index.md` gained live `shields.io` badges that read from the GitHub releases API, so no rebuild is needed when a new release ships.
+
+Bumping the version is now a one-line edit to `VERSION`. The `release.yml` `version-check` job still enforces tag/file consistency.
+
+### Removed
+
+#### Orphan Go-era packaging files
+`nfpm.yaml`, `packaging/snap/`, and `packaging/flatpak/` were leftovers from the pre-rewrite Go codebase (last touched at 0.7.6 / 0.8.2). `release.yml` doesn't build any of them and they had drifted out of sync with the project for ten releases. Deleted to eliminate the drift surface.
+
+`packaging/debian/` and `packaging/rpm/` are also Go-era (0.8.2) and not consumed by `release.yml` either, but they look like in-tree templates for a future `dpkg-buildpackage` / `rpmbuild` source-package path, so they survive this round. Worth a separate decision on whether to modernise them against the current Qt 6 build or remove them.
+
+## [2.0.2] - 2026-06-25
+
+### Fixed
+
+#### Screen-preview pane is no longer blank when launched from the Ubuntu desktop GUI
+On Ubuntu 26.04 (and any other GNOME Wayland session where gnome-shell does not propagate `WAYLAND_DISPLAY` / `XDG_SESSION_TYPE` to the systemd-user environment), launching the app from the dock, app overview, or any `.desktop` entry produced a permanently blank screen-preview pane — even though launching the same binary from a terminal in the same desktop session worked fine. The recording itself was not affected because that path doesn't sit in the same code branch.
+
+The root cause was `Platform::displayServer()` sniffing only `WAYLAND_DISPLAY` and `XDG_SESSION_TYPE`. When both env vars were empty (the stripped systemd-user env handed to `.desktop` launches on Ubuntu), the function returned `Unknown`, `Canvas::captureScreen()` skipped the Wayland branch entirely, and fell through to the X11/macOS fallback `QScreen::grabWindow(0)` — which on a Wayland session returns an empty pixmap. Launching from the terminal worked only because bash/profile happened to inherit or re-set those env vars.
+
+`Platform::displayServer()` now consults `QGuiApplication::platformName()` first — `"wayland"` or `"xcb"` is the authoritative answer for what Qt actually loaded at startup, set by Qt itself from compiled-in platform plugins and not subject to the systemd-user env propagation quirks. The env-var sniffing is preserved as a fallback for unusual platform names (`offscreen`, `eglfs`, …) and pre-`QGuiApplication` callers.
+
+The portal-screenshot failure handler in `Canvas` also escalated from `qDebug` to `qWarning` so failures from `.desktop` launches show up in `journalctl --user` by default. They were previously filtered out at the default log level, leaving silent failures invisible.
+
 ## [2.0.1] - 2026-06-25
 
 ### Fixed

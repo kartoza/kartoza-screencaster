@@ -94,7 +94,10 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
             });
     connect(&Portal::instance(), &Portal::screenshotFailed, this,
             [](const QString &reason) {
-                qDebug() << "Portal screenshot failed:" << reason;
+                // qWarning so the message lands in journalctl --user by
+                // default — preview failures from .desktop launches are
+                // otherwise invisible (no stdout, qDebug filtered out).
+                qWarning() << "Portal screenshot failed:" << reason;
             });
 #endif
 }

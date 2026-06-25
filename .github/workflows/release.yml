@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   version-check:
-    name: Verify CMakeLists.txt version matches tag
+    name: Verify VERSION file matches tag
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,12 +22,12 @@ jobs:
         run: |
           TAG="${{ github.ref_name || github.event.inputs.tag }}"
           TAG_VERSION="${TAG#v}"
-          CMAKE_VERSION=$(grep -oP 'project\(kartoza-screencaster VERSION \K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
-          echo "Tag version:   $TAG_VERSION"
-          echo "CMake version: $CMAKE_VERSION"
-          if [ "$TAG_VERSION" != "$CMAKE_VERSION" ]; then
-            echo "::error::Version mismatch! Tag is $TAG_VERSION but CMakeLists.txt has $CMAKE_VERSION"
-            echo "Update the version in CMakeLists.txt line 2 to match the release tag."
+          FILE_VERSION=$(tr -d '[:space:]' < VERSION)
+          echo "Tag version:  $TAG_VERSION"
+          echo "VERSION file: $FILE_VERSION"
+          if [ "$TAG_VERSION" != "$FILE_VERSION" ]; then
+            echo "::error::Version mismatch! Tag is $TAG_VERSION but ./VERSION has $FILE_VERSION"
+            echo "Update VERSION to match the release tag, or retag at the matching version."
             exit 1
           fi
           echo "Versions match."
