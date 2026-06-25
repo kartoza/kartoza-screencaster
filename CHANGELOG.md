@@ -5,6 +5,19 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-06-25
+
+### Fixed
+
+#### Screen-preview pane is no longer blank when launched from the Ubuntu desktop GUI
+On Ubuntu 26.04 (and any other GNOME Wayland session where gnome-shell does not propagate `WAYLAND_DISPLAY` / `XDG_SESSION_TYPE` to the systemd-user environment), launching the app from the dock, app overview, or any `.desktop` entry produced a permanently blank screen-preview pane — even though launching the same binary from a terminal in the same desktop session worked fine. The recording itself was not affected because that path doesn't sit in the same code branch.
+
+The root cause was `Platform::displayServer()` sniffing only `WAYLAND_DISPLAY` and `XDG_SESSION_TYPE`. When both env vars were empty (the stripped systemd-user env handed to `.desktop` launches on Ubuntu), the function returned `Unknown`, `Canvas::captureScreen()` skipped the Wayland branch entirely, and fell through to the X11/macOS fallback `QScreen::grabWindow(0)` — which on a Wayland session returns an empty pixmap. Launching from the terminal worked only because bash/profile happened to inherit or re-set those env vars.
+
+`Platform::displayServer()` now consults `QGuiApplication::platformName()` first — `"wayland"` or `"xcb"` is the authoritative answer for what Qt actually loaded at startup, set by Qt itself from compiled-in platform plugins and not subject to the systemd-user env propagation quirks. The env-var sniffing is preserved as a fallback for unusual platform names (`offscreen`, `eglfs`, …) and pre-`QGuiApplication` callers.
+
+The portal-screenshot failure handler in `Canvas` also escalated from `qDebug` to `qWarning` so failures from `.desktop` launches show up in `journalctl --user` by default. They were previously filtered out at the default log level, leaving silent failures invisible.
+
 ## [2.0.1] - 2026-06-25
 
 ### Fixed
