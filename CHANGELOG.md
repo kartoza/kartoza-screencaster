@@ -5,6 +5,25 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-07-18
+
+### Fixed
+
+#### Live screen preview no longer captures in the background when hidden
+The record layout's live preview drives a `slurp`/`grim` (or portal) screen capture on a 2-second `QTimer` in `Canvas`. Suspension of that loop previously hung off `QMainWindow::hideEvent`, but minimising a window — via the compositor, the titlebar button, or `showMinimized()` when hiding to the systray — does **not** fire a hide event (`isVisible()` stays true for a minimised window), and `hideToTray()` explicitly skipped suspension while recording. The net effect: a minimised or tray-docked window kept spawning a `grim` process every 2 seconds indefinitely, wasting CPU and issuing screen captures the user could not see.
+
+Preview gating is now centralised in `MainWindow::updatePreviewState()`, the single authority for whether the capture loop may run. The loop runs only when **all** of these hold: the window is shown, **not minimised**, not hidden-to-tray, and the Record page is the current tab. It is invoked from `showEvent`, `hideEvent`, the new `changeEvent` override (which catches `QEvent::WindowStateChange` — the minimise/restore signal that was being missed), `navigateTo`, `hideToTray`, and `showFromTray`. Recording remains covered because `RecordPage::resumePreviews()` is a no-op while recording, so the slurp loop stays off for the entire recording regardless of window state.
+
+Internally, `Canvas` now separates app-driven suspension (`m_suspended`) from user-driven pause (`m_userPaused`); a single `updateTimerState()` starts the timer only when neither is set, so the capture truly stops rather than firing into a no-op.
+
+#### Title-bar window menu renders correctly when running from the dev shell
+The `nix develop` shell exported `QT_PLUGIN_PATH` pointing only at `qtmultimedia`, so an unwrapped dev binary (`cr`, `./build/kartoza-screencaster`) loaded the host system's Qt for the Wayland platform and client-side **decoration** plugins. On a machine whose system Qt differs from nixpkgs', the title-bar right-click window menu rendered as missing-glyph blocks (tofu). The dev shell now points `QT_PLUGIN_PATH` at the nixpkgs `qtbase`, `qtwayland`, `qtsvg`, and `qtmultimedia` plugin directories — the same set the `wrapQtAppsHook`-wrapped package already uses — so dev runs match the installed app. The packaged build was never affected.
+
+### Added
+
+#### Click-to-pause toggle on the live screen preview
+The screen preview now has a circular pause/continue button in its centre. Clicking it freezes or resumes the live capture on demand — pause bars indicate a running preview (click to pause), a play triangle over a darkened backdrop indicates a paused preview (click to resume), so a frozen preview always reads as intentional rather than broken. The manual pause survives tab switches and minimise/restore cycles. To keep the preview uncluttered, the toggle is only drawn while the cursor is over the canvas or while the preview is paused; it fades out when the mouse leaves an actively-updating preview.
+
 ## [2.0.3] - 2026-06-25
 
 ### Changed

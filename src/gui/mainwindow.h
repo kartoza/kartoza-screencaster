@@ -57,10 +57,18 @@ protected:
     void hideEvent(QHideEvent *event) override;
     /** @brief Resume live previews when window is shown. */
     void showEvent(QShowEvent *event) override;
+    /** @brief Suspend/resume previews when the window is minimised or restored. */
+    void changeEvent(QEvent *event) override;
     /** @brief Whether the window is conceptually hidden to systray. */
     bool isHiddenToTray() const { return m_hiddenToTray; }
 
 private:
+    /**
+     * @brief Suspend or resume the record page's live previews based on whether
+     * the screen preview is actually visible to the user: the window must be
+     * shown and not minimised/hidden-to-tray, and the Record page must be current.
+     */
+    void updatePreviewState();
     /** @brief Build the complete UI layout. */
     void setupUI();
     /** @brief Create the left-hand navigation sidebar. */

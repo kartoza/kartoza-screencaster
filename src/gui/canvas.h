@@ -90,6 +90,10 @@ public:
     void suspendPreviews();
     /** @brief Resume all live previews (webcam + screen capture timer). */
     void resumePreviews();
+    /** @brief Toggle the user-initiated pause of the live screen preview. */
+    void togglePreviewPause();
+    /** @brief Whether the user has manually paused the live screen preview. */
+    bool isPreviewPaused() const { return m_userPaused; }
 
     // -- Queries --
 
@@ -179,6 +183,11 @@ signals:
     void selectionChanged(int index);
     /** @brief Emitted when items are added, removed, or reordered. */
     void itemsChanged();
+    /**
+     * @brief Emitted when the live preview pause state changes.
+     * @param paused True if the preview is now paused, false if running.
+     */
+    void previewPausedChanged(bool paused);
 
 protected:
     /** @brief Paint the canvas background and all overlay items. */
@@ -195,6 +204,10 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
     /** @brief Recalculate canvas dimensions on resize. */
     void resizeEvent(QResizeEvent *event) override;
+    /** @brief Track when the cursor enters the canvas (reveals the pause toggle). */
+    void enterEvent(QEnterEvent *event) override;
+    /** @brief Track when the cursor leaves the canvas (hides the pause toggle). */
+    void leaveEvent(QEvent *event) override;
     /** @brief Accept drag enter for image/audio files. */
     void dragEnterEvent(QDragEnterEvent *event) override;
     /** @brief Track drag position to highlight drop targets. */
@@ -237,6 +250,14 @@ private:
 
     /** @brief Capture a screenshot of the selected monitor. */
     void captureScreen();
+    /** @brief Start or stop the refresh timer to match the current gating flags. */
+    void updateTimerState();
+    /** @brief Whether a screen-capture layer currently exists on the canvas. */
+    bool hasScreenItem() const;
+    /** @brief Rect of the centre pause/continue toggle button, in canvas coords (empty if no screen item). */
+    QRect previewToggleRect() const;
+    /** @brief Draw the centre pause/continue toggle over the screen preview. */
+    void drawPreviewToggle(QPainter &painter);
     /** @brief Draw the screen background and all overlay items. */
     void drawScreen(QPainter &painter);
     /** @brief Draw crop handles on a selected item. */
@@ -306,6 +327,12 @@ private:
 
     /** @brief Timer driving periodic screen capture refresh. */
     QTimer *m_refreshTimer;
+    /** @brief True when previews are suspended by the app (window hidden, tab inactive, recording). */
+    bool m_suspended = false;
+    /** @brief True when the user has manually paused the live screen preview. */
+    bool m_userPaused = false;
+    /** @brief True while the cursor is over the canvas (used to reveal the pause toggle). */
+    bool m_hovered = false;
     /** @brief Temporary file path for the latest screen capture. */
     QString m_pendingScreenPath;
     /** @brief Mutex protecting shared screen capture state. */

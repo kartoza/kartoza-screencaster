@@ -9,6 +9,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QMouseEvent>
+#include <QEnterEvent>
 #include <QWheelEvent>
 #include <QKeyEvent>
 #include <QResizeEvent>
@@ -353,13 +354,81 @@ void Canvas::startAllWebcamPreviews() {
 }
 
 void Canvas::suspendPreviews() {
+    m_suspended = true;
     stopAllWebcamPreviews();
-    if (m_refreshTimer) m_refreshTimer->stop();
+    updateTimerState();
 }
 
 void Canvas::resumePreviews() {
+    m_suspended = false;
     startAllWebcamPreviews();
-    if (m_refreshTimer) m_refreshTimer->start();
+    updateTimerState();
+}
+
+void Canvas::updateTimerState() {
+    if (!m_refreshTimer) return;
+    // The slurp/grim capture only runs while the preview is neither suspended
+    // by the app (window hidden, tab inactive, recording) nor manually paused.
+    bool shouldRun = !m_suspended && !m_userPaused;
+    if (shouldRun && !m_refreshTimer->isActive()) m_refreshTimer->start();
+    else if (!shouldRun && m_refreshTimer->isActive()) m_refreshTimer->stop();
+}
+
+void Canvas::togglePreviewPause() {
+    m_userPaused = !m_userPaused;
+    updateTimerState();
+    emit previewPausedChanged(m_userPaused);
+    update();
+}
+
+bool Canvas::hasScreenItem() const {
+    for (const auto &item : m_items)
+        if (item.type == 0) return true;
+    return false;
+}
+
+QRect Canvas::previewToggleRect() const {
+    if (!hasScreenItem()) return {};
+    const int r = 26;
+    QPoint c = frameRect().center();
+    return {c.x() - r, c.y() - r, 2 * r, 2 * r};
+}
+
+void Canvas::drawPreviewToggle(QPainter &painter) {
+    QRect btn = previewToggleRect();
+    if (btn.isEmpty()) return;
+    // While running, the toggle only appears on hover to keep the preview clean;
+    // while paused it stays visible so the frozen state is always explained.
+    if (!m_userPaused && !m_hovered) return;
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    // Circular button backdrop — more prominent while paused so the frozen
+    // preview reads as intentional rather than broken.
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(15, 15, 32, m_userPaused ? 200 : 120));
+    painter.drawEllipse(btn);
+    painter.setPen(QPen(QColor(86, 159, 198), 2));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawEllipse(btn);
+
+    QPoint c = btn.center();
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(232, 232, 236));
+    if (m_userPaused) {
+        // Paused → show a play triangle (click to resume).
+        QPolygon tri;
+        tri << QPoint(c.x() - 7, c.y() - 11)
+            << QPoint(c.x() - 7, c.y() + 11)
+            << QPoint(c.x() + 12, c.y());
+        painter.drawPolygon(tri);
+    } else {
+        // Running → show pause bars (click to pause).
+        painter.drawRect(c.x() - 9, c.y() - 11, 6, 22);
+        painter.drawRect(c.x() + 3, c.y() - 11, 6, 22);
+    }
+    painter.restore();
 }
 
 void Canvas::setSelectedItem(int index) {
@@ -611,6 +680,18 @@ QRect Canvas::frameRect() const {
     return QRect(fx, fy, fw, fh);
 }
 
+void Canvas::enterEvent(QEnterEvent *event) {
+    QWidget::enterEvent(event);
+    m_hovered = true;
+    if (hasScreenItem() && !m_userPaused) update();
+}
+
+void Canvas::leaveEvent(QEvent *event) {
+    QWidget::leaveEvent(event);
+    m_hovered = false;
+    if (hasScreenItem() && !m_userPaused) update();
+}
+
 void Canvas::resizeEvent(QResizeEvent *event) {
     int widgetW = event->size().width();
     int widgetH = event->size().height();
@@ -713,6 +794,15 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
     m_cropHandle = 0;
     m_cropItem = -1;
     int hit = -1;
+
+    // Centre pause/continue toggle takes priority over item selection/drag.
+    if (event->button() == Qt::LeftButton) {
+        QRect toggle = previewToggleRect();
+        if (!toggle.isEmpty() && toggle.contains(mx, my)) {
+            togglePreviewPause();
+            return;
+        }
+    }
 
     // Check crop handles on selected item first
     if (m_selected >= 0 && m_selected < m_items.size() && m_items[m_selected].visible) {
@@ -1224,6 +1314,9 @@ void Canvas::paintEvent(QPaintEvent *) {
     painter.setPen(QColor(138, 139, 139));
     QStringList names = {"Landscape 16:9", "Vertical 9:16", "9:16 (Left Split)", "9:16 (Right Split)"};
     painter.drawText(QPoint(5, m_ch - 5), names.value(m_mode, ""));
+
+    // Pause/continue toggle over the screen preview (topmost).
+    drawPreviewToggle(painter);
 }
 
 void Canvas::drawScreen(QPainter &painter) {
