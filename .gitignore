@@ -26,8 +26,10 @@ vendor/
 *.swo
 *~
 
-# Claude Code local settings
-.claude/settings.local.json
+# Claude Code — never track any Claude files
+.claude/
+CLAUDE.md
+PROMPT.log
 
 # Local binaries
 /ksc
@@ -50,9 +52,15 @@ result-*
 release/
 dist/
 
-# Logs (except PROMPT.log which tracks prompts)
+# Logs
 *.log
-!PROMPT.log
+
+# Local screen recordings / demo captures (this is a screencaster —
+# recordings are output artifacts, not source)
+*.mp4
+*.mkv
+*.webm
+*.mov
 
 # Temporary files
 /tmp/
