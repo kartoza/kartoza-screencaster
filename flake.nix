@@ -285,11 +285,17 @@
             #   export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/vdpau''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
             export VDPAU_DRIVER=va_gl
 
-            # Qt multimedia needs its GStreamer backend plugin + GStreamer plugins.
-            # Adds plugins-ugly (x264enc) and pipewire's GStreamer plugin
-            # (pipewiresrc) so `cr` can run the portal recording pipeline
-            # without the wrapProgram env that only the installed binary gets.
-            export QT_PLUGIN_PATH="${pkgs.qt6.qtmultimedia}/${pkgs.qt6.qtbase.qtPluginPrefix}''${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
+            # Point Qt at the nixpkgs plugin dirs so the unwrapped dev binary
+            # (`cr`, `./build/kartoza-screencaster`) loads the SAME plugins the
+            # wrapQtAppsHook-wrapped package gets — not a mismatched system Qt.
+            # Without qtwayland here, the Wayland platform + client-side
+            # decoration plugins fall back to the host's Qt, which renders the
+            # title-bar window menu in tofu (missing-glyph blocks). Ordered
+            # qtbase (platforms/styles/imageformats) → qtwayland (wayland +
+            # wayland-decoration-client) → qtsvg (svg icons) → qtmultimedia
+            # (GStreamer media backend, needed so `cr` runs the record pipeline
+            # without the wrapProgram env only the installed binary gets).
+            export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}:${pkgs.qt6.qtwayland}/${pkgs.qt6.qtbase.qtPluginPrefix}:${pkgs.qt6.qtsvg}/${pkgs.qt6.qtbase.qtPluginPrefix}:${pkgs.qt6.qtmultimedia}/${pkgs.qt6.qtbase.qtPluginPrefix}''${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
             export GST_PLUGIN_SYSTEM_PATH_1_0="${pkgs.gst_all_1.gst-plugins-base}/lib/gstreamer-1.0:${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0:${pkgs.gst_all_1.gst-plugins-bad}/lib/gstreamer-1.0:${pkgs.gst_all_1.gst-plugins-ugly}/lib/gstreamer-1.0:${pkgs.gst_all_1.gst-libav}/lib/gstreamer-1.0:${pkgs.pipewire}/lib/gstreamer-1.0''${GST_PLUGIN_SYSTEM_PATH_1_0:+:$GST_PLUGIN_SYSTEM_PATH_1_0}"
 
             # Ensure build directory exists

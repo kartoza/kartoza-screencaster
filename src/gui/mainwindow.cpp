@@ -2,6 +2,7 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QCursor>
+#include <QEvent>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHideEvent>
@@ -10,7 +11,6 @@
 #include <QSvgRenderer>
 #include <QTimer>
 #include <QVBoxLayout>
-#include "gui/canvas.h"
 
 /**
  * @brief A large circular stop button matching the systray recording icon.
@@ -327,11 +327,8 @@ void MainWindow::hideToTray() {
   m_hiddenToTray = true;
   m_savedGeometry = geometry();
 
-  // Suspend canvas previews
-  auto *canvas = m_recordPage->findChild<Canvas *>();
-  if (canvas && !m_recordPage->recorder()->isRecording()) {
-    canvas->suspendPreviews();
-  }
+  // Preview is no longer visible — stop the slurp/grim capture loop.
+  updatePreviewState();
 
   // On Wayland, hiding destroys the surface and you can't get it back.
   // Instead, minimize — compositor keeps the surface alive.
@@ -352,11 +349,8 @@ void MainWindow::showFromTray() {
   raise();
   activateWindow();
 
-  // Resume canvas previews
-  auto *canvas = m_recordPage->findChild<Canvas *>();
-  if (canvas && !m_recordPage->recorder()->isRecording()) {
-    canvas->resumePreviews();
-  }
+  // Preview is visible again — resume capture if the Record page is current.
+  updatePreviewState();
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
@@ -370,27 +364,41 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 
 void MainWindow::hideEvent(QHideEvent *event) {
   QMainWindow::hideEvent(event);
-  m_recordPage->suspendPreviews();
+  updatePreviewState();
 }
 
 void MainWindow::showEvent(QShowEvent *event) {
   QMainWindow::showEvent(event);
-  if (m_content->currentIndex() == PageRecord)
+  updatePreviewState();
+}
+
+void MainWindow::changeEvent(QEvent *event) {
+  QMainWindow::changeEvent(event);
+  // Minimising/restoring the window (via the WM or programmatically) does not
+  // fire hide/show events, so gate the preview capture on the window state too.
+  if (event->type() == QEvent::WindowStateChange)
+    updatePreviewState();
+}
+
+void MainWindow::updatePreviewState() {
+  bool previewVisible = isVisible() && !isMinimized() && !m_hiddenToTray &&
+                        m_content->currentIndex() == PageRecord;
+  // RecordPage::resumePreviews() is a no-op while recording, so the slurp
+  // capture stays off during a recording regardless of window state.
+  if (previewVisible)
     m_recordPage->resumePreviews();
+  else
+    m_recordPage->suspendPreviews();
 }
 
 void MainWindow::navigateTo(Page page) {
-  int prev = m_content->currentIndex();
   m_content->setCurrentIndex(page);
   m_btnRecord->setChecked(page == PageRecord);
   m_btnHistory->setChecked(page == PageHistory);
   m_btnSettings->setChecked(page == PageSettings);
 
-  // Suspend/resume canvas previews based on record page visibility
-  if (prev == PageRecord && page != PageRecord)
-    m_recordPage->suspendPreviews();
-  else if (prev != PageRecord && page == PageRecord)
-    m_recordPage->resumePreviews();
+  // Suspend/resume canvas previews based on record page visibility.
+  updatePreviewState();
 }
 
 #include "mainwindow.moc"
