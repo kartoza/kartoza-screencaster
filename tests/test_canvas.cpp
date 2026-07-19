@@ -1889,6 +1889,31 @@ private slots:
     QCOMPARE(after.h, before.h);      // height unchanged (free single-axis)
   }
 
+  void testItemExportMatchesFullExport() {
+    Canvas c;
+    int a = c.addTextBox("A");
+    c.setItemFont(a, "Serif");
+    c.setItemFontWeight(a, 700);
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "Cam"; e.device = "v0"; e.shape = 1;
+    e.x = 100; e.y = 100; e.w = 40; e.h = 30;
+    c.importItem(e);
+
+    auto all = c.exportItems();
+    for (int i = 0; i < all.size(); i++) {
+      auto one = c.itemExport(i);
+      QCOMPARE(one.type, all[i].type);
+      QCOMPARE(one.label, all[i].label);
+      QCOMPARE(one.x, all[i].x);
+      QCOMPARE(one.w, all[i].w);
+      QCOMPARE(one.fontFamily, all[i].fontFamily);
+      QCOMPARE(one.fontWeight, all[i].fontWeight);
+      QCOMPARE(one.textColor, all[i].textColor);
+    }
+    // Out of range yields a default snapshot, not a crash.
+    QCOMPARE(c.itemExport(999).label, QString());
+  }
+
   // =========================================================================
   // 19. FRAME RESCALE (regression guard for the shared rescale helper)
   // =========================================================================

@@ -545,20 +545,26 @@ QString Canvas::itemLabel(int index) const {
     return m_items[index].label;
 }
 
+Canvas::ItemExport Canvas::itemExport(int index) const {
+    if (index < 0 || index >= m_items.size()) return {};
+    const auto &item = m_items[index];
+    ItemExport e;
+    e.type = item.type; e.label = item.label;
+    e.x = item.x; e.y = item.y; e.w = item.w; e.h = item.h;
+    e.shape = item.shape; e.filePath = item.filePath; e.device = item.device;
+    e.gifLoop = item.gifLoop; e.gifLoopMax = item.gifLoopMax;
+    e.cropTop = item.cropTop; e.cropBottom = item.cropBottom;
+    e.cropLeft = item.cropLeft; e.cropRight = item.cropRight;
+    e.fontFamily = item.fontFamily; e.fontWeight = item.fontWeight;
+    e.textColor = item.textColor;
+    return e;
+}
+
 QList<Canvas::ItemExport> Canvas::exportItems() const {
     QList<ItemExport> result;
-    for (const auto &item : m_items) {
-        ItemExport e;
-        e.type = item.type; e.label = item.label;
-        e.x = item.x; e.y = item.y; e.w = item.w; e.h = item.h;
-        e.shape = item.shape; e.filePath = item.filePath; e.device = item.device;
-        e.gifLoop = item.gifLoop; e.gifLoopMax = item.gifLoopMax;
-        e.cropTop = item.cropTop; e.cropBottom = item.cropBottom;
-        e.cropLeft = item.cropLeft; e.cropRight = item.cropRight;
-        e.fontFamily = item.fontFamily; e.fontWeight = item.fontWeight;
-        e.textColor = item.textColor;
-        result.append(e);
-    }
+    result.reserve(m_items.size());
+    for (int i = 0; i < m_items.size(); i++)
+        result.append(itemExport(i));
     return result;
 }
 

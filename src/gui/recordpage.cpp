@@ -15,19 +15,30 @@
 #include <QColorDialog>
 #include <QProcess>
 #include <QFileInfo>
+#include <QHash>
 
 // Resolve a font file for the requested family + weight via fontconfig so the
 // merger can burn in the correct weight (FFmpeg drawtext has no weight option).
 // Returns empty on failure; the merger then falls back to the family name.
 static QString resolveFontFile(const QString &family, int weight) {
+    // Cache by family+weight so N text boxes sharing a font spawn fc-match once.
+    static QHash<QString, QString> cache;
+    const QString key = family + "#" + QString::number(weight);
+    auto it = cache.constFind(key);
+    if (it != cache.constEnd()) return it.value();
+
     QString pattern = family;
     if (weight >= 600) pattern += ":weight=bold";
     else if (weight <= 300) pattern += ":weight=light";
     QProcess p;
     p.start("fc-match", {"-f", "%{file}", pattern});
-    if (!p.waitForFinished(2000)) return {};
-    QString path = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
-    return QFileInfo::exists(path) ? path : QString();
+    QString result;
+    if (p.waitForFinished(2000)) {
+        QString path = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+        if (QFileInfo::exists(path)) result = path;
+    }
+    cache.insert(key, result);
+    return result;
 }
 
 RecordPage::RecordPage(QWidget *parent) : QWidget(parent) {
@@ -390,7 +401,7 @@ void RecordPage::setupUI() {
     // Refresh layer list and auto-save when items change
     connect(m_canvas, &Canvas::itemsChanged, this, [this]() {
         refreshLayerList();
-        if (!m_restoring) saveCanvasState();
+        saveCanvasState(); // self-guards on m_restoring
     });
 
     // Restore saved canvas state and populate preset list
@@ -508,17 +519,16 @@ void RecordPage::setupUI() {
     auto updateGifControls = [this, btnCont, btnOnce, btnNone, btnNTimes, loopCountSpin]() {
         int sel = m_canvas->selectedItem();
         if (sel < 0 || sel >= m_canvas->itemCount()) { m_gifLoopRow->hide(); return; }
-        auto items = m_canvas->exportItems();
-        if (sel >= items.size() || items[sel].type != 2 ||
-            !items[sel].filePath.toLower().endsWith(".gif")) { m_gifLoopRow->hide(); return; }
+        auto e = m_canvas->itemExport(sel);
+        if (e.type != 2 || !e.filePath.toLower().endsWith(".gif")) { m_gifLoopRow->hide(); return; }
 
         m_gifLoopRow->show();
-        int loop = items[sel].gifLoop;
+        int loop = e.gifLoop;
         btnCont->setChecked(loop == 2);
         btnOnce->setChecked(loop == 1);
         btnNone->setChecked(loop == 0);
         btnNTimes->setChecked(loop == 3);
-        loopCountSpin->setValue(items[sel].gifLoopMax);
+        loopCountSpin->setValue(e.gifLoopMax);
         loopCountSpin->setVisible(loop == 3);
     };
 
@@ -540,8 +550,7 @@ void RecordPage::setupUI() {
     connect(loopCountSpin, &QSpinBox::valueChanged, this, [this](int val) {
         int s = m_canvas->selectedItem();
         if (s >= 0) {
-            auto items = m_canvas->exportItems();
-            if (s < items.size() && items[s].gifLoop == 3) m_canvas->setItemGifLoop(s, 3, val);
+            if (m_canvas->itemExport(s).gifLoop == 3) m_canvas->setItemGifLoop(s, 3, val);
         }
     });
 
@@ -603,9 +612,8 @@ void RecordPage::setupUI() {
     connect(m_textColorBtn, &QPushButton::clicked, this, [this]() {
         int s = m_canvas->selectedItem();
         if (!m_canvas->isTextItem(s)) return;
-        auto items = m_canvas->exportItems();
-        QColor cur = (s < items.size() && !items[s].textColor.isEmpty())
-                         ? QColor(items[s].textColor) : QColor("#62A4C7");
+        QString tc = m_canvas->itemExport(s).textColor;
+        QColor cur = tc.isEmpty() ? QColor("#62A4C7") : QColor(tc);
         QColor c = QColorDialog::getColor(cur, this, "Text Colour");
         if (c.isValid()) m_canvas->setItemTextColor(s, c.name());
     });
@@ -843,6 +851,9 @@ void RecordPage::onRecorderError(const QString &error) {
 }
 
 void RecordPage::saveCanvasState() {
+    // Self-guard against re-entrant saves while a restore/preset-load is applying
+    // items (which emits itemsChanged). Defence-in-depth vs guarding at every call.
+    if (m_restoring) return;
     auto &cfg = Config::instance();
     cfg.canvasState = captureCurrentState();
     // Auto-save to active preset
@@ -1114,9 +1125,7 @@ void RecordPage::updateTextControls() {
     if (!m_textRow) return;
     int sel = m_canvas->selectedItem();
     if (!m_canvas->isTextItem(sel)) { m_textRow->hide(); return; }
-    auto items = m_canvas->exportItems();
-    if (sel >= items.size()) { m_textRow->hide(); return; }
-    const auto &e = items[sel];
+    auto e = m_canvas->itemExport(sel);
 
     m_syncingText = true;
     // Don't clobber the caret while the user is typing in the field.

@@ -185,6 +185,14 @@ public:
      */
     QList<ItemExport> exportItems() const;
     /**
+     * @brief Export a single item by index.
+     * @param index Zero-based item index.
+     * @return The item's export snapshot, or a default ItemExport if out of range.
+     *
+     * Lets callers read one item without copying the whole list.
+     */
+    ItemExport itemExport(int index) const;
+    /**
      * @brief Import and recreate a canvas item from an exported snapshot.
      * @param e The exported item data.
      */
