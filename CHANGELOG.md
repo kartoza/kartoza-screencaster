@@ -70,6 +70,13 @@ The FFmpeg `drawtext` filter interpolated the font family and font-file path
 without escaping, so a family or path containing `:`, `'` or `\` corrupted the
 filtergraph and the render failed. All values are now escaped consistently.
 
+#### Reopening the app restores crop and screen placement
+The startup state restore silently dropped item crops, the screen's saved
+position/size, and start/end sounds — so a layout that looked correct when saved
+came back subtly different after a restart (whereas loading it as a preset
+restored everything). Startup restore and preset load now share one code path,
+so a reopened session matches exactly what was saved.
+
 ### Changed
 
 #### Closing the window hides it to the system tray

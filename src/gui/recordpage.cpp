@@ -867,90 +867,11 @@ void RecordPage::restoreCanvasState() {
     auto &cfg = Config::instance();
     if (cfg.canvasState.items.isEmpty()) return;
 
+    // Startup restore shares the exact crop/position/sound-aware path used by
+    // preset load, so a reopened session restores identically to loading a preset.
     m_restoring = true;
-
-    // Restore mode
-    QString mode = cfg.canvasState.mode;
-    int modeId = 0;
-    if (mode == "vertical") modeId = 1;
-    else if (mode == "left_split") modeId = 2;
-    else if (mode == "right_split") modeId = 3;
-    m_canvas->setMode(modeId);
-    if (m_modeGroup->button(modeId))
-        m_modeGroup->button(modeId)->setChecked(true);
-
-    // Build sets of available devices
-    QSet<QString> availableWebcams;
-    for (const auto &dev : m_webcams) availableWebcams.insert(dev.device);
-    QSet<QString> availableMonitors;
-    for (const auto &mon : m_monitors) availableMonitors.insert(mon.name);
-
-    QRect fr = m_canvas->frameRect();
-
-    for (const auto &s : cfg.canvasState.items) {
-        int px = fr.x() + static_cast<int>(s.rx * fr.width());
-        int py = fr.y() + static_cast<int>(s.ry * fr.height());
-        int pw = static_cast<int>(s.rw * fr.width());
-        int ph = static_cast<int>(s.rh * fr.height());
-
-        if (s.type == "screen") {
-            bool matched = false;
-            for (const auto &mon : m_monitors) {
-                QString desc = mon.description.isEmpty() ? mon.name : mon.description;
-                if (s.label == "Screen: " + desc) {
-                    addScreen(mon);
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched && !m_monitors.isEmpty()) {
-                addScreen(m_monitors.first());
-            }
-        } else if (s.type == "webcam") {
-            if (!availableWebcams.contains(s.device)) continue;
-            Canvas::ItemExport e;
-            e.type = 1; e.label = s.label;
-            e.x = px; e.y = py; e.w = pw; e.h = ph;
-            e.device = s.device; e.shape = s.shape;
-            m_canvas->importItem(e);
-        } else if (s.type == "logo") {
-            if (s.filePath.isEmpty() || !QFile::exists(s.filePath)) continue;
-            Canvas::ItemExport e;
-            e.type = 2; e.label = s.label;
-            e.x = px; e.y = py; e.w = pw; e.h = ph;
-            e.filePath = s.filePath;
-            e.gifLoop = s.gifLoop; e.gifLoopMax = s.gifLoopMax;
-            m_canvas->importItem(e);
-        } else if (s.type == "title") {
-            Canvas::ItemExport e;
-            e.type = 3; e.label = s.label;
-            e.x = px; e.y = py; e.w = pw; e.h = ph;
-            e.fontFamily = s.fontFamily; e.fontWeight = s.fontWeight; e.textColor = s.textColor;
-            m_canvas->importItem(e);
-        }
-    }
-
-    // Restore audio and presenter
-    m_audioCheck->setChecked(cfg.canvasState.audioEnabled);
-    if (!cfg.canvasState.presenter.isEmpty())
-        m_presenterInput->setText(cfg.canvasState.presenter);
-
-    // Restore title color
-    if (!cfg.canvasState.titleColor.isEmpty()) {
-        cfg.titleColor = cfg.canvasState.titleColor;
-        m_canvas->setTitleColor(cfg.canvasState.titleColor);
-    }
-
-    // Restore title text into input field (from title item if present)
-    for (const auto &s : cfg.canvasState.items) {
-        if (s.type == "title" && !s.label.isEmpty()) {
-            m_titleInput->setText(s.label);
-            break;
-        }
-    }
-
+    buildCanvasFromState(cfg.canvasState, /*clearFirst=*/false);
     m_restoring = false;
-    refreshLayerList();
 }
 
 void RecordPage::refreshPresetList() {
@@ -1013,7 +934,11 @@ CanvasState RecordPage::captureCurrentState() {
 }
 
 void RecordPage::applyState(const CanvasState &state) {
-    m_canvas->clearAll();
+    buildCanvasFromState(state, /*clearFirst=*/true);
+}
+
+void RecordPage::buildCanvasFromState(const CanvasState &state, bool clearFirst) {
+    if (clearFirst) m_canvas->clearAll();
 
     // Restore mode
     int modeId = 0;

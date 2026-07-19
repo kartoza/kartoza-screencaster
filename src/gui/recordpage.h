@@ -172,6 +172,17 @@ private:
     CanvasState captureCurrentState();
     /** @brief Apply a CanvasState to the canvas (clear + reimport). */
     void applyState(const CanvasState &state);
+    /**
+     * @brief Rebuild the canvas and form fields from a persisted state.
+     * @param state The canvas state to apply.
+     * @param clearFirst If true, clear the canvas first (preset switch); if false,
+     *        assume an empty canvas (initial startup restore).
+     *
+     * Single source of truth shared by applyState() and restoreCanvasState() so
+     * both paths restore position, crop, sounds and text styling identically.
+     * Callers manage the m_restoring guard.
+     */
+    void buildCanvasFromState(const CanvasState &state, bool clearFirst);
 
     /** @brief Preset list widget showing saved presets. */
     QListWidget *m_presetList;
