@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Branded PDF handbook
+The full documentation is now available as a single Kartoza-branded PDF handbook,
+assembled from the mkdocs pages via pandoc + LaTeX with a Kartoza cover and
+palette. Build it with `nix run .#handbook-pdf` (or `ksc-dev docs pdf`); CI
+attaches `kartoza-screencaster-handbook.pdf` to every GitHub release.
+
 #### Multiple text boxes with per-box font, weight and colour (WYSIWYG)
 The canvas previously allowed a single title text item with one global colour and
 no font control. You can now add any number of independent text boxes (Add ▸ Text
