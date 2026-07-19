@@ -2,50 +2,95 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Push the branch
-git push origin v1.7.0
+# Push the v2.1.0 preview-pause / hidden-capture branch, open the tracking
+# issue, and create the PR (closing the issue on merge via `Fixes`).
+#
+# Run from a session where your SSH agent and `gh` auth are available:
+#   ./git.sh
 
-# Create PR
+BRANCH="feat/v2.1.0-preview-pause-and-hidden-capture"
+
+# 1. Push the branch and set upstream.
+git push -u origin "$BRANCH"
+
+# 2. Create the tracking issue (assigned to you) and capture its number.
+ISSUE=$(gh issue create \
+  --title "Live preview keeps capturing when hidden; add pause control" \
+  --label bug,enhancement \
+  --assignee @me \
+  --body "$(cat <<'BODY'
+## User story
+
+As a presenter, when I minimise the app or hide it to the tray, the live
+screen preview must stop capturing so `grim`/`slurp` is not running unseen —
+and I want a manual pause control on the preview.
+
+```mermaid
+flowchart LR
+  U[User] -->|minimise / switch tab / hide to tray| MW[MainWindow.updatePreviewState]
+  U -->|click preview centre| C[Canvas.togglePreviewPause]
+  MW --> T[Canvas capture timer]
+  C --> T
+  T -->|runs only when visible & not paused| G[grim/slurp]
+```
+
+## Success criteria
+
+- No `grim`/`slurp` process spawns while the window is minimised, hidden to
+  tray, or the Record tab is not current.
+- Recording is unaffected (capture stays off during recording).
+- Clicking the preview centre pauses/resumes; the centre icon reflects state
+  and is hidden on an actively-updating preview unless hovered.
+
+## Job size
+
+S
+BODY
+)" | grep -oE '[0-9]+$')
+
+echo "Opened issue #${ISSUE}"
+
+# 3. Create the PR (base main), closing the issue on merge.
 gh pr create \
   --base main \
-  --head v1.7.0 \
-  --title "v1.7.0: Fix X11 support, Qt-based monitor detection" \
-  --body "$(cat <<'BODY'
-## Summary
+  --head "$BRANCH" \
+  --assignee @me \
+  --title "feat(canvas): stop background capture when hidden and add pause toggle" \
+  --body "$(cat <<BODY
+Fixes #${ISSUE}
 
-- **Qt QScreen fallback for monitor detection** — works on X11, macOS, Windows without needing xrandr, hyprctl, or any external tools. Detects `Virtual-1` in QEMU/KVM VMs correctly.
-- **Qt-based screen preview on X11** — uses `QScreen::grabWindow()` instead of shelling out to ffmpeg for canvas preview screenshots. No external dependencies needed.
-- **Fixed xrandr regex** — handles extra text (rotation/reflection) between "connected" and geometry that Ubuntu 24.04 VMs produce.
-- **X11 recording fix** — removed guard that required non-empty monitor name, added stderr logging for ffmpeg x11grab debugging.
-- **Deb packaging** — Wayland tools (grim, wl-screenrec) moved to Suggests, not required.
+## What
 
-## Test plan
+- **Bug:** minimising / hiding to tray / leaving the Record tab left the live
+  preview capturing (\`grim\`/\`slurp\` spawned every 2s). Gating is now
+  centralised in \`MainWindow::updatePreviewState()\` and driven from
+  \`showEvent\`/\`hideEvent\`/a new \`changeEvent\` (catches \`WindowStateChange\`)/
+  \`navigateTo\`/\`hideToTray\`/\`showFromTray\`. Recording stays covered.
+- **Feature:** click-to-pause toggle in the preview centre (pause bars / play
+  triangle), hover-gated so it stays out of the way; manual pause survives
+  tab-switch and minimise.
+- **Dev fix:** dev-shell \`QT_PLUGIN_PATH\` now includes qtbase/qtwayland/qtsvg
+  (was qtmultimedia only), so dev runs render the title-bar window menu
+  correctly instead of tofu. The wrapped package was never affected.
+- Version bumped to 2.1.0; CHANGELOG updated.
 
-- [ ] Build and install .deb on Ubuntu 24.04 X11 VM
-- [ ] Verify screen appears in Add Element > Screen menu with name (e.g. "Virtual-1")
-- [ ] Verify canvas shows live screen preview
-- [ ] Verify recording works on X11
-- [ ] Verify existing Wayland functionality still works
+## Test
 
-## Includes all v1.6.0 changes
+- \`test_canvas\` and \`test_history\` pass. \`test_pipeline\` /
+  \`test_merger_exhaustive\` fail only on ffprobe in the sandbox (pre-existing,
+  unrelated to this change).
+- Manual: minimise while previewing → no new \`grim\` (\`pgrep -a grim\`); click
+  the preview → pause/resume.
 
-- YouTube integration (OAuth2, upload with metadata, playlist selection)
-- Kartoza colour scheme (replaced Catppuccin)
-- History page redesign (tree view, thumbnails, editable titles, rename)
-- Recording in-progress page with stop circle
-- Countdown numbers in systray icon
-- Preset rename by double-click
-- Cancel processing button
-- Consistent icon buttons throughout
-
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
 BODY
 )"
 
 echo ""
-echo "PR created! Merge it, then run:"
+echo "PR created. After it merges, cut the release tag:"
 echo ""
 echo "  git checkout main && git pull"
-echo "  git tag -a v1.7.0 -m 'Release v1.7.0'"
-echo "  git push origin v1.7.0"
+echo "  git tag -a v2.1.0 -m 'Release v2.1.0'"
+echo "  git push origin v2.1.0"
 echo ""
-echo "That will trigger the release build."
+echo "That triggers the release build."

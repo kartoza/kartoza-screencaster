@@ -110,3 +110,6 @@ moc_*.cpp
 git.sh
 log.txt
 docs/superpowers
+claude.sh
+claude.out
+git.sh
