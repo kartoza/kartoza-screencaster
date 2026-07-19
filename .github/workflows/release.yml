@@ -246,10 +246,30 @@ jobs:
           name: rpm-package
           path: '*.rpm'
 
+  handbook-pdf:
+    name: Build PDF handbook
+    runs-on: ubuntu-latest
+    needs: version-check
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # docs-pdf reads git metadata for revision dates
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+      - name: Build handbook PDF
+        run: nix run .#handbook-pdf -- kartoza-screencaster-handbook.pdf
+      - uses: actions/upload-artifact@v4
+        with:
+          name: handbook-pdf
+          path: kartoza-screencaster-handbook.pdf
+
   upload-release:
     name: Upload Release Assets
     runs-on: ubuntu-latest
-    needs: [build-linux, build-macos, build-windows, build-deb, build-rpm]
+    needs: [build-linux, build-macos, build-windows, build-deb, build-rpm, handbook-pdf]
     if: github.event_name == 'release'
     steps:
       - uses: actions/download-artifact@v4
@@ -263,6 +283,7 @@ jobs:
           cp artifacts/windows-x86_64/*.zip release/
           cp artifacts/deb-package/*.deb release/
           cp artifacts/rpm-package/*.rpm release/
+          cp artifacts/handbook-pdf/*.pdf release/
           cd release && sha256sum * > checksums.txt
       - uses: softprops/action-gh-release@v2
         with:

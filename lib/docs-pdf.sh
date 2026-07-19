@@ -67,6 +67,7 @@ transform() {
       -e 's#!\[[^]]*\]\(https?://[^)]*\)##g' \
       -e 's/\{[[:space:]]*\.[a-z][^}]*\}//g' \
       -e 's/[▸►]/>/g' -e 's/✓/[x]/g' -e 's/✗/[ ]/g' \
+      -e 's/[─━┈┄╌]/-/g' -e 's/[│┃┊┆╎]/|/g' -e 's/[├└┌┐┘┬┴┼┤╭╮╯╰]/+/g' \
       -e 's/💗/love/g' -e 's/🎬//g' -e 's/🤖//g'
 }
 
@@ -80,8 +81,10 @@ for p in "${PAGES[@]}"; do
   printf '\n\n\\newpage\n\n' >> "$COMBINED"
 done
 
-# Guarantee valid UTF-8 for pandoc (drop any stray invalid bytes).
-iconv -f UTF-8 -t UTF-8 -c "$COMBINED" > "$COMBINED.clean" && mv "$COMBINED.clean" "$COMBINED"
+# Bulletproof against any remaining exotic glyph in code blocks (box-drawing,
+# emoji, symbols) that pdflatex can't typeset: transliterate to ASCII. Prose
+# punctuation (em-dashes, curly quotes) degrades gracefully to ASCII equivalents.
+iconv -f UTF-8 -t ASCII//TRANSLIT "$COMBINED" 2>/dev/null > "$COMBINED.clean" && mv "$COMBINED.clean" "$COMBINED" || true
 
 # Pre-render any SVGs referenced from the docs to PDF for crisp vector embedding.
 if command -v rsvg-convert >/dev/null; then
