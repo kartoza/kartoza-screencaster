@@ -44,10 +44,11 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
         m_pendingScreenPath.clear();
         m_mutex.unlock();
 
+        bool changed = false;
         if (!path.isEmpty()) {
             QPixmap pix(path);
             QFile::remove(path);
-            if (!pix.isNull()) m_screenPixmap = pix;
+            if (!pix.isNull()) { m_screenPixmap = pix; changed = true; }
         }
 
         // Check webcam frames — use index-based loop (safe for QList modification)
@@ -60,10 +61,13 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
                 }
                 m_items[i].webcamNewFrame = false;
                 m_mutex.unlock();
+                changed = true;
             }
         }
 
-        update();
+        // Only repaint when new content actually arrived — avoids a repaint every
+        // 2 s on an idle canvas.
+        if (changed) update();
 
         // Capture screen in background
         QThreadPool::globalInstance()->start([this]() { captureScreen(); });
@@ -106,13 +110,21 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
 Canvas::~Canvas() {
     for (int i = 0; i < m_items.size(); i++) {
         stopWebcamCapture(i);
-        if (m_items[i].movie) { m_items[i].movie->stop(); delete m_items[i].movie; }
+        if (m_items[i].movie) {
+            // Disconnect before delete: a queued frameChanged into a half-destroyed
+            // Canvas would be a use-after-free (mirrors removeItem/clearAll).
+            m_items[i].movie->disconnect();
+            m_items[i].movie->stop();
+            delete m_items[i].movie;
+        }
     }
 }
 
 void Canvas::setMonitor(const MonitorInfo &mon) {
     m_monitor = mon;
+    m_mutex.lock();
     m_monitorName = mon.name;
+    m_mutex.unlock();
 
     bool hasScreen = false;
     for (auto &item : m_items) {
@@ -202,38 +214,50 @@ void Canvas::setItemTextColor(int index, const QString &color) {
     update();
 }
 
+int Canvas::screenItemIndex() const {
+    for (int i = 0; i < m_items.size(); i++)
+        if (m_items[i].type == 0) return i;
+    return -1;
+}
+
+void Canvas::rescaleItemsToFrame(const QRect &oldFrame, const QRect &newFrame) {
+    if (!oldFrame.isValid() || !newFrame.isValid() ||
+        oldFrame.width() <= 0 || oldFrame.height() <= 0)
+        return;
+    for (auto &item : m_items) {
+        if (item.type == 0) continue; // screen handled by the caller
+        double relX = double(item.x - oldFrame.x()) / oldFrame.width();
+        double relY = double(item.y - oldFrame.y()) / oldFrame.height();
+        double relW = double(item.w) / oldFrame.width();
+        double relH = double(item.h) / oldFrame.height();
+        item.x = newFrame.x() + int(relX * newFrame.width());
+        item.y = newFrame.y() + int(relY * newFrame.height());
+        item.w = std::max(10, int(relW * newFrame.width()));
+        if (item.type == 1) {
+            item.h = (item.shape == 0) ? item.w : item.w * 3 / 4;
+        } else if (item.type == 2 && !item.pixmap.isNull() && item.pixmap.width() > 0) {
+            item.h = std::max(10, item.w * item.pixmap.height() / item.pixmap.width());
+        } else {
+            item.h = std::max(10, int(relH * newFrame.height()));
+        }
+    }
+}
+
 void Canvas::setMode(int mode) {
     QRect oldFrame = frameRect();
     m_mode = mode;
     QRect newFrame = frameRect();
 
-    // Rescale items to new frame
     if (oldFrame.isValid() && newFrame.isValid() &&
         oldFrame.width() > 0 && oldFrame.height() > 0) {
+        // Screen item recentres to the full canvas when the mode changes.
         for (auto &item : m_items) {
             if (item.type == 0) {
-                // Reset screen to centered when mode changes
-                item.x = m_cw/2;
-                item.y = m_ch/2;
-                item.w = m_cw;
-                item.h = m_ch;
-                continue;
-            }
-            double relX = double(item.x - oldFrame.x()) / oldFrame.width();
-            double relY = double(item.y - oldFrame.y()) / oldFrame.height();
-            double relW = double(item.w) / oldFrame.width();
-            double relH = double(item.h) / oldFrame.height();
-            item.x = newFrame.x() + int(relX * newFrame.width());
-            item.y = newFrame.y() + int(relY * newFrame.height());
-            item.w = std::max(10, int(relW * newFrame.width()));
-            if (item.type == 1) {
-                item.h = (item.shape == 0) ? item.w : item.w * 3 / 4;
-            } else if (item.type == 2 && !item.pixmap.isNull() && item.pixmap.width() > 0) {
-                item.h = std::max(10, item.w * item.pixmap.height() / item.pixmap.width());
-            } else {
-                item.h = std::max(10, int(relH * newFrame.height()));
+                item.x = m_cw/2; item.y = m_ch/2;
+                item.w = m_cw; item.h = m_ch;
             }
         }
+        rescaleItemsToFrame(oldFrame, newFrame);
     }
     m_lastFrameRect = newFrame;
     update();
@@ -362,7 +386,9 @@ void Canvas::removeItem(int index) {
     m_items.removeAt(index);
     if (wasScreen) {
         m_screenPixmap = QPixmap(); // Clear cached screenshot
+        m_mutex.lock();
         m_monitorName.clear();
+        m_mutex.unlock();
     }
     if (m_selected >= m_items.size()) m_selected = -1;
     emit itemsChanged();
@@ -433,9 +459,7 @@ void Canvas::togglePreviewPause() {
 }
 
 bool Canvas::hasScreenItem() const {
-    for (const auto &item : m_items)
-        if (item.type == 0) return true;
-    return false;
+    return screenItemIndex() >= 0;
 }
 
 QRect Canvas::previewToggleRect() const {
@@ -620,31 +644,30 @@ void Canvas::startWebcamCapture(int itemIdx) {
                         "-vf", QString("scale=%1:%2").arg(WC_W).arg(WC_H),
                         "-f", "rawvideo", "-pix_fmt", "rgb24", "-an", "pipe:1"};
 
-    auto *accum = new QByteArray();
     QProcess *proc = m_items[itemIdx].webcamProc;
 
-    connect(proc, &QProcess::readyReadStandardOutput, this, [this, device, accum]() {
+    // Read from the emitting process directly and accumulate into the item's own
+    // buffer — no heap allocation and no manual cross-lambda lifetime to manage.
+    connect(proc, &QProcess::readyReadStandardOutput, this, [this, device, proc]() {
         // Find item by device name (safe even if items reordered)
         int idx = -1;
         for (int i = 0; i < m_items.size(); i++) {
             if (m_items[i].device == device && m_items[i].type == 1) { idx = i; break; }
         }
-        if (idx < 0 || !m_items[idx].webcamProc) return;
+        if (idx < 0 || m_items[idx].webcamProc != proc) return; // stale/restarted
 
-        accum->append(m_items[idx].webcamProc->readAllStandardOutput());
-        while (accum->size() >= WC_FRAME_SIZE) {
+        QByteArray &accum = m_items[idx].webcamAccum;
+        accum.append(proc->readAllStandardOutput());
+        while (accum.size() >= WC_FRAME_SIZE) {
             m_mutex.lock();
             if (m_items[idx].webcamBuf.size() >= WC_FRAME_SIZE) {
-                memcpy(m_items[idx].webcamBuf.data(), accum->constData(), WC_FRAME_SIZE);
+                memcpy(m_items[idx].webcamBuf.data(), accum.constData(), WC_FRAME_SIZE);
                 m_items[idx].webcamNewFrame = true;
             }
             m_mutex.unlock();
-            accum->remove(0, WC_FRAME_SIZE);
+            accum.remove(0, WC_FRAME_SIZE);
         }
     });
-
-    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, [accum]() { delete accum; });
 
     proc->start("ffmpeg", args);
 }
@@ -660,20 +683,27 @@ void Canvas::stopWebcamCapture(int idx) {
     item.webcamProc->waitForFinished(2000);
     item.webcamProc->deleteLater();
     item.webcamProc = nullptr;
+    item.webcamAccum.clear(); // next capture starts frame-aligned
 }
 
 // === Screen capture ===
 
 void Canvas::captureScreen() {
-    if (m_monitorName.isEmpty()) return;
-    QString path = QDir::tempPath() + "/kartoza-canvas-" + m_monitorName + ".png";
+    // captureScreen runs on a thread-pool thread; m_monitorName is written on the
+    // UI thread (setMonitor/removeItem). Snapshot it under the mutex once so the
+    // rest of the function works on a stable, race-free local copy.
+    m_mutex.lock();
+    QString monitorName = m_monitorName;
+    m_mutex.unlock();
+    if (monitorName.isEmpty()) return;
+    QString path = QDir::tempPath() + "/kartoza-canvas-" + monitorName + ".png";
 
 #if defined(Q_OS_LINUX)
     if (Platform::isWayland()) {
         if (Platform::supportsWlrCapture()) {
             // wlroots compositors (Hyprland, Sway, COSMIC, …) — use grim.
             QProcess proc;
-            proc.start("grim", {"-o", m_monitorName, "-t", "png", "-l", "0", path});
+            proc.start("grim", {"-o", monitorName, "-t", "png", "-l", "0", path});
             if (proc.waitForFinished(5000) && proc.exitCode() == 0) {
                 m_mutex.lock();
                 m_pendingScreenPath = path;
@@ -703,10 +733,10 @@ void Canvas::captureScreen() {
 
     // X11 / macOS / Windows: use Qt's screen grab (works without external tools)
     // QScreen::grabWindow must be called on the main thread, so we use invokeMethod
-    QMetaObject::invokeMethod(this, [this, path]() {
+    QMetaObject::invokeMethod(this, [this, path, monitorName]() {
         QScreen *targetScreen = nullptr;
         for (auto *screen : QApplication::screens()) {
-            if (screen->name() == m_monitorName) {
+            if (screen->name() == monitorName) {
                 targetScreen = screen;
                 break;
             }
@@ -769,35 +799,18 @@ void Canvas::resizeEvent(QResizeEvent *event) {
     QRect newFrame = frameRect();
     if (m_lastFrameRect.isValid() && newFrame.isValid() &&
         m_lastFrameRect.width() > 0 && m_lastFrameRect.height() > 0) {
+        // Screen item rescales its position proportionally and fills the frame.
         for (auto &item : m_items) {
             if (item.type == 0) {
-                // Rescale screen item position proportionally
                 double relX = double(item.x) / m_lastFrameRect.width();
                 double relY = double(item.y) / m_lastFrameRect.height();
                 item.x = int(relX * newFrame.width());
                 item.y = int(relY * newFrame.height());
                 item.w = newFrame.width();
                 item.h = newFrame.height();
-                continue;
-            }
-
-            // Convert from old frame-relative to new frame-relative
-            double relX = double(item.x - m_lastFrameRect.x()) / m_lastFrameRect.width();
-            double relY = double(item.y - m_lastFrameRect.y()) / m_lastFrameRect.height();
-            double relW = double(item.w) / m_lastFrameRect.width();
-            double relH = double(item.h) / m_lastFrameRect.height();
-
-            item.x = newFrame.x() + int(relX * newFrame.width());
-            item.y = newFrame.y() + int(relY * newFrame.height());
-            item.w = std::max(10, int(relW * newFrame.width()));
-            if (item.type == 1) {
-                item.h = (item.shape == 0) ? item.w : item.w * 3 / 4;
-            } else if (item.type == 2 && !item.pixmap.isNull() && item.pixmap.width() > 0) {
-                item.h = std::max(10, item.w * item.pixmap.height() / item.pixmap.width());
-            } else {
-                item.h = std::max(10, int(relH * newFrame.height()));
             }
         }
+        rescaleItemsToFrame(m_lastFrameRect, newFrame);
     }
     m_lastFrameRect = newFrame;
 
@@ -1657,10 +1670,7 @@ void Canvas::drawScreen(QPainter &painter) {
     }
 
     // Draw selection highlight and crop handles on screen item if selected
-    int screenIdx = -1;
-    for (int i = 0; i < m_items.size(); i++) {
-        if (m_items[i].type == 0) { screenIdx = i; break; }
-    }
+    int screenIdx = screenItemIndex();
     if (screenIdx >= 0 && (screenIdx == m_selected || screenIdx == m_dragging)) {
         painter.setPen(QPen(QColor(232, 184, 74), 2, Qt::DashLine));
         painter.setBrush(Qt::NoBrush);

@@ -269,12 +269,24 @@ private:
         // Webcam live capture fields
         QProcess *webcamProc = nullptr; /**< ffmpeg process for live webcam capture. */
         QByteArray webcamBuf;           /**< Raw frame buffer from webcam. */
+        QByteArray webcamAccum;         /**< Partial-frame accumulation buffer from the pipe. */
         QPixmap webcamPixmap;           /**< Decoded webcam frame pixmap. */
         bool webcamNewFrame = false;    /**< Flag indicating a new frame is available. */
     };
 
     /** @brief Capture a screenshot of the selected monitor. */
     void captureScreen();
+    /**
+     * @brief Rescale every non-screen item from one frame rect to another.
+     * @param oldFrame The frame the items were laid out against.
+     * @param newFrame The frame to remap them into.
+     *
+     * Shared by setMode() and resizeEvent(); callers handle the screen item
+     * (type 0) themselves since they differ (recentre vs proportional rescale).
+     */
+    void rescaleItemsToFrame(const QRect &oldFrame, const QRect &newFrame);
+    /** @brief Return the index of the screen item (type 0), or -1 if none. */
+    int screenItemIndex() const;
     /** @brief Start or stop the refresh timer to match the current gating flags. */
     void updateTimerState();
     /** @brief Whether a screen-capture layer currently exists on the canvas. */

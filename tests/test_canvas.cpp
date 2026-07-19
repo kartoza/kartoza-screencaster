@@ -1888,6 +1888,65 @@ private slots:
     QVERIFY(after.w > before.w);      // width changed
     QCOMPARE(after.h, before.h);      // height unchanged (free single-axis)
   }
+
+  // =========================================================================
+  // 19. FRAME RESCALE (regression guard for the shared rescale helper)
+  // =========================================================================
+
+  // A webcam keeps its frame-relative centre position and 4:3 aspect when the
+  // widget is resized. Guards the resizeEvent rescale path.
+  void testResizePreservesOverlayFrameRelativePosition() {
+    Canvas c;
+    c.resize(800, 450);
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 2; // rectangle 4:3
+    QRect fr0 = c.frameRect();
+    e.x = fr0.x() + fr0.width() / 4;
+    e.y = fr0.y() + fr0.height() / 2;
+    e.w = 80; e.h = 60;
+    c.importItem(e);
+
+    auto b = c.exportItems()[0];
+    double relX0 = double(b.x - fr0.x()) / fr0.width();
+    double relY0 = double(b.y - fr0.y()) / fr0.height();
+
+    c.resize(1200, 675); // larger, still ~16:9
+    QRect fr1 = c.frameRect();
+    auto a = c.exportItems()[0];
+    double relX1 = double(a.x - fr1.x()) / fr1.width();
+    double relY1 = double(a.y - fr1.y()) / fr1.height();
+
+    QVERIFY(std::abs(relX0 - relX1) < 0.03);
+    QVERIFY(std::abs(relY0 - relY1) < 0.03);
+    // Rectangle webcam keeps 4:3.
+    QVERIFY(std::abs(double(a.w) / a.h - 4.0 / 3.0) < 0.1);
+  }
+
+  // Changing mode recentres the screen item and rescales overlays into the new
+  // frame. Guards the setMode rescale path.
+  void testModeChangeRecentresScreenAndKeepsOverlayInFrame() {
+    Canvas c;
+    c.resize(800, 450);
+    MonitorInfo mon; mon.name = "M0"; mon.description = "Mon"; mon.width = 1920; mon.height = 1080;
+    c.setMonitor(mon); // adds a screen item
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "C"; e.device = "v0"; e.shape = 1;
+    QRect fr0 = c.frameRect();
+    e.x = fr0.x() + fr0.width() / 2; e.y = fr0.y() + fr0.height() / 2;
+    e.w = 60; e.h = 60;
+    c.importItem(e);
+
+    c.setMode(1); // vertical
+    QRect fr1 = c.frameRect();
+
+    // Overlay stays within the new frame bounds.
+    auto items = c.exportItems();
+    for (const auto &it : items) {
+      if (it.type != 1) continue;
+      QVERIFY(it.x >= fr1.x() && it.x <= fr1.x() + fr1.width());
+      QVERIFY(it.y >= fr1.y() && it.y <= fr1.y() + fr1.height());
+    }
+  }
 };
 
 QTEST_MAIN(TestCanvas)
