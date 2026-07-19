@@ -170,7 +170,7 @@ void RecordPage::setupUI() {
 
     m_layerList = new QListWidget;
     m_layerList->setMaximumHeight(120);
-    m_layerList->setStyleSheet("QListWidget { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #3d3d56; }");
+    m_layerList->setStyleSheet("QListWidget { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #3d3d56; color: #e8e8ec; }");
     connect(m_layerList, &QListWidget::currentRowChanged, m_canvas, &Canvas::setSelectedItem);
     leftLayout->addWidget(m_layerList);
 
@@ -219,7 +219,7 @@ void RecordPage::setupUI() {
 
     m_presetList = new QListWidget;
     m_presetList->setMaximumHeight(80);
-    m_presetList->setStyleSheet("QListWidget { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #3d3d56; } QListWidget QLineEdit { background: #3d3d56; color: #e8e8ec; border: 1px solid #569FC6; padding: 2px; }");
+    m_presetList->setStyleSheet("QListWidget { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #3d3d56; color: #e8e8ec; } QListWidget QLineEdit { background: #3d3d56; color: #e8e8ec; border: 1px solid #569FC6; padding: 2px; }");
     leftLayout->addWidget(m_presetList);
 
     // Name input row (hidden until "New" is clicked)
@@ -401,15 +401,29 @@ void RecordPage::setupUI() {
     }
 
     auto *webcamMenu = addMenu->addMenu("Webcam");
-    for (const auto &dev : m_webcams) {
-        auto *devMenu = webcamMenu->addMenu(dev.name);
-        auto *roundAction = devMenu->addAction("Round bubble");
-        connect(roundAction, &QAction::triggered, this, [this, dev]() { m_canvas->addWebcam(dev.device, dev.name, 0); });
-        auto *squareAction = devMenu->addAction("Square");
-        connect(squareAction, &QAction::triggered, this, [this, dev]() { m_canvas->addWebcam(dev.device, dev.name, 1); });
-        auto *rectAction = devMenu->addAction("Rectangle");
-        connect(rectAction, &QAction::triggered, this, [this, dev]() { m_canvas->addWebcam(dev.device, dev.name, 2); });
-    }
+    // Re-detect on every open so a stale/empty startup scan (the app can launch
+    // into the tray before devices settle) never permanently hides a camera,
+    // and hot-plugged cameras appear without restarting the app.
+    auto populateWebcamMenu = [this, webcamMenu]() {
+        webcamMenu->clear();
+        m_webcams = Webcam::detectAll();
+        if (m_webcams.isEmpty()) {
+            auto *none = webcamMenu->addAction("No webcams detected");
+            none->setEnabled(false);
+            return;
+        }
+        for (const auto &dev : m_webcams) {
+            auto *devMenu = webcamMenu->addMenu(dev.name);
+            auto *roundAction = devMenu->addAction("Round bubble");
+            connect(roundAction, &QAction::triggered, this, [this, dev]() { m_canvas->addWebcam(dev.device, dev.name, 0); });
+            auto *squareAction = devMenu->addAction("Square");
+            connect(squareAction, &QAction::triggered, this, [this, dev]() { m_canvas->addWebcam(dev.device, dev.name, 1); });
+            auto *rectAction = devMenu->addAction("Rectangle");
+            connect(rectAction, &QAction::triggered, this, [this, dev]() { m_canvas->addWebcam(dev.device, dev.name, 2); });
+        }
+    };
+    populateWebcamMenu();
+    connect(webcamMenu, &QMenu::aboutToShow, this, populateWebcamMenu);
 
     auto *logoAction = addMenu->addAction("Logo");
     connect(logoAction, &QAction::triggered, this, [this]() {

@@ -23,6 +23,23 @@ frame's half-width/half-height centre lines and to **other objects' edges and
 centres**, with a guide line drawn while a snap is engaged. Holding **Shift**
 disables snapping for free placement.
 
+### Fixed
+
+#### Webcams no longer disappear from the Add menu
+Webcam enumeration was run once at startup — before the window was shown, and
+possibly before devices had settled — then cached for the whole session, and it
+relied on the fragile sysfs `index` attribute to pick a camera's capture node
+(which dropped valid cameras on modern multi-node UVC devices). The Add ▸ Webcam
+menu now re-detects every time it opens, and Linux detection probes each
+`/dev/videoN` with `VIDIOC_QUERYCAP`, keeping only true `VIDEO_CAPTURE` nodes and
+de-duplicating by physical device (`bus_info`). Metadata-only nodes are excluded
+and unopenable nodes are skipped rather than fatal.
+
+#### Selected preset/layer text stays legible
+The Layers and Presets lists set a dark selection background but left the
+selected-row text colour to Qt's palette default, rendering dark text on the dark
+highlight. Both lists now keep the light text colour when selected.
+
 _Work toward 2.2.0._
 
 ## [2.1.0] - 2026-07-18
