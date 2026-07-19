@@ -23,6 +23,54 @@ QString outputFileName(int number, const QString &title, const QString &suffix) 
     return name + ".mp4";
 }
 
+// Escape a string for use inside a single-quoted FFmpeg filter value (family,
+// fontfile path, etc.): backslash, colon (option separator) and single quote.
+static QString escapeFilterValue(const QString &in) {
+    QString s = in;
+    s.replace("\\", "\\\\");
+    s.replace(":", "\\:");
+    s.replace("'", "\\'");
+    return s;
+}
+
+// Escape a string for an FFmpeg drawtext text='...' value: as above plus '%'
+// (drawtext expands %-sequences).
+static QString escapeDrawtext(const QString &in) {
+    QString s = escapeFilterValue(in);
+    s.replace("%", "\\%");
+    return s;
+}
+
+void appendTextBoxFilters(QString &filter, QString &current, int &vIdx,
+                          const QVector<RecordingOptions::TextBox> &boxes,
+                          int outW, int outH) {
+    for (const auto &tb : boxes) {
+        if (tb.text.trimmed().isEmpty()) continue;
+
+        // Font size derives from the box height, matching the canvas (visH*2/3).
+        int fontSize = qMax(10, static_cast<int>(tb.relH * outH * 2.0 / 3.0));
+        int x = static_cast<int>(tb.relX * outW);
+        int y = static_cast<int>(tb.relY * outH);
+        QString color = tb.color.isEmpty() ? QStringLiteral("white") : tb.color;
+
+        // Prefer a resolved font file (carries the requested weight); otherwise
+        // hand the family name to fontconfig.
+        QString fontSel;
+        if (!tb.fontFile.isEmpty()) {
+            fontSel = QString("fontfile='%1'").arg(escapeFilterValue(tb.fontFile));
+        } else {
+            fontSel = QString("font='%1'").arg(escapeFilterValue(tb.fontFamily));
+        }
+
+        QString tag = QString("v%1").arg(++vIdx);
+        filter += QString("%1drawtext=%2:text='%3':fontsize=%4:fontcolor=%5:x=%6:y=%7[%8];")
+                      .arg(current, fontSel, escapeDrawtext(tb.text),
+                           QString::number(fontSize), color,
+                           QString::number(x), QString::number(y), tag);
+        current = QString("[%1]").arg(tag);
+    }
+}
+
 void appendLogoInputArgs(QStringList &args, const RecordingOptions::LogoOpts &logo) {
     if (logo.isGif()) {
         if (logo.gifLoop == 1) {
@@ -281,16 +329,22 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
         }
     }
 
-    bool needsFilter = !logoInputs.isEmpty() || mergeWebcam;
-    // Check if any logo inputs are actually valid
+    // A filter graph is needed only if there's a real logo or a webcam to overlay.
     bool hasAnyLogo = false;
     for (int idx : logoInputs) { if (idx >= 0) { hasAnyLogo = true; break; } }
-    needsFilter = hasAnyLogo || mergeWebcam;
+    bool needsFilter = hasAnyLogo || mergeWebcam;
 
     // Check if screen needs cropping
     bool needsCrop = in.opts.screenCropTop > 0 || in.opts.screenCropBottom > 0 ||
                      in.opts.screenCropLeft > 0 || in.opts.screenCropRight > 0;
     needsFilter = needsFilter || needsCrop;
+
+    // Text boxes also require a filter graph (drawtext) in landscape mode.
+    bool hasTextBoxes = false;
+    for (const auto &tb : in.opts.textBoxes) {
+        if (!tb.text.trimmed().isEmpty()) { hasTextBoxes = true; break; }
+    }
+    needsFilter = needsFilter || hasTextBoxes;
 
     if (needsFilter) {
         QString filter;
@@ -326,6 +380,9 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
         }
         if (mergeWebcam) appendWebcamFilter(filter, current, vIdx, webcamInput, in.opts, cw, ch);
 
+        // Text boxes (WYSIWYG) rendered on top at their relative positions.
+        appendTextBoxFilters(filter, current, vIdx, in.opts.textBoxes, cw, ch);
+
         finalizeFilter(filter);
         args << "-filter_complex" << filter << "-map" << "[outv]";
         if (hasAudio) args << "-map" << QString("%1:a").arg(audioInput);
@@ -346,11 +403,6 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
 QStringList buildVerticalArgs(const MergeInputs &in, const QString &outputFile) {
     bool hasAudio = !in.audioFile.isEmpty() && QFile::exists(in.audioFile);
     bool hasWebcam = !in.webcamFile.isEmpty() && QFile::exists(in.webcamFile);
-
-    QString titleColor = in.opts.titleColor.isEmpty() ? "white" : in.opts.titleColor;
-    QString escapedTitle = in.opts.title;
-    escapedTitle.replace("'", "\\'");
-    escapedTitle.replace(":", "\\:");
 
     QStringList args;
     args << "-y" << "-i" << in.screenFile;
@@ -424,9 +476,20 @@ QStringList buildVerticalArgs(const MergeInputs &in, const QString &outputFile) 
         current = QString("[v%1]").arg(vIdx);
     }
 
-    f += QString("%1drawtext=text='%2':fontsize=36:fontcolor=%3:"
-        "x=(w-text_w)/2:y=1850[outv]")
-        .arg(current, escapedTitle, titleColor);
+    // Text boxes (WYSIWYG) — each drawn with its own font/weight/colour/position.
+    // Backward compatibility: a recording that carries only a legacy title (no
+    // text boxes) still gets one centred title box near the bottom, matching the
+    // previous single-drawtext behaviour.
+    QVector<RecordingOptions::TextBox> boxes = in.opts.textBoxes;
+    if (boxes.isEmpty() && !in.opts.title.trimmed().isEmpty()) {
+        RecordingOptions::TextBox tb;
+        tb.text = in.opts.title;
+        tb.color = in.opts.titleColor.isEmpty() ? "white" : in.opts.titleColor;
+        tb.relX = 0.28; tb.relY = 0.96; tb.relW = 0.44; tb.relH = 0.03;
+        boxes.append(tb);
+    }
+    appendTextBoxFilters(f, current, vIdx, boxes, 1080, 1920);
+    finalizeFilter(f);
 
     args << "-filter_complex" << f << "-map" << "[outv]";
     if (hasAudio) {

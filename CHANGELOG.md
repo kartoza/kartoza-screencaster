@@ -5,6 +5,112 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-19
+
+### Added
+
+#### Multiple text boxes with per-box font, weight and colour (WYSIWYG)
+The canvas previously allowed a single title text item with one global colour and
+no font control. You can now add any number of independent text boxes (Add ▸ Text
+Box), each with its own text, **font family**, **weight** (Light/Normal/Bold) and
+**colour**, edited inline from a controls row that appears when a text box is
+selected. Font **size** continues to derive from the box height (resize the box to
+scale the text), and the artificial size ceiling is gone. Every text box is burned
+into the final recording — in both landscape and vertical layouts — with its font,
+weight, colour and position, so the output matches the preview. Font weight is
+resolved to a concrete font file via fontconfig so FFmpeg renders the requested
+weight. Per-box font/weight/colour persist across restarts and in presets; legacy
+single-title recordings still render their title unchanged.
+
+#### Aspect-locked handle resize with Alt-to-crop switching
+Dragging a selected item's corner handles now scales it proportionally (the same
+aspect-locked result as the scroll wheel), so resizing behaves like mainstream
+design tools. Holding **Alt** turns the handles Kartoza blue and switches to
+crop mode (the previous edge-inset behaviour); releasing Alt returns to resize.
+The wheel and handle-drag now share a single `setItemWidthKeepingAspect` path so
+they scale identically. Applies to screen, webcam, logo and text items.
+
+#### Snapping to object edges and half-dimension guides
+Dragging an overlay now snaps not only to the scene-frame edges but also to the
+frame's half-width/half-height centre lines and to **other objects' edges and
+centres**, with a guide line drawn while a snap is engaged. Holding **Shift**
+disables snapping for free placement.
+
+### Fixed
+
+#### Webcams no longer disappear from the Add menu
+Webcam enumeration was run once at startup — before the window was shown, and
+possibly before devices had settled — then cached for the whole session, and it
+relied on the fragile sysfs `index` attribute to pick a camera's capture node
+(which dropped valid cameras on modern multi-node UVC devices). The Add ▸ Webcam
+menu now re-detects every time it opens, and Linux detection probes each
+`/dev/videoN` with `VIDIOC_QUERYCAP`, keeping only true `VIDEO_CAPTURE` nodes and
+de-duplicating by physical device (`bus_info`). Metadata-only nodes are excluded
+and unopenable nodes are skipped rather than fatal.
+
+#### Selected preset/layer text stays legible
+The Layers and Presets lists set a dark selection background but left the
+selected-row text colour to Qt's palette default, rendering dark text on the dark
+highlight. Both lists now keep the light text colour when selected.
+
+#### Text boxes resize to any size, with or without aspect lock
+Text boxes were effectively capped in size because handle resize scaled about the
+item centre, so the reachable size was bounded by the preview. Resize now anchors
+to the opposite handle and tracks the cursor, so a box can be made as large (or
+small) as you like. Corner handles keep the box aspect (hold **Shift** to stretch
+freely); the new **edge** handles resize a single axis, so text can be any width
+or height independently.
+
+#### Font and weight dropdowns are legible
+The font-family and weight dropdown popups rendered dark text on a dark list. Both
+popups now use the light-on-dark palette, matching the rest of the panel.
+
+#### Text overlays with special characters in the font name render correctly
+The FFmpeg `drawtext` filter interpolated the font family and font-file path
+without escaping, so a family or path containing `:`, `'` or `\` corrupted the
+filtergraph and the render failed. All values are now escaped consistently.
+
+#### Reopening the app restores crop and screen placement
+The startup state restore silently dropped item crops, the screen's saved
+position/size, and start/end sounds — so a layout that looked correct when saved
+came back subtly different after a restart (whereas loading it as a preset
+restored everything). Startup restore and preset load now share one code path,
+so a reopened session matches exactly what was saved.
+
+### Changed
+
+#### Closing the window hides it to the system tray
+Clicking the window's close (X) button now fully hides the window to the system
+tray (the app keeps running and is restored from the tray icon) when a tray is
+available, instead of only minimising. Without a system tray it falls back to
+minimising so there is always a way back.
+
+#### Faster developer builds (ccache + mold + Ninja)
+The dev shell now ships the **mold** linker and CMake uses it automatically
+(`-fuse-ld=mold` when found), alongside the existing ccache and Ninja, matching
+the fast incremental-build loop used by `qgis-dev-env`.
+
+#### Branded documentation hero
+The docs landing-page hero now uses the Kartoza slant background under a
+translucent overlay (light and dark variants), aligning it with the
+`qgis-dev-env` documentation styling instead of a flat fill.
+
+#### Unified `ksc-dev` developer command with build metrics
+The dev shell adds a single `ksc-dev` entry point (`build`, `release`, `run`,
+`test`, `configure`, `format`, `clean`, `docs`, `stats`) alongside the existing
+short aliases. `ksc-dev build` logs the build duration and ccache hit rate to a
+TSV, and `ksc-dev stats [--graph]` summarises it — mirroring the `qgis-dev`
+workflow. Documented in the Dev shell guide.
+
+### Internal
+
+A code-quality pass fixed a `QMovie` use-after-free on window close, moved the
+webcam frame buffer off the heap, closed a `m_monitorName` data race in the
+threaded screen-capture path, stopped the canvas repainting every 2 s while idle,
+cached `fc-match` font resolution, and de-duplicated the frame-rescale logic
+(`setMode`/`resizeEvent`) and single-item export paths — all covered by new
+regression tests.
+
 ## [2.1.0] - 2026-07-18
 
 ### Fixed

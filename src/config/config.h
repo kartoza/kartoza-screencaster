@@ -34,6 +34,12 @@ struct CanvasItemState {
     int gifLoopMax = 3;
     /** Crop insets as fractions of item dimensions (0.0-1.0). */
     double cropTop = 0, cropBottom = 0, cropLeft = 0, cropRight = 0;
+    /** Text items: font family (empty = default). */
+    QString fontFamily;
+    /** Text items: font weight (400=normal, 700=bold). */
+    int fontWeight = 400;
+    /** Text items: colour (empty = canvas default title colour). */
+    QString textColor;
 };
 
 /**

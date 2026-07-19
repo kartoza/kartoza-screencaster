@@ -71,6 +71,27 @@ struct RecordingOptions {
     int webcamShape = 0;
     /** @brief Overlay logos/GIFs placed on the canvas (0..N). */
     QVector<LogoOpts> logos;
+
+    /**
+     * @brief A single text-box overlay burned into the recording.
+     *
+     * Positions are fractions (0.0--1.0) of the output frame. The font size is
+     * derived from relH (container height) to match the WYSIWYG canvas.
+     */
+    struct TextBox {
+        QString text;                             /**< Text content. */
+        QString fontFamily = "Sans";              /**< Font family name. */
+        int fontWeight = 400;                     /**< Font weight (400=normal, 700=bold). */
+        QString color = "#62A4C7";                /**< Hex text colour. */
+        QString fontFile;                         /**< Resolved font file (for accurate weight); optional. */
+        double relX = 0;                          /**< Relative X of the box's left edge (0.0--1.0). */
+        double relY = 0;                          /**< Relative Y of the box's top edge (0.0--1.0). */
+        double relW = 0.3;                        /**< Relative width (0.0--1.0). */
+        double relH = 0.1;                        /**< Relative height (0.0--1.0), drives font size. */
+    };
+    /** @brief Text-box overlays placed on the canvas (0..N). */
+    QVector<TextBox> textBoxes;
+
     QString titleColor = "#62A4C7";               /**< Hex colour used when rendering the title. */
     QString startSound;                           /**< Path to audio file played at recording start. */
     QString endSound;                             /**< Path to audio file played at recording end. */

@@ -32,6 +32,14 @@ if(CCACHE_PROGRAM)
     message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
 endif()
 
+# Use mold as the linker if available — much faster incremental links.
+# Together with ccache + Ninja this is the ccache + mold + ninja dev loop.
+find_program(MOLD_PROGRAM mold)
+if(MOLD_PROGRAM AND NOT MSVC)
+    add_link_options("-fuse-ld=mold")
+    message(STATUS "Using mold linker: ${MOLD_PROGRAM}")
+endif()
+
 # Compiler warnings (GCC/Clang only — MSVC uses /W4 by default)
 if(NOT MSVC)
     add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)

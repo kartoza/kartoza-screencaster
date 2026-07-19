@@ -76,6 +76,31 @@ Kartoza Screencaster is a screen recording and video processing application for 
 - User can choose title color for lower-third overlay
 - Processing creates standard and vertical versions as configured
 
+### US-006a: Text Box Overlays
+**As a** content creator
+**I want to** add any number of text boxes with my choice of font, weight and colour
+**So that** I can caption and brand my recording, seeing the exact result in the preview
+
+**Acceptance Criteria:**
+- User can add multiple independent text boxes to the canvas (Add ▸ Text Box)
+- Each text box has its own text content, font family, weight (Light/Normal/Bold) and colour
+- Font size is derived from the text box height (resize to scale); there is no fixed size cap
+- Text boxes can be moved, resized (aspect-locked) and cropped like other canvas items
+- Each text box is burned into the final landscape and vertical outputs at its position with its font, weight and colour (WYSIWYG)
+- Text box properties persist across restarts and within presets
+- Legacy recordings carrying only a single title still render that title unchanged
+
+### US-006b: Canvas Item Manipulation
+**As a** content creator
+**I want** intuitive resize, crop and alignment of canvas items
+**So that** composing a layout is fast and predictable
+
+**Acceptance Criteria:**
+- Dragging a selected item's corner handles scales it proportionally (aspect-locked), matching the scroll wheel
+- Holding **Alt** turns the handles Kartoza blue and switches them to crop mode (edge insets); releasing Alt returns to resize
+- Dragging an item snaps it to the scene-frame edges, the frame's half-width/half-height centre lines, and other objects' edges and centres, with a guide line shown while a snap is engaged
+- Holding **Shift** disables snapping for free placement
+
 ### US-007: Output File Naming
 **As a** content creator
 **I want my** output files to be named with a sequence number and title

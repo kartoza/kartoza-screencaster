@@ -12,6 +12,34 @@
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QSpinBox>
+#include <QColorDialog>
+#include <QProcess>
+#include <QFileInfo>
+#include <QHash>
+
+// Resolve a font file for the requested family + weight via fontconfig so the
+// merger can burn in the correct weight (FFmpeg drawtext has no weight option).
+// Returns empty on failure; the merger then falls back to the family name.
+static QString resolveFontFile(const QString &family, int weight) {
+    // Cache by family+weight so N text boxes sharing a font spawn fc-match once.
+    static QHash<QString, QString> cache;
+    const QString key = family + "#" + QString::number(weight);
+    auto it = cache.constFind(key);
+    if (it != cache.constEnd()) return it.value();
+
+    QString pattern = family;
+    if (weight >= 600) pattern += ":weight=bold";
+    else if (weight <= 300) pattern += ":weight=light";
+    QProcess p;
+    p.start("fc-match", {"-f", "%{file}", pattern});
+    QString result;
+    if (p.waitForFinished(2000)) {
+        QString path = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+        if (QFileInfo::exists(path)) result = path;
+    }
+    cache.insert(key, result);
+    return result;
+}
 
 RecordPage::RecordPage(QWidget *parent) : QWidget(parent) {
     m_recorder = new Recorder(this);
@@ -170,7 +198,7 @@ void RecordPage::setupUI() {
 
     m_layerList = new QListWidget;
     m_layerList->setMaximumHeight(120);
-    m_layerList->setStyleSheet("QListWidget { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #3d3d56; }");
+    m_layerList->setStyleSheet("QListWidget { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #3d3d56; color: #e8e8ec; }");
     connect(m_layerList, &QListWidget::currentRowChanged, m_canvas, &Canvas::setSelectedItem);
     leftLayout->addWidget(m_layerList);
 
@@ -219,7 +247,7 @@ void RecordPage::setupUI() {
 
     m_presetList = new QListWidget;
     m_presetList->setMaximumHeight(80);
-    m_presetList->setStyleSheet("QListWidget { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #3d3d56; } QListWidget QLineEdit { background: #3d3d56; color: #e8e8ec; border: 1px solid #569FC6; padding: 2px; }");
+    m_presetList->setStyleSheet("QListWidget { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 4px; font-size: 11px; } QListWidget::item { padding: 3px 6px; } QListWidget::item:selected { background: #3d3d56; color: #e8e8ec; } QListWidget QLineEdit { background: #3d3d56; color: #e8e8ec; border: 1px solid #569FC6; padding: 2px; }");
     leftLayout->addWidget(m_presetList);
 
     // Name input row (hidden until "New" is clicked)
@@ -373,7 +401,7 @@ void RecordPage::setupUI() {
     // Refresh layer list and auto-save when items change
     connect(m_canvas, &Canvas::itemsChanged, this, [this]() {
         refreshLayerList();
-        if (!m_restoring) saveCanvasState();
+        saveCanvasState(); // self-guards on m_restoring
     });
 
     // Restore saved canvas state and populate preset list
@@ -401,15 +429,29 @@ void RecordPage::setupUI() {
     }
 
     auto *webcamMenu = addMenu->addMenu("Webcam");
-    for (const auto &dev : m_webcams) {
-        auto *devMenu = webcamMenu->addMenu(dev.name);
-        auto *roundAction = devMenu->addAction("Round bubble");
-        connect(roundAction, &QAction::triggered, this, [this, dev]() { m_canvas->addWebcam(dev.device, dev.name, 0); });
-        auto *squareAction = devMenu->addAction("Square");
-        connect(squareAction, &QAction::triggered, this, [this, dev]() { m_canvas->addWebcam(dev.device, dev.name, 1); });
-        auto *rectAction = devMenu->addAction("Rectangle");
-        connect(rectAction, &QAction::triggered, this, [this, dev]() { m_canvas->addWebcam(dev.device, dev.name, 2); });
-    }
+    // Re-detect on every open so a stale/empty startup scan (the app can launch
+    // into the tray before devices settle) never permanently hides a camera,
+    // and hot-plugged cameras appear without restarting the app.
+    auto populateWebcamMenu = [this, webcamMenu]() {
+        webcamMenu->clear();
+        m_webcams = Webcam::detectAll();
+        if (m_webcams.isEmpty()) {
+            auto *none = webcamMenu->addAction("No webcams detected");
+            none->setEnabled(false);
+            return;
+        }
+        for (const auto &dev : m_webcams) {
+            auto *devMenu = webcamMenu->addMenu(dev.name);
+            auto *roundAction = devMenu->addAction("Round bubble");
+            connect(roundAction, &QAction::triggered, this, [this, dev]() { m_canvas->addWebcam(dev.device, dev.name, 0); });
+            auto *squareAction = devMenu->addAction("Square");
+            connect(squareAction, &QAction::triggered, this, [this, dev]() { m_canvas->addWebcam(dev.device, dev.name, 1); });
+            auto *rectAction = devMenu->addAction("Rectangle");
+            connect(rectAction, &QAction::triggered, this, [this, dev]() { m_canvas->addWebcam(dev.device, dev.name, 2); });
+        }
+    };
+    populateWebcamMenu();
+    connect(webcamMenu, &QMenu::aboutToShow, this, populateWebcamMenu);
 
     auto *logoAction = addMenu->addAction("Logo");
     connect(logoAction, &QAction::triggered, this, [this]() {
@@ -422,6 +464,11 @@ void RecordPage::setupUI() {
         QString t = m_titleInput->text();
         if (t.isEmpty()) t = "Title";
         m_canvas->setTitle(t);
+    });
+
+    auto *textBoxAction = addMenu->addAction("Text Box");
+    connect(textBoxAction, &QAction::triggered, this, [this]() {
+        m_canvas->addTextBox("Text");
     });
 
     connect(addBtn, &QPushButton::clicked, this, [addBtn, addMenu]() {
@@ -472,17 +519,16 @@ void RecordPage::setupUI() {
     auto updateGifControls = [this, btnCont, btnOnce, btnNone, btnNTimes, loopCountSpin]() {
         int sel = m_canvas->selectedItem();
         if (sel < 0 || sel >= m_canvas->itemCount()) { m_gifLoopRow->hide(); return; }
-        auto items = m_canvas->exportItems();
-        if (sel >= items.size() || items[sel].type != 2 ||
-            !items[sel].filePath.toLower().endsWith(".gif")) { m_gifLoopRow->hide(); return; }
+        auto e = m_canvas->itemExport(sel);
+        if (e.type != 2 || !e.filePath.toLower().endsWith(".gif")) { m_gifLoopRow->hide(); return; }
 
         m_gifLoopRow->show();
-        int loop = items[sel].gifLoop;
+        int loop = e.gifLoop;
         btnCont->setChecked(loop == 2);
         btnOnce->setChecked(loop == 1);
         btnNone->setChecked(loop == 0);
         btnNTimes->setChecked(loop == 3);
-        loopCountSpin->setValue(items[sel].gifLoopMax);
+        loopCountSpin->setValue(e.gifLoopMax);
         loopCountSpin->setVisible(loop == 3);
     };
 
@@ -504,10 +550,75 @@ void RecordPage::setupUI() {
     connect(loopCountSpin, &QSpinBox::valueChanged, this, [this](int val) {
         int s = m_canvas->selectedItem();
         if (s >= 0) {
-            auto items = m_canvas->exportItems();
-            if (s < items.size() && items[s].gifLoop == 3) m_canvas->setItemGifLoop(s, 3, val);
+            if (m_canvas->itemExport(s).gifLoop == 3) m_canvas->setItemGifLoop(s, 3, val);
         }
     });
+
+    // Text-box controls (shown when a text item is selected)
+    m_textRow = new QWidget;
+    auto *textLayout = new QHBoxLayout(m_textRow);
+    textLayout->setContentsMargins(0, 0, 0, 0);
+    textLayout->setSpacing(4);
+
+    m_textContentInput = new QLineEdit;
+    m_textContentInput->setPlaceholderText("Text...");
+    m_textContentInput->setStyleSheet(inputStyle);
+    m_textContentInput->setFixedWidth(120);
+    m_textContentInput->setToolTip("Text box content.");
+    textLayout->addWidget(m_textContentInput);
+
+    QString comboStyle = "background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 3px; padding: 2px; font-size: 11px;";
+    // The dropdown popup (QAbstractItemView) needs its own light-on-dark colours,
+    // otherwise items render as dark text on the platform's default light/ dark view.
+    QString comboViewStyle = " QAbstractItemView { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; selection-background-color: #3d3d56; selection-color: #e8e8ec; }";
+    m_fontCombo = new QFontComboBox;
+    m_fontCombo->setStyleSheet("QFontComboBox { " + comboStyle + " }" + comboViewStyle);
+    m_fontCombo->setMaximumWidth(150);
+    m_fontCombo->setToolTip("Font family. Size derives from the box height.");
+    textLayout->addWidget(m_fontCombo);
+
+    m_weightCombo = new QComboBox;
+    m_weightCombo->addItem("Light", 300);
+    m_weightCombo->addItem("Normal", 400);
+    m_weightCombo->addItem("Bold", 700);
+    m_weightCombo->setCurrentIndex(1);
+    m_weightCombo->setStyleSheet("QComboBox { " + comboStyle + " }" + comboViewStyle);
+    m_weightCombo->setToolTip("Font weight.");
+    textLayout->addWidget(m_weightCombo);
+
+    m_textColorBtn = new QPushButton("Colour");
+    m_textColorBtn->setStyleSheet(smallBtnStyle);
+    m_textColorBtn->setToolTip("Text colour.");
+    textLayout->addWidget(m_textColorBtn);
+
+    m_textRow->hide();
+    addRow->addWidget(m_textRow);
+
+    connect(m_textContentInput, &QLineEdit::textChanged, this, [this](const QString &t) {
+        if (m_syncingText) return;
+        int s = m_canvas->selectedItem();
+        if (m_canvas->isTextItem(s)) m_canvas->setItemText(s, t);
+    });
+    connect(m_fontCombo, &QFontComboBox::currentFontChanged, this, [this](const QFont &f) {
+        if (m_syncingText) return;
+        int s = m_canvas->selectedItem();
+        if (m_canvas->isTextItem(s)) m_canvas->setItemFont(s, f.family());
+    });
+    connect(m_weightCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+        if (m_syncingText) return;
+        int s = m_canvas->selectedItem();
+        if (m_canvas->isTextItem(s)) m_canvas->setItemFontWeight(s, m_weightCombo->currentData().toInt());
+    });
+    connect(m_textColorBtn, &QPushButton::clicked, this, [this]() {
+        int s = m_canvas->selectedItem();
+        if (!m_canvas->isTextItem(s)) return;
+        QString tc = m_canvas->itemExport(s).textColor;
+        QColor cur = tc.isEmpty() ? QColor("#62A4C7") : QColor(tc);
+        QColor c = QColorDialog::getColor(cur, this, "Text Colour");
+        if (c.isValid()) m_canvas->setItemTextColor(s, c.name());
+    });
+    connect(m_canvas, &Canvas::selectionChanged, this, [this](int) { updateTextControls(); });
+    connect(m_canvas, &Canvas::itemsChanged, this, [this]() { updateTextControls(); });
 
     addRow->addStretch();
 
@@ -649,6 +760,19 @@ void RecordPage::onCountdownTick() {
                 opts.webcamRelW = e.w / cw;
                 opts.webcamRelH = e.h / ch;
                 opts.webcamShape = e.shape; // 0=round, 1=square, 2=rect
+            } else if (e.type == 3) { // text box
+                if (e.label.trimmed().isEmpty()) continue;
+                RecordingOptions::TextBox tb;
+                tb.text = e.label;
+                tb.fontFamily = e.fontFamily.isEmpty() ? "Sans" : e.fontFamily;
+                tb.fontWeight = e.fontWeight;
+                tb.color = e.textColor.isEmpty() ? Config::instance().titleColor : e.textColor;
+                tb.fontFile = resolveFontFile(tb.fontFamily, tb.fontWeight);
+                tb.relX = (e.x - e.w/2.0) / cw;
+                tb.relY = (e.y - e.h/2.0) / ch;
+                tb.relW = e.w / cw;
+                tb.relH = e.h / ch;
+                opts.textBoxes.append(tb);
             } else if (e.type == 4) { // start sound
                 opts.startSound = e.filePath;
             } else if (e.type == 5) { // end sound
@@ -727,6 +851,9 @@ void RecordPage::onRecorderError(const QString &error) {
 }
 
 void RecordPage::saveCanvasState() {
+    // Self-guard against re-entrant saves while a restore/preset-load is applying
+    // items (which emits itemsChanged). Defence-in-depth vs guarding at every call.
+    if (m_restoring) return;
     auto &cfg = Config::instance();
     cfg.canvasState = captureCurrentState();
     // Auto-save to active preset
@@ -740,89 +867,11 @@ void RecordPage::restoreCanvasState() {
     auto &cfg = Config::instance();
     if (cfg.canvasState.items.isEmpty()) return;
 
+    // Startup restore shares the exact crop/position/sound-aware path used by
+    // preset load, so a reopened session restores identically to loading a preset.
     m_restoring = true;
-
-    // Restore mode
-    QString mode = cfg.canvasState.mode;
-    int modeId = 0;
-    if (mode == "vertical") modeId = 1;
-    else if (mode == "left_split") modeId = 2;
-    else if (mode == "right_split") modeId = 3;
-    m_canvas->setMode(modeId);
-    if (m_modeGroup->button(modeId))
-        m_modeGroup->button(modeId)->setChecked(true);
-
-    // Build sets of available devices
-    QSet<QString> availableWebcams;
-    for (const auto &dev : m_webcams) availableWebcams.insert(dev.device);
-    QSet<QString> availableMonitors;
-    for (const auto &mon : m_monitors) availableMonitors.insert(mon.name);
-
-    QRect fr = m_canvas->frameRect();
-
-    for (const auto &s : cfg.canvasState.items) {
-        int px = fr.x() + static_cast<int>(s.rx * fr.width());
-        int py = fr.y() + static_cast<int>(s.ry * fr.height());
-        int pw = static_cast<int>(s.rw * fr.width());
-        int ph = static_cast<int>(s.rh * fr.height());
-
-        if (s.type == "screen") {
-            bool matched = false;
-            for (const auto &mon : m_monitors) {
-                QString desc = mon.description.isEmpty() ? mon.name : mon.description;
-                if (s.label == "Screen: " + desc) {
-                    addScreen(mon);
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched && !m_monitors.isEmpty()) {
-                addScreen(m_monitors.first());
-            }
-        } else if (s.type == "webcam") {
-            if (!availableWebcams.contains(s.device)) continue;
-            Canvas::ItemExport e;
-            e.type = 1; e.label = s.label;
-            e.x = px; e.y = py; e.w = pw; e.h = ph;
-            e.device = s.device; e.shape = s.shape;
-            m_canvas->importItem(e);
-        } else if (s.type == "logo") {
-            if (s.filePath.isEmpty() || !QFile::exists(s.filePath)) continue;
-            Canvas::ItemExport e;
-            e.type = 2; e.label = s.label;
-            e.x = px; e.y = py; e.w = pw; e.h = ph;
-            e.filePath = s.filePath;
-            e.gifLoop = s.gifLoop; e.gifLoopMax = s.gifLoopMax;
-            m_canvas->importItem(e);
-        } else if (s.type == "title") {
-            Canvas::ItemExport e;
-            e.type = 3; e.label = s.label;
-            e.x = px; e.y = py; e.w = pw; e.h = ph;
-            m_canvas->importItem(e);
-        }
-    }
-
-    // Restore audio and presenter
-    m_audioCheck->setChecked(cfg.canvasState.audioEnabled);
-    if (!cfg.canvasState.presenter.isEmpty())
-        m_presenterInput->setText(cfg.canvasState.presenter);
-
-    // Restore title color
-    if (!cfg.canvasState.titleColor.isEmpty()) {
-        cfg.titleColor = cfg.canvasState.titleColor;
-        m_canvas->setTitleColor(cfg.canvasState.titleColor);
-    }
-
-    // Restore title text into input field (from title item if present)
-    for (const auto &s : cfg.canvasState.items) {
-        if (s.type == "title" && !s.label.isEmpty()) {
-            m_titleInput->setText(s.label);
-            break;
-        }
-    }
-
+    buildCanvasFromState(cfg.canvasState, /*clearFirst=*/false);
     m_restoring = false;
-    refreshLayerList();
 }
 
 void RecordPage::refreshPresetList() {
@@ -878,13 +927,18 @@ CanvasState RecordPage::captureCurrentState() {
         s.cropBottom = e.h > 0 ? double(e.cropBottom) / e.h : 0;
         s.cropLeft = e.w > 0 ? double(e.cropLeft) / e.w : 0;
         s.cropRight = e.w > 0 ? double(e.cropRight) / e.w : 0;
+        s.fontFamily = e.fontFamily; s.fontWeight = e.fontWeight; s.textColor = e.textColor;
         state.items.append(s);
     }
     return state;
 }
 
 void RecordPage::applyState(const CanvasState &state) {
-    m_canvas->clearAll();
+    buildCanvasFromState(state, /*clearFirst=*/true);
+}
+
+void RecordPage::buildCanvasFromState(const CanvasState &state, bool clearFirst) {
+    if (clearFirst) m_canvas->clearAll();
 
     // Restore mode
     int modeId = 0;
@@ -959,6 +1013,7 @@ void RecordPage::applyState(const CanvasState &state) {
             e.cropBottom = static_cast<int>(s.cropBottom * ph);
             e.cropLeft = static_cast<int>(s.cropLeft * pw);
             e.cropRight = static_cast<int>(s.cropRight * pw);
+            e.fontFamily = s.fontFamily; e.fontWeight = s.fontWeight; e.textColor = s.textColor;
             m_canvas->importItem(e);
         } else if (s.type == "start_sound" || s.type == "end_sound") {
             Canvas::ItemExport e;
@@ -989,6 +1044,22 @@ void RecordPage::refreshLayerList() {
     for (int i = 0; i < m_canvas->itemCount(); i++) {
         m_layerList->addItem(m_canvas->itemLabel(i));
     }
+}
+
+void RecordPage::updateTextControls() {
+    if (!m_textRow) return;
+    int sel = m_canvas->selectedItem();
+    if (!m_canvas->isTextItem(sel)) { m_textRow->hide(); return; }
+    auto e = m_canvas->itemExport(sel);
+
+    m_syncingText = true;
+    // Don't clobber the caret while the user is typing in the field.
+    if (!m_textContentInput->hasFocus()) m_textContentInput->setText(e.label);
+    if (!e.fontFamily.isEmpty()) m_fontCombo->setCurrentFont(QFont(e.fontFamily));
+    int wi = m_weightCombo->findData(e.fontWeight);
+    m_weightCombo->setCurrentIndex(wi >= 0 ? wi : 1);
+    m_syncingText = false;
+    m_textRow->show();
 }
 
 void RecordPage::onPauseClicked() {

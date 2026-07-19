@@ -15,6 +15,8 @@
 #include <QRadioButton>
 #include <QButtonGroup>
 #include <QListWidget>
+#include <QComboBox>
+#include <QFontComboBox>
 #include "gui/canvas.h"
 #include "gui/assetgallery.h"
 #include "config/config.h"
@@ -144,6 +146,20 @@ private:
     QListWidget *m_layerList;
     /** @brief GIF loop controls row (shown when GIF logo selected). */
     QWidget *m_gifLoopRow = nullptr;
+    /** @brief Text-box controls row (shown when a text item is selected). */
+    QWidget *m_textRow = nullptr;
+    /** @brief Text content editor for the selected text box. */
+    QLineEdit *m_textContentInput = nullptr;
+    /** @brief Font family selector for the selected text box. */
+    QFontComboBox *m_fontCombo = nullptr;
+    /** @brief Font weight selector for the selected text box. */
+    QComboBox *m_weightCombo = nullptr;
+    /** @brief Colour picker button for the selected text box. */
+    QPushButton *m_textColorBtn = nullptr;
+    /** @brief Guard against feedback while syncing text controls to a selection. */
+    bool m_syncingText = false;
+    /** @brief Show/populate the text controls for the current selection. */
+    void updateTextControls();
     /** @brief Rebuild the layer list from current canvas items. */
     void refreshLayerList();
     /** @brief Persist current canvas item layout to settings. */
@@ -156,6 +172,17 @@ private:
     CanvasState captureCurrentState();
     /** @brief Apply a CanvasState to the canvas (clear + reimport). */
     void applyState(const CanvasState &state);
+    /**
+     * @brief Rebuild the canvas and form fields from a persisted state.
+     * @param state The canvas state to apply.
+     * @param clearFirst If true, clear the canvas first (preset switch); if false,
+     *        assume an empty canvas (initial startup restore).
+     *
+     * Single source of truth shared by applyState() and restoreCanvasState() so
+     * both paths restore position, crop, sounds and text styling identically.
+     * Callers manage the m_restoring guard.
+     */
+    void buildCanvasFromState(const CanvasState &state, bool clearFirst);
 
     /** @brief Preset list widget showing saved presets. */
     QListWidget *m_presetList;

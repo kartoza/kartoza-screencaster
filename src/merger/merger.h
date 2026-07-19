@@ -38,6 +38,24 @@ QString outputFileName(int number, const QString &title, const QString &suffix =
  */
 void appendLogoInputArgs(QStringList &args, const RecordingOptions::LogoOpts &logo);
 
+/**
+ * @brief Append a chained FFmpeg drawtext filter for each text box.
+ * @param[in,out] filter   filter_complex string being built.
+ * @param[in,out] current  Current labelled stream (e.g. "[canvas]"); updated to
+ *                         the last produced label.
+ * @param[in,out] vIdx     Shared filter-stage counter (shared with logo/webcam).
+ * @param boxes            Text-box overlays to render (empty text is skipped).
+ * @param outW             Output frame width in pixels.
+ * @param outH             Output frame height in pixels.
+ *
+ * Each box's font size is derived from its relative height (relH * outH * 2/3)
+ * to match the WYSIWYG canvas. Weight is honoured via a resolved fontfile when
+ * provided, otherwise the family is passed to fontconfig.
+ */
+void appendTextBoxFilters(QString &filter, QString &current, int &vIdx,
+                          const QVector<RecordingOptions::TextBox> &boxes,
+                          int outW, int outH);
+
 // ── FFmpeg utilities ────────────────────────────────────────────────────
 
 /**

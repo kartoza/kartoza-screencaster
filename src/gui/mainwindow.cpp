@@ -9,6 +9,7 @@
 #include <QPainter>
 #include <QShowEvent>
 #include <QSvgRenderer>
+#include <QSystemTrayIcon>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -330,9 +331,15 @@ void MainWindow::hideToTray() {
   // Preview is no longer visible — stop the slurp/grim capture loop.
   updatePreviewState();
 
-  // On Wayland, hiding destroys the surface and you can't get it back.
-  // Instead, minimize — compositor keeps the surface alive.
-  showMinimized();
+  // Fully hide the window when a system tray is available to bring it back
+  // (clicking X should make the window disappear, not just minimize). Without a
+  // tray, fall back to minimize so the compositor keeps the surface and the user
+  // still has a way back.
+  if (QSystemTrayIcon::isSystemTrayAvailable()) {
+    hide();
+  } else {
+    showMinimized();
+  }
 }
 
 void MainWindow::showFromTray() {
