@@ -268,7 +268,7 @@
             # Nix tools
             nil
             nixpkgs-fmt
-            nixfmt-classic
+            nixfmt              # RFC-style formatter (nixfmt-classic was removed upstream)
 
             # Git
             git
