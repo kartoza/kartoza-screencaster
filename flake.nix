@@ -373,7 +373,11 @@
             texEnv = pkgs.texlive.combine {
               inherit (pkgs.texlive)
                 scheme-medium lato inconsolata fvextra titlesec fancyhdr
-                sectsty soul enumitem pgf xcolor booktabs;
+                sectsty soul enumitem pgf xcolor booktabs
+                # lato/inconsolata font-package dependencies:
+                fontaxes xkeyval mweights
+                # pandoc default LaTeX template dependencies:
+                upquote microtype parskip xurl bookmark footnotehyper;
             };
           in {
             type = "app";

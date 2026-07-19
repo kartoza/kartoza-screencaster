@@ -9,6 +9,9 @@
 #
 # Usage: docs-pdf.sh [output.pdf]     (default: kartoza-screencaster-handbook.pdf)
 set -euo pipefail
+# Ensure sed/awk/pandoc treat the docs as UTF-8 (else multibyte glyphs corrupt
+# and pandoc falls back to latin1).
+export LC_ALL=C.UTF-8 LANG=C.UTF-8
 
 find_root() {
   local d="$PWD"
@@ -76,6 +79,9 @@ for p in "${PAGES[@]}"; do
   transform < "$f" >> "$COMBINED"
   printf '\n\n\\newpage\n\n' >> "$COMBINED"
 done
+
+# Guarantee valid UTF-8 for pandoc (drop any stray invalid bytes).
+iconv -f UTF-8 -t UTF-8 -c "$COMBINED" > "$COMBINED.clean" && mv "$COMBINED.clean" "$COMBINED"
 
 # Pre-render any SVGs referenced from the docs to PDF for crisp vector embedding.
 if command -v rsvg-convert >/dev/null; then
