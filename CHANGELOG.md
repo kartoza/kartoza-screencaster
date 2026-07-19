@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Aspect-locked handle resize with Alt-to-crop switching
+Dragging a selected item's corner handles now scales it proportionally (the same
+aspect-locked result as the scroll wheel), so resizing behaves like mainstream
+design tools. Holding **Alt** turns the handles Kartoza blue and switches to
+crop mode (the previous edge-inset behaviour); releasing Alt returns to resize.
+The wheel and handle-drag now share a single `setItemWidthKeepingAspect` path so
+they scale identically. Applies to screen, webcam, logo and text items.
+
+#### Snapping to object edges and half-dimension guides
+Dragging an overlay now snaps not only to the scene-frame edges but also to the
+frame's half-width/half-height centre lines and to **other objects' edges and
+centres**, with a guide line drawn while a snap is engaged. Holding **Shift**
+disables snapping for free placement.
+
 _Work toward 2.2.0._
 
 ## [2.1.0] - 2026-07-18

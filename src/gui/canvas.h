@@ -200,8 +200,10 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     /** @brief Handle mouse wheel for item resizing. */
     void wheelEvent(QWheelEvent *event) override;
-    /** @brief Handle keyboard shortcuts (delete, arrow keys). */
+    /** @brief Handle keyboard shortcuts (delete, arrow keys) and Alt-mode tracking. */
     void keyPressEvent(QKeyEvent *event) override;
+    /** @brief Track Alt release to switch handles back to resize mode. */
+    void keyReleaseEvent(QKeyEvent *event) override;
     /** @brief Recalculate canvas dimensions on resize. */
     void resizeEvent(QResizeEvent *event) override;
     /** @brief Track when the cursor enters the canvas (reveals the pause toggle). */
@@ -272,6 +274,30 @@ private:
     bool hitTest(const CanvasItem &item, int mx, int my) const;
     /** @brief Test which crop handle (if any) is hit at the given point. Returns 0=none, 1=top, 2=bottom, 3=left, 4=right. */
     int hitCropHandle(const CanvasItem &item, int mx, int my) const;
+    /** @brief Test which resize (corner) handle is hit. Returns 0=none, 1=TL, 2=TR, 3=BL, 4=BR. */
+    int hitResizeHandle(const CanvasItem &item, int mx, int my) const;
+    /** @brief Draw the corner resize handles on a selected item. */
+    void drawResizeHandles(QPainter &painter, const CanvasItem &item);
+    /** @brief Whether the selected item's handles currently act as crop (Alt held) rather than resize. */
+    bool cropModeActive() const;
+    /**
+     * @brief Snap a dragged item to the frame, other objects, and half-dimension guides.
+     * @param item The item being dragged (its x/y are adjusted in place).
+     *
+     * Records the active guide lines in the snap-guide members so paintEvent can
+     * draw them. Callers skip this when Shift is held (free placement).
+     */
+    void applySnapping(CanvasItem &item);
+    /**
+     * @brief Set an item's width and derive its height to preserve aspect.
+     * @param item The item to resize.
+     * @param newW Desired width (clamped per item type).
+     * @param textHeight For text items only, the desired height; ignored (<0) otherwise.
+     *
+     * Shared by the scroll-wheel and handle-drag resize paths so both scale
+     * items identically (aspect-locked, about the item centre).
+     */
+    void setItemWidthKeepingAspect(CanvasItem &item, int newW, int textHeight = -1);
     /** @brief Get the rect for a sound drop target (in canvas coords). */
     QRect soundDropTargetRect(bool isEnd) const;
     /**
@@ -316,6 +342,26 @@ private:
     int m_cropHandle = 0;
     /** @brief Index of item whose crop handle is being dragged. */
     int m_cropItem = -1;
+    /** @brief Which resize (corner) handle is being dragged: 0=none, 1=TL, 2=TR, 3=BL, 4=BR. */
+    int m_resizeHandle = 0;
+    /** @brief Index of item whose resize handle is being dragged. */
+    int m_resizeItem = -1;
+    /** @brief Item width at the start of a resize drag. */
+    int m_resizeStartW = 0;
+    /** @brief Item height at the start of a resize drag. */
+    int m_resizeStartH = 0;
+    /** @brief Distance from item centre to cursor at the start of a resize drag. */
+    double m_resizeStartDist = 0;
+    /** @brief Whether Alt is currently held (switches handles from resize to crop). */
+    bool m_altActive = false;
+    /** @brief Whether a vertical snap guide is active during the current drag. */
+    bool m_snapXActive = false;
+    /** @brief X position (canvas coords) of the active vertical snap guide. */
+    int m_snapXLine = 0;
+    /** @brief Whether a horizontal snap guide is active during the current drag. */
+    bool m_snapYActive = false;
+    /** @brief Y position (canvas coords) of the active horizontal snap guide. */
+    int m_snapYLine = 0;
     /** @brief Whether audio drop targets are visible (during audio file drag). */
     bool m_showSoundDropTargets = false;
     /** @brief Which sound drop target is hovered: 0=none, 1=start(left), 2=end(right). */
@@ -341,6 +387,7 @@ private:
     QRect m_lastFrameRect;
 
     static constexpr int CROP_HANDLE_SIZE = 6; /**< Radius of crop handle hit area. */
+    static constexpr int RESIZE_HANDLE_SIZE = 7; /**< Radius of corner resize handle hit area. */
     static constexpr int WC_W = 160;              /**< Webcam capture width. */
     static constexpr int WC_H = 120;              /**< Webcam capture height. */
     static constexpr int WC_FPS = 10;             /**< Webcam capture frame rate. */
