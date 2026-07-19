@@ -109,11 +109,25 @@ body, .md-typeset, .md-header, .md-tabs {
     margin: -1.5rem -0.75rem 2rem -0.75rem;
     border-radius: 0.75rem;
     background-color: var(--surface-cloud);
+    /* Branded Kartoza slant background under a translucent overlay for legibility
+       (matches the qgis-dev-env docs hero treatment). */
+    background-image: linear-gradient(
+            rgba(245, 245, 242, 0.86),
+            rgba(245, 245, 242, 0.92)
+        ),
+        url("../assets/brand/slant-title-background.svg");
+    background-size: cover;
+    background-position: center;
     color: var(--text-default);
     overflow: hidden;
 }
 [data-md-color-scheme="slate"] .kz-hero {
     background-color: #232525;
+    background-image: linear-gradient(
+            rgba(28, 29, 29, 0.82),
+            rgba(28, 29, 29, 0.90)
+        ),
+        url("../assets/brand/slant-title-background.svg");
     color: var(--surface-cloud);
 }
 .kz-hero h1 {

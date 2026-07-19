@@ -65,6 +65,11 @@ or height independently.
 The font-family and weight dropdown popups rendered dark text on a dark list. Both
 popups now use the light-on-dark palette, matching the rest of the panel.
 
+#### Text overlays with special characters in the font name render correctly
+The FFmpeg `drawtext` filter interpolated the font family and font-file path
+without escaping, so a family or path containing `:`, `'` or `\` corrupted the
+filtergraph and the render failed. All values are now escaped consistently.
+
 ### Changed
 
 #### Closing the window hides it to the system tray
@@ -72,6 +77,25 @@ Clicking the window's close (X) button now fully hides the window to the system
 tray (the app keeps running and is restored from the tray icon) when a tray is
 available, instead of only minimising. Without a system tray it falls back to
 minimising so there is always a way back.
+
+#### Faster developer builds (ccache + mold + Ninja)
+The dev shell now ships the **mold** linker and CMake uses it automatically
+(`-fuse-ld=mold` when found), alongside the existing ccache and Ninja, matching
+the fast incremental-build loop used by `qgis-dev-env`.
+
+#### Branded documentation hero
+The docs landing-page hero now uses the Kartoza slant background under a
+translucent overlay (light and dark variants), aligning it with the
+`qgis-dev-env` documentation styling instead of a flat fill.
+
+### Internal
+
+A code-quality pass fixed a `QMovie` use-after-free on window close, moved the
+webcam frame buffer off the heap, closed a `m_monitorName` data race in the
+threaded screen-capture path, stopped the canvas repainting every 2 s while idle,
+cached `fc-match` font resolution, and de-duplicated the frame-rescale logic
+(`setMode`/`resizeEvent`) and single-item export paths — all covered by new
+regression tests.
 
 _Work toward 2.2.0._
 

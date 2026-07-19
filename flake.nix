@@ -226,6 +226,7 @@
             cmake
             ninja
             ccache
+            mold                 # fast linker (ccache + mold + ninja dev loop)
 
             # C++ development tools
             clang-tools          # clangd, clang-format, clang-tidy

@@ -15,6 +15,15 @@ cmake --build build
 The output binary lands at `build/kartoza-screencaster`. Inside the
 dev shell, `cb` does all of the above.
 
+## Build acceleration
+
+CMake auto-detects and uses **ccache** (compiler cache) and **mold** (fast
+linker) when they are present — both ship in the Nix dev shell — on top of the
+**Ninja** generator. Look for `Using ccache: …` and `Using mold linker: …` in
+the configure output. See [Dev shell → Build acceleration](dev-shell.md#build-acceleration-ccache-mold-ninja)
+for how each tool speeds up the edit-build-run loop. Nothing to configure; a
+build without them just falls back to the default compiler/linker.
+
 ## Tests
 
 ```bash
