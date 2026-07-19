@@ -151,6 +151,57 @@ void Canvas::setTitle(const QString &text) {
     }
 }
 
+int Canvas::addTextBox(const QString &text) {
+    CanvasItem item;
+    item.type = 3;
+    item.label = text.isEmpty() ? "Text" : text;
+    // Place near the centre of the frame; sized so the container-derived font is
+    // comfortably readable. Users can then resize/drag/crop as with any item.
+    QRect fr = frameRect();
+    item.w = std::max(120, fr.width() / 3);
+    item.h = std::max(24, fr.height() / 8);
+    item.x = fr.center().x();
+    item.y = fr.center().y();
+    item.fontFamily = "Sans";
+    item.fontWeight = 400;
+    item.textColor = m_titleColor;
+    m_items.append(item);
+    int idx = m_items.size() - 1;
+    m_selected = idx;
+    emit itemsChanged();
+    emit selectionChanged(idx);
+    update();
+    return idx;
+}
+
+void Canvas::setItemText(int index, const QString &text) {
+    if (index < 0 || index >= m_items.size() || m_items[index].type != 3) return;
+    m_items[index].label = text;
+    emit itemsChanged();
+    update();
+}
+
+void Canvas::setItemFont(int index, const QString &family) {
+    if (index < 0 || index >= m_items.size() || m_items[index].type != 3) return;
+    m_items[index].fontFamily = family;
+    emit itemsChanged();
+    update();
+}
+
+void Canvas::setItemFontWeight(int index, int weight) {
+    if (index < 0 || index >= m_items.size() || m_items[index].type != 3) return;
+    m_items[index].fontWeight = weight;
+    emit itemsChanged();
+    update();
+}
+
+void Canvas::setItemTextColor(int index, const QString &color) {
+    if (index < 0 || index >= m_items.size() || m_items[index].type != 3) return;
+    m_items[index].textColor = color;
+    emit itemsChanged();
+    update();
+}
+
 void Canvas::setMode(int mode) {
     QRect oldFrame = frameRect();
     m_mode = mode;
@@ -480,6 +531,8 @@ QList<Canvas::ItemExport> Canvas::exportItems() const {
         e.gifLoop = item.gifLoop; e.gifLoopMax = item.gifLoopMax;
         e.cropTop = item.cropTop; e.cropBottom = item.cropBottom;
         e.cropLeft = item.cropLeft; e.cropRight = item.cropRight;
+        e.fontFamily = item.fontFamily; e.fontWeight = item.fontWeight;
+        e.textColor = item.textColor;
         result.append(e);
     }
     return result;
@@ -520,13 +573,16 @@ void Canvas::importItem(const ItemExport &e) {
         }
         break;
     }
-    case 3: { // title
+    case 3: { // text box
         m_title = e.label;
         CanvasItem item;
         item.type = 3; item.label = e.label;
         item.x = e.x; item.y = e.y; item.w = e.w; item.h = e.h;
         item.cropTop = e.cropTop; item.cropBottom = e.cropBottom;
         item.cropLeft = e.cropLeft; item.cropRight = e.cropRight;
+        if (!e.fontFamily.isEmpty()) item.fontFamily = e.fontFamily;
+        item.fontWeight = e.fontWeight;
+        item.textColor = e.textColor;
         m_items.append(item);
         break;
     }
@@ -1337,11 +1393,14 @@ void Canvas::paintEvent(QPaintEvent *) {
                 painter.setBrush(Qt::NoBrush);
                 painter.drawRect(visRect.adjusted(-3, -3, 3, 3));
             }
-        } else if (item.type == 3) { // Title
+        } else if (item.type == 3) { // Text box
             painter.save();
-            int fontSize = std::max(6, visH * 2 / 3);
-            painter.setFont(QFont("Sans", fontSize));
-            painter.setPen(isDragging ? QColor(86, 159, 198) : QColor(m_titleColor));
+            int fontSize = std::max(6, visH * 2 / 3); // size derives from the container
+            QFont f(item.fontFamily.isEmpty() ? QStringLiteral("Sans") : item.fontFamily, fontSize);
+            f.setWeight(static_cast<QFont::Weight>(item.fontWeight));
+            painter.setFont(f);
+            QString col = item.textColor.isEmpty() ? m_titleColor : item.textColor;
+            painter.setPen(isDragging ? QColor(86, 159, 198) : QColor(col));
             painter.setClipRect(visRect);
             painter.drawText(QPoint(item.x - item.w/2, item.y + item.h/4), item.label);
             painter.restore();

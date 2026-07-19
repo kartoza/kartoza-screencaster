@@ -15,6 +15,8 @@
 #include <QRadioButton>
 #include <QButtonGroup>
 #include <QListWidget>
+#include <QComboBox>
+#include <QFontComboBox>
 #include "gui/canvas.h"
 #include "gui/assetgallery.h"
 #include "config/config.h"
@@ -144,6 +146,20 @@ private:
     QListWidget *m_layerList;
     /** @brief GIF loop controls row (shown when GIF logo selected). */
     QWidget *m_gifLoopRow = nullptr;
+    /** @brief Text-box controls row (shown when a text item is selected). */
+    QWidget *m_textRow = nullptr;
+    /** @brief Text content editor for the selected text box. */
+    QLineEdit *m_textContentInput = nullptr;
+    /** @brief Font family selector for the selected text box. */
+    QFontComboBox *m_fontCombo = nullptr;
+    /** @brief Font weight selector for the selected text box. */
+    QComboBox *m_weightCombo = nullptr;
+    /** @brief Colour picker button for the selected text box. */
+    QPushButton *m_textColorBtn = nullptr;
+    /** @brief Guard against feedback while syncing text controls to a selection. */
+    bool m_syncingText = false;
+    /** @brief Show/populate the text controls for the current selection. */
+    void updateTextControls();
     /** @brief Rebuild the layer list from current canvas items. */
     void refreshLayerList();
     /** @brief Persist current canvas item layout to settings. */

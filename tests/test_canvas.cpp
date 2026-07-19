@@ -1794,6 +1794,65 @@ private slots:
     QCOMPARE(out.x, fr.left() + out.w/2);
     QCOMPARE(out.y, fr.top() + out.h/2);
   }
+
+  // =========================================================================
+  // 18. TEXT BOXES (multiple, with font / weight / colour)
+  // =========================================================================
+
+  void testAddMultipleTextBoxes() {
+    Canvas c;
+    int a = c.addTextBox("One");
+    int b = c.addTextBox("Two");
+    QVERIFY(a >= 0);
+    QVERIFY(b > a);
+    QCOMPARE(c.itemCount(), 2);
+    QVERIFY(c.isTextItem(a));
+    QVERIFY(c.isTextItem(b));
+  }
+
+  void testTextBoxFontWeightColourPersistInExport() {
+    Canvas c;
+    int i = c.addTextBox("Hi");
+    c.setItemFont(i, "Serif");
+    c.setItemFontWeight(i, 700);
+    c.setItemTextColor(i, "#ff0000");
+    auto e = c.exportItems()[i];
+    QCOMPARE(e.type, 3);
+    QCOMPARE(e.fontFamily, QString("Serif"));
+    QCOMPARE(e.fontWeight, 700);
+    QCOMPARE(e.textColor, QString("#ff0000"));
+  }
+
+  void testTextBoxRoundTripsThroughImport() {
+    Canvas c;
+    int i = c.addTextBox("Round");
+    c.setItemFont(i, "Serif");
+    c.setItemFontWeight(i, 300);
+    c.setItemTextColor(i, "#0000ff");
+    auto exported = c.exportItems()[i];
+
+    Canvas c2;
+    c2.importItem(exported);
+    auto e = c2.exportItems()[0];
+    QCOMPARE(e.fontFamily, QString("Serif"));
+    QCOMPARE(e.fontWeight, 300);
+    QCOMPARE(e.textColor, QString("#0000ff"));
+    QCOMPARE(e.label, QString("Round"));
+  }
+
+  void testTextSettersIgnoreNonTextItems() {
+    Canvas c;
+    Canvas::ItemExport e;
+    e.type = 1; e.label = "Cam"; e.device = "v0"; e.shape = 1;
+    e.x = 100; e.y = 100; e.w = 40; e.h = 30;
+    c.importItem(e);
+    // Applying text settings to a webcam item must be a no-op, not a crash.
+    c.setItemFont(0, "Serif");
+    c.setItemFontWeight(0, 700);
+    c.setItemTextColor(0, "#ffffff");
+    auto out = c.exportItems()[0];
+    QCOMPARE(out.type, 1);
+  }
 };
 
 QTEST_MAIN(TestCanvas)

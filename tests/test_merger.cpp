@@ -103,6 +103,69 @@ private slots:
         QCOMPARE(result, QString("/tmp/nonexistent.mp4"));
     }
 
+    void testAppendTextBoxFilters_rendersBox() {
+        QVector<RecordingOptions::TextBox> boxes;
+        RecordingOptions::TextBox tb;
+        tb.text = "Hello"; tb.color = "#00FF00"; tb.fontFamily = "Sans";
+        tb.relX = 0.1; tb.relY = 0.2; tb.relW = 0.3; tb.relH = 0.1;
+        boxes.append(tb);
+
+        QString filter;
+        QString current = "[in]";
+        int vIdx = 0;
+        Merger::appendTextBoxFilters(filter, current, vIdx, boxes, 1920, 1080);
+
+        QVERIFY(filter.contains("drawtext"));
+        QVERIFY(filter.contains("Hello"));
+        QVERIFY(filter.contains("#00FF00"));
+        QCOMPARE(current, QString("[v1]"));
+    }
+
+    void testAppendTextBoxFilters_skipsEmpty() {
+        QVector<RecordingOptions::TextBox> boxes;
+        RecordingOptions::TextBox tb; tb.text = "   ";
+        boxes.append(tb);
+        QString filter;
+        QString current = "[in]";
+        int vIdx = 0;
+        Merger::appendTextBoxFilters(filter, current, vIdx, boxes, 1920, 1080);
+        QVERIFY(filter.isEmpty());
+        QCOMPARE(current, QString("[in]"));
+    }
+
+    void testBuildMergedArgs_textBoxForcesFilter() {
+        Merger::MergeInputs in;
+        in.screenFile = "/tmp/screen.mp4";
+        in.opts.noScreen = false;
+        RecordingOptions::TextBox tb;
+        tb.text = "Label"; tb.color = "#abcdef";
+        in.opts.textBoxes.append(tb);
+
+        QStringList args = Merger::buildMergedArgs(in, "/tmp/output.mp4");
+        QVERIFY(args.contains("-filter_complex"));
+        int fc = args.indexOf("-filter_complex");
+        QVERIFY(args[fc + 1].contains("Label"));
+        QVERIFY(args[fc + 1].contains("[outv]"));
+    }
+
+    void testBuildVerticalArgs_textBox() {
+        Merger::MergeInputs in;
+        in.screenFile = "/tmp/screen.mp4";
+        in.opts.noScreen = false;
+        RecordingOptions::TextBox tb;
+        tb.text = "Caption"; tb.color = "#123456";
+        tb.relX = 0.1; tb.relY = 0.1; tb.relW = 0.5; tb.relH = 0.1;
+        in.opts.textBoxes.append(tb);
+
+        QStringList args = Merger::buildVerticalArgs(in, "/tmp/vert.mp4");
+        int fc = args.indexOf("-filter_complex");
+        QVERIFY(fc >= 0);
+        QString filter = args[fc + 1];
+        QVERIFY(filter.contains("Caption"));
+        QVERIFY(filter.contains("#123456"));
+        QVERIFY(filter.contains("[outv]"));
+    }
+
     void testConcatenateParts_empty() {
         QString result = Merger::concatenateParts({}, "/tmp/out.mp4");
         QVERIFY(result.isEmpty());

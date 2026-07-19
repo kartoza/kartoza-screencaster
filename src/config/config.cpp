@@ -52,6 +52,9 @@ static CanvasState canvasStateFromJson(const QJsonObject &cs) {
     s.cropBottom = obj["crop_bottom"].toDouble(0);
     s.cropLeft = obj["crop_left"].toDouble(0);
     s.cropRight = obj["crop_right"].toDouble(0);
+    s.fontFamily = obj["font_family"].toString();
+    s.fontWeight = obj["font_weight"].toInt(400);
+    s.textColor = obj["text_color"].toString();
     state.items.append(s);
   }
   return state;
@@ -82,6 +85,11 @@ static QJsonObject canvasStateToJson(const CanvasState &state) {
     if (s.cropBottom > 0) item["crop_bottom"] = s.cropBottom;
     if (s.cropLeft > 0) item["crop_left"] = s.cropLeft;
     if (s.cropRight > 0) item["crop_right"] = s.cropRight;
+    if (s.type == "title") {
+      if (!s.fontFamily.isEmpty()) item["font_family"] = s.fontFamily;
+      if (s.fontWeight != 400) item["font_weight"] = s.fontWeight;
+      if (!s.textColor.isEmpty()) item["text_color"] = s.textColor;
+    }
     items.append(item);
   }
   cs["items"] = items;

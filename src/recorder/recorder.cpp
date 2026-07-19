@@ -291,6 +291,19 @@ void Recorder::writeRecordingJson(const QString &status) {
         logosArr.append(lo);
     }
     if (!logosArr.isEmpty()) settings["logos"] = logosArr;
+    QJsonArray textArr;
+    for (const auto &tb : m_opts.textBoxes) {
+        QJsonObject t;
+        t["text"] = tb.text;
+        t["font_family"] = tb.fontFamily;
+        t["font_weight"] = tb.fontWeight;
+        t["color"] = tb.color;
+        t["font_file"] = tb.fontFile;
+        t["rel_x"] = tb.relX; t["rel_y"] = tb.relY;
+        t["rel_w"] = tb.relW; t["rel_h"] = tb.relH;
+        textArr.append(t);
+    }
+    if (!textArr.isEmpty()) settings["text_boxes"] = textArr;
     settings["title_color"] = m_opts.titleColor;
     settings["canvas_mode"] = m_opts.canvasMode;
     root["settings"] = settings;
@@ -823,6 +836,25 @@ void Recorder::reprocess(const QString &folder) {
     m_opts.noWebcam = !settings["webcam_enabled"].toBool(true);
     m_opts.titleColor = settings["title_color"].toString("#62A4C7");
     m_opts.canvasMode = settings["canvas_mode"].toInt(0);
+
+    // Read text boxes
+    m_opts.textBoxes.clear();
+    if (settings.contains("text_boxes")) {
+        for (const auto &val : settings["text_boxes"].toArray()) {
+            auto t = val.toObject();
+            RecordingOptions::TextBox tb;
+            tb.text = t["text"].toString();
+            tb.fontFamily = t["font_family"].toString("Sans");
+            tb.fontWeight = t["font_weight"].toInt(400);
+            tb.color = t["color"].toString("#62A4C7");
+            tb.fontFile = t["font_file"].toString();
+            tb.relX = t["rel_x"].toDouble(0);
+            tb.relY = t["rel_y"].toDouble(0);
+            tb.relW = t["rel_w"].toDouble(0.3);
+            tb.relH = t["rel_h"].toDouble(0.1);
+            m_opts.textBoxes.append(tb);
+        }
+    }
 
     // Read logos — new array format
     m_opts.logos.clear();

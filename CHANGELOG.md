@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Multiple text boxes with per-box font, weight and colour (WYSIWYG)
+The canvas previously allowed a single title text item with one global colour and
+no font control. You can now add any number of independent text boxes (Add ▸ Text
+Box), each with its own text, **font family**, **weight** (Light/Normal/Bold) and
+**colour**, edited inline from a controls row that appears when a text box is
+selected. Font **size** continues to derive from the box height (resize the box to
+scale the text), and the artificial size ceiling is gone. Every text box is burned
+into the final recording — in both landscape and vertical layouts — with its font,
+weight, colour and position, so the output matches the preview. Font weight is
+resolved to a concrete font file via fontconfig so FFmpeg renders the requested
+weight. Per-box font/weight/colour persist across restarts and in presets; legacy
+single-title recordings still render their title unchanged.
+
 #### Aspect-locked handle resize with Alt-to-crop switching
 Dragging a selected item's corner handles now scales it proportionally (the same
 aspect-locked result as the scroll wheel), so resizing behaves like mainstream

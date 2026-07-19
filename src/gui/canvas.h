@@ -51,6 +51,22 @@ public:
      */
     void setTitleColor(const QString &color) { m_titleColor = color; update(); }
     /**
+     * @brief Add a new, independent text box overlay and select it.
+     * @param text Initial text content.
+     * @return Index of the newly added item.
+     */
+    int addTextBox(const QString &text);
+    /** @brief Set the text content of a text item. */
+    void setItemText(int index, const QString &text);
+    /** @brief Set the font family of a text item. */
+    void setItemFont(int index, const QString &family);
+    /** @brief Set the font weight (400=normal, 700=bold) of a text item. */
+    void setItemFontWeight(int index, int weight);
+    /** @brief Set the colour of a text item (CSS-style "#RRGGBB"). */
+    void setItemTextColor(int index, const QString &color);
+    /** @brief Whether the item at the given index is a text item. */
+    bool isTextItem(int index) const { return index >= 0 && index < m_items.size() && m_items[index].type == 3; }
+    /**
      * @brief Set the canvas orientation mode.
      * @param mode 0 = landscape, >= 1 = vertical/portrait variants.
      */
@@ -158,6 +174,9 @@ public:
         int cropBottom = 0; /**< Pixels cropped from bottom. */
         int cropLeft = 0;   /**< Pixels cropped from left. */
         int cropRight = 0;  /**< Pixels cropped from right. */
+        QString fontFamily; /**< Text items: font family (empty = default "Sans"). */
+        int fontWeight = 400; /**< Text items: font weight (400=normal, 700=bold). */
+        QString textColor;  /**< Text items: colour (empty = canvas default). */
     };
 
     /**
@@ -238,6 +257,10 @@ private:
         int cropBottom = 0; /**< Pixels cropped from the bottom edge. */
         int cropLeft = 0;   /**< Pixels cropped from the left edge. */
         int cropRight = 0;  /**< Pixels cropped from the right edge. */
+        // Text fields (type 3)
+        QString fontFamily = "Sans"; /**< Font family for text items. */
+        int fontWeight = 400;        /**< Font weight (400=normal, 700=bold). */
+        QString textColor;           /**< Per-item text colour; empty falls back to m_titleColor. */
         // GIF fields
         QMovie *movie = nullptr; /**< QMovie for animated GIF playback. */
         bool isGif = false;      /**< Whether this item is an animated GIF. */
