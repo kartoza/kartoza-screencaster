@@ -366,6 +366,26 @@
             '');
           };
 
+          # `nix run .#handbook-pdf -- [name.pdf]` — branded PDF handbook,
+          # assembled from the mkdocs docs via pandoc + pdflatex with the
+          # Kartoza cover/preamble (docs/pdf/). Mirrors qgis-dev-env.
+          handbook-pdf = let
+            texEnv = pkgs.texlive.combine {
+              inherit (pkgs.texlive)
+                scheme-medium lato inconsolata fvextra titlesec fancyhdr
+                sectsty soul enumitem pgf xcolor booktabs;
+            };
+          in {
+            type = "app";
+            program = toString (pkgs.writeShellScript "handbook-pdf" ''
+              #!${pkgs.bash}/bin/bash
+              set -euo pipefail
+              export PATH="${texEnv}/bin:${pkgs.pandoc}/bin:${pkgs.librsvg}/bin:$PATH"
+              cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
+              exec ${pkgs.bash}/bin/bash lib/docs-pdf.sh "$@"
+            '');
+          };
+
           # `nix run .#docs-doxygen` — generate the C++ API reference
           # into ./build/doxygen/html. Used by docs-full-build below.
           # graphviz must be on PATH for HAVE_DOT / call graphs to work.

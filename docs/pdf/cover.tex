@@ -1,0 +1,54 @@
+% SPDX-FileCopyrightText: 2026 Kartoza (Pty) Ltd <tim@kartoza.com>
+% SPDX-License-Identifier: MIT
+%
+% Self-contained branded cover (no external image): a Kartoza slant band drawn
+% with TikZ, then the title block, on a charcoal page.
+
+\begingroup
+\thispagestyle{empty}
+\pagecolor{textdefault}
+\color{surfacewhite}
+
+% Slant brand band across the top, echoing the docs hero background.
+\begin{tikzpicture}[remember picture, overlay]
+  \fill[kartozablue!85]  ([xshift=-2cm,yshift=-3cm]current page.north west)
+    -- ([xshift=6cm,yshift=-3cm]current page.north west)
+    -- ([xshift=4cm,yshift=-6cm]current page.north west)
+    -- ([xshift=-2cm,yshift=-6cm]current page.north west) -- cycle;
+  \fill[kartozaamber!85] ([xshift=5.5cm,yshift=-3cm]current page.north west)
+    -- ([xshift=7.5cm,yshift=-3cm]current page.north west)
+    -- ([xshift=5.5cm,yshift=-6cm]current page.north west)
+    -- ([xshift=3.5cm,yshift=-6cm]current page.north west) -- cycle;
+\end{tikzpicture}
+
+\vspace*{6cm}
+
+\begin{center}
+  {\fontsize{34}{40}\selectfont\bfseries\sffamily Kartoza Screencaster}
+
+  \vspace{0.4cm}
+  {\LARGE\sffamily Handbook}
+
+  \vspace{1.2cm}
+  \color{kartozaamber}\rule{0.55\textwidth}{2pt}
+  \vspace{1.2cm}
+
+  {\Large\color{kartozablue}\itshape
+   Record. Don't edit.}
+
+  \vfill
+
+  \color{kartozablue}
+  \small
+  {\bfseries Made with {\color{statuserror}$\heartsuit$} by Kartoza}\\
+  \vspace{0.3cm}
+  kartoza.com\\
+  github.com/kartoza/kartoza-screencaster\\
+  \vspace{0.5cm}
+  \color{kartozagrey}\today
+\end{center}
+
+\newpage
+\pagecolor{surfacewhite}
+\color{textdefault}
+\endgroup
