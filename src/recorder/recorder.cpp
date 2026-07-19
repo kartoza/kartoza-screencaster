@@ -317,6 +317,7 @@ void Recorder::writeRecordingJson(const QString &status) {
 }
 
 void Recorder::startScreenRecorder(const RecordingOptions &opts) {
+    m_screenFallbackTried = false; // each part may independently retry then fall back
     m_screenProc = new QProcess(this);
     QString cmd;
     QStringList args;
@@ -426,12 +427,52 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
         QFile lf(screenLog);
         if (lf.open(QIODevice::Append)) lf.write(err);
     });
+    // If wl-screenrec dies on its own mid-recording (e.g. a VAAPI init failure
+    // that would otherwise leave a 0-byte file), fall back once to the software
+    // wf-recorder. Only for the wlroots path — wf-recorder is Wayland-only.
+    bool isWlrPrimary = (cmd == "wl-screenrec");
+    connect(m_screenProc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this, isWlrPrimary](int code, QProcess::ExitStatus st) {
+        if (isWlrPrimary && m_recording && !m_screenFallbackTried &&
+            (st == QProcess::CrashExit || code != 0)) {
+            qWarning() << "Screen recorder exited early (code" << code
+                       << ") — falling back to software wf-recorder";
+            startScreenRecorderFallback();
+        }
+    });
     m_screenProc->start(cmd, args);
 
     if (!m_screenProc->waitForStarted(5000)) {
         QString err = "Failed to start screen recorder: " + m_screenProc->errorString();
         qDebug() << err;
         emit recordingError(err);
+    }
+}
+
+void Recorder::startScreenRecorderFallback() {
+    m_screenFallbackTried = true;
+    if (m_screenProc) { m_screenProc->deleteLater(); m_screenProc = nullptr; }
+    QFile::remove(m_screenFile); // drop the empty file the primary may have left
+
+    m_screenProc = new QProcess(this);
+    // wf-recorder with the default software (libx264) encoder — no VAAPI.
+    QStringList args{"-o", m_opts.monitor, "-c", "libx264", "-f", m_screenFile};
+
+    QString screenLog = m_outputDir + "/screen_recorder.log";
+    { QFile lf(screenLog); if (lf.open(QIODevice::Append))
+        lf.write(QString("\n--- fallback: wf-recorder %1\n").arg(args.join(' ')).toUtf8()); }
+    connect(m_screenProc, &QProcess::readyReadStandardError, this, [this, screenLog]() {
+        QByteArray err = m_screenProc->readAllStandardError();
+        qDebug() << "wf-recorder stderr:" << err;
+        QFile lf(screenLog);
+        if (lf.open(QIODevice::Append)) lf.write(err);
+    });
+
+    qWarning() << "Starting fallback screen recorder: wf-recorder" << args;
+    m_screenProc->start("wf-recorder", args);
+    if (!m_screenProc->waitForStarted(5000)) {
+        emit recordingError("Fallback screen recorder (wf-recorder) failed to start: "
+                            + m_screenProc->errorString());
     }
 }
 

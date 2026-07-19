@@ -196,6 +196,14 @@ private slots:
 private:
     /** @brief Launch the FFmpeg screen-capture process. */
     void startScreenRecorder(const RecordingOptions &opts);
+    /**
+     * @brief Relaunch screen capture with the software wf-recorder fallback.
+     *
+     * Invoked once if the primary (wl-screenrec) recorder dies unexpectedly mid
+     * recording — typically a VAAPI init failure that would otherwise leave a
+     * 0-byte file. wf-recorder uses a pure software (libx264) path with no VAAPI.
+     */
+    void startScreenRecorderFallback();
     /** @brief Launch the FFmpeg audio-capture process. */
     void startAudioRecorder(const RecordingOptions &opts);
     /** @brief Launch the FFmpeg webcam-capture process. */
@@ -211,6 +219,7 @@ private:
     qint64 m_elapsedAccumulated = 0;       /**< Milliseconds accumulated before the current segment. */
 
     QProcess *m_screenProc = nullptr;      /**< FFmpeg process for screen capture. */
+    bool m_screenFallbackTried = false;    /**< True once the wf-recorder fallback has been used this session. */
     QProcess *m_audioProc = nullptr;       /**< FFmpeg process for audio capture. */
     QProcess *m_webcamProc = nullptr;      /**< FFmpeg process for webcam capture. */
 

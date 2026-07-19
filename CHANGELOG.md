@@ -70,6 +70,13 @@ The FFmpeg `drawtext` filter interpolated the font family and font-file path
 without escaping, so a family or path containing `:`, `'` or `\` corrupted the
 filtergraph and the render failed. All values are now escaped consistently.
 
+#### Automatic software fallback for screen capture
+If the primary `wl-screenrec` recorder dies mid-recording (for example a VAAPI
+init failure on a machine whose GPU stack is unavailable or mismatched), the
+recorder now automatically retries once with **`wf-recorder`** using a pure
+software (libx264) path — no VAAPI — so a recording is still produced. The
+switch is logged to `screen_recorder.log`.
+
 #### A failed screen capture no longer breaks the whole render
 If the screen recorder wrote a 0-byte file (e.g. `wl-screenrec` failing to
 initialise its encoder), the app fed that empty file to ffmpeg and the render

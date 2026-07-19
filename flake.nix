@@ -122,7 +122,8 @@
 
         # Runtime dependencies wrapped into PATH
         runtimeDeps = with pkgs; [
-          wl-screenrec                # Wayland (wlroots) screen recording
+          wl-screenrec                # Wayland (wlroots) screen recording (VAAPI)
+          wf-recorder                 # software fallback when VAAPI is unavailable
           ffmpeg                      # Video/audio processing (includes ffprobe)
           grim                        # Wayland (wlroots) screenshot
           xorg.xrandr                 # X11 monitor enumeration
@@ -251,6 +252,7 @@
 
             # Recording dependencies (for testing)
             wl-screenrec
+            wf-recorder        # software screen-capture fallback (no VAAPI)
             ffmpeg
             pipewire
             libnotify
