@@ -5,7 +5,7 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.2.0] - 2026-07-19
 
 ### Added
 
@@ -110,8 +110,6 @@ threaded screen-capture path, stopped the canvas repainting every 2 s while idle
 cached `fc-match` font resolution, and de-duplicated the frame-rescale logic
 (`setMode`/`resizeEvent`) and single-item export paths — all covered by new
 regression tests.
-
-_Work toward 2.2.0._
 
 ## [2.1.0] - 2026-07-18
 
