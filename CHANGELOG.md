@@ -70,6 +70,13 @@ The FFmpeg `drawtext` filter interpolated the font family and font-file path
 without escaping, so a family or path containing `:`, `'` or `\` corrupted the
 filtergraph and the render failed. All values are now escaped consistently.
 
+#### Audio denoise no longer silently disabled
+The denoise step fed the room-noise sample to FFmpeg's `afftdn` filter as a second
+input, which `afftdn` doesn't accept — FFmpeg errored ("More input link labels …
+than it has inputs") and denoise silently fell back to raw audio on every
+recording. It now uses the correct single-input adaptive `afftdn` chain, so
+denoise actually runs.
+
 #### Automatic software fallback for screen capture
 If the primary `wl-screenrec` recorder dies mid-recording (for example a VAAPI
 init failure on a machine whose GPU stack is unavailable or mismatched), the

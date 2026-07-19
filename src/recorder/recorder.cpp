@@ -1105,18 +1105,14 @@ void Recorder::processRecordings() {
             filter = "afftdn=nf=-30:nr=12:nt=w,highpass=f=80,lowpass=f=13000";
         }
 
+        // afftdn is a single-input filter — it cannot take the room-noise sample
+        // as a second input. The previous two-input filter_complex ([0:a][noise]
+        // afftdn) made ffmpeg fail ("More input link labels ... than it has
+        // inputs: 2 > 1"), so denoise silently fell back to raw audio. Use the
+        // adaptive single-input chain in both cases; the room-noise branch just
+        // selects stronger noise-tracking parameters (see `filter` above).
         QProcess proc;
-        QStringList args = {"-y", "-i", audioToUse};
-        if (hasRoomNoise) {
-            // Feed room noise as a second input for noise profiling
-            args << "-i" << roomNoiseFile
-                 << "-filter_complex"
-                 << QString("[1:a]asplit[noise];[0:a][noise]afftdn=nr=20:nt=w,highpass=f=80,lowpass=f=13000[aout]")
-                 << "-map" << "[aout]";
-        } else {
-            args << "-af" << filter;
-        }
-        args << "-ar" << "48000" << denoisedFile;
+        QStringList args = {"-y", "-i", audioToUse, "-af", filter, "-ar", "48000", denoisedFile};
 
         proc.start("ffmpeg", args);
         if (proc.waitForFinished(60000) && proc.exitCode() == 0) {
