@@ -414,8 +414,17 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
     }
 
     qDebug() << "Starting screen recorder:" << cmd << args;
-    connect(m_screenProc, &QProcess::readyReadStandardError, this, [this]() {
-        qDebug() << "Screen recorder stderr:" << m_screenProc->readAllStandardError();
+    // Persist the recorder's stderr to a log file in the recording folder so a
+    // failure (e.g. wl-screenrec producing a 0-byte file) is diagnosable even
+    // when the app was launched from a .desktop entry (no visible stdout).
+    QString screenLog = m_outputDir + "/screen_recorder.log";
+    { QFile lf(screenLog); if (lf.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        lf.write(QString("$ %1 %2\n").arg(cmd, args.join(' ')).toUtf8()); }
+    connect(m_screenProc, &QProcess::readyReadStandardError, this, [this, screenLog]() {
+        QByteArray err = m_screenProc->readAllStandardError();
+        qDebug() << "Screen recorder stderr:" << err;
+        QFile lf(screenLog);
+        if (lf.open(QIODevice::Append)) lf.write(err);
     });
     m_screenProc->start(cmd, args);
 
@@ -981,8 +990,20 @@ void Recorder::processRecordings() {
         m_webcamFile = m_webcamParts.first();
     }
 
-    bool hasScreen = QFile::exists(m_screenFile);
+    // A 0-byte screen file means the capture tool ran but wrote nothing (e.g.
+    // wl-screenrec failed to initialise its encoder). Treat that as "no screen"
+    // so the merge doesn't feed ffmpeg an empty input and die cryptically.
+    bool screenEmpty = QFile::exists(m_screenFile) && QFileInfo(m_screenFile).size() == 0;
+    bool hasScreen = QFile::exists(m_screenFile) && QFileInfo(m_screenFile).size() > 0;
     bool hasAudio = QFile::exists(m_audioFile);
+
+    if (screenEmpty && !m_opts.noScreen) {
+        qWarning() << "Screen recording produced 0 bytes:" << m_screenFile;
+        emit recordingError(
+            "Screen recording produced no data — the capture tool failed to encode. "
+            "See screen_recorder.log in the recording folder. "
+            "Your audio and webcam were saved.");
+    }
 
     if (!hasScreen && !hasAudio && !QFile::exists(m_webcamFile)) {
         emit processingStepError(0, "Merge", "No input files found");

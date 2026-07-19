@@ -70,6 +70,20 @@ The FFmpeg `drawtext` filter interpolated the font family and font-file path
 without escaping, so a family or path containing `:`, `'` or `\` corrupted the
 filtergraph and the render failed. All values are now escaped consistently.
 
+#### A failed screen capture no longer breaks the whole render
+If the screen recorder wrote a 0-byte file (e.g. `wl-screenrec` failing to
+initialise its encoder), the app fed that empty file to ffmpeg and the render
+died with a cryptic error. A 0-byte screen capture is now treated as "no screen":
+the render is skipped with a clear, actionable message and the captured **audio
+and webcam are preserved**. The screen recorder's stderr is also written to
+`screen_recorder.log` in the recording folder so failures are diagnosable even
+when the app was launched from a desktop entry.
+
+#### Sharper webcam preview
+The live webcam preview captured at 160×120 and upscaled on the canvas, so it
+looked pixelated (the recording itself always used full resolution). The preview
+now captures at 480×360, so it reads clearly while composing.
+
 #### Reopening the app restores crop and screen placement
 The startup state restore silently dropped item crops, the screen's saved
 position/size, and start/end sounds — so a layout that looked correct when saved
