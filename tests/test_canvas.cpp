@@ -1853,6 +1853,41 @@ private slots:
     auto out = c.exportItems()[0];
     QCOMPARE(out.type, 1);
   }
+
+  // Drag the right-edge resize handle of the selected item far to the right.
+  void dragRightEdge(Canvas &c, int idx, int dx) {
+    auto b = c.exportItems()[idx];
+    int rx = b.x + b.w / 2, y = b.y;
+    QMouseEvent press(QEvent::MouseButtonPress, QPointF(rx, y), QPointF(rx, y),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &press);
+    QMouseEvent move(QEvent::MouseMove, QPointF(rx + dx, y), QPointF(rx + dx, y),
+                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &move);
+    QMouseEvent rel(QEvent::MouseButtonRelease, QPointF(rx + dx, y), QPointF(rx + dx, y),
+                    Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&c, &rel);
+  }
+
+  void testTextBoxResizesWithoutCap() {
+    Canvas c;
+    int i = c.addTextBox("Big");     // addTextBox selects the item
+    auto before = c.exportItems()[i];
+    dragRightEdge(c, i, 500);        // stretch far beyond the canvas width
+    auto after = c.exportItems()[i];
+    // Width grew substantially with no artificial maximum.
+    QVERIFY(after.w > before.w + 300);
+  }
+
+  void testTextEdgeResizeIsSingleAxis() {
+    Canvas c;
+    int i = c.addTextBox("Wide");
+    auto before = c.exportItems()[i];
+    dragRightEdge(c, i, 300);
+    auto after = c.exportItems()[i];
+    QVERIFY(after.w > before.w);      // width changed
+    QCOMPARE(after.h, before.h);      // height unchanged (free single-axis)
+  }
 };
 
 QTEST_MAIN(TestCanvas)

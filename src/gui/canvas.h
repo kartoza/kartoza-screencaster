@@ -365,7 +365,7 @@ private:
     int m_cropHandle = 0;
     /** @brief Index of item whose crop handle is being dragged. */
     int m_cropItem = -1;
-    /** @brief Which resize (corner) handle is being dragged: 0=none, 1=TL, 2=TR, 3=BL, 4=BR. */
+    /** @brief Which resize handle is dragged: 0=none, 1=TL, 2=TR, 3=BL, 4=BR, 5=top, 6=bottom, 7=left, 8=right. */
     int m_resizeHandle = 0;
     /** @brief Index of item whose resize handle is being dragged. */
     int m_resizeItem = -1;
@@ -373,8 +373,10 @@ private:
     int m_resizeStartW = 0;
     /** @brief Item height at the start of a resize drag. */
     int m_resizeStartH = 0;
-    /** @brief Distance from item centre to cursor at the start of a resize drag. */
-    double m_resizeStartDist = 0;
+    /** @brief Fixed anchor point X (opposite the grabbed handle) during a resize drag. */
+    int m_resizeAnchorX = 0;
+    /** @brief Fixed anchor point Y (opposite the grabbed handle) during a resize drag. */
+    int m_resizeAnchorY = 0;
     /** @brief Whether Alt is currently held (switches handles from resize to crop). */
     bool m_altActive = false;
     /** @brief Whether a vertical snap guide is active during the current drag. */

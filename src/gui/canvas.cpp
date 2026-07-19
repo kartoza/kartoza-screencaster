@@ -846,17 +846,23 @@ int Canvas::hitCropHandle(const CanvasItem &item, int mx, int my) const {
 }
 
 int Canvas::hitResizeHandle(const CanvasItem &item, int mx, int my) const {
-    // Returns: 0=none, 1=TL, 2=TR, 3=BL, 4=BR
+    // Returns: 0=none, 1=TL, 2=TR, 3=BL, 4=BR, 5=top, 6=bottom, 7=left, 8=right
     int left = item.x - item.w/2;
     int top = item.y - item.h/2;
     int right = left + item.w;
     int bottom = top + item.h;
     int hs = RESIZE_HANDLE_SIZE;
 
+    // Corners take priority (aspect-locked resize).
     if (std::abs(mx - left) <= hs && std::abs(my - top) <= hs) return 1;
     if (std::abs(mx - right) <= hs && std::abs(my - top) <= hs) return 2;
     if (std::abs(mx - left) <= hs && std::abs(my - bottom) <= hs) return 3;
     if (std::abs(mx - right) <= hs && std::abs(my - bottom) <= hs) return 4;
+    // Edge midpoints (single-axis / free resize).
+    if (std::abs(my - top) <= hs && std::abs(mx - item.x) <= hs) return 5;
+    if (std::abs(my - bottom) <= hs && std::abs(mx - item.x) <= hs) return 6;
+    if (std::abs(mx - left) <= hs && std::abs(my - item.y) <= hs) return 7;
+    if (std::abs(mx - right) <= hs && std::abs(my - item.y) <= hs) return 8;
     return 0;
 }
 
@@ -900,7 +906,20 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
                 m_resizeItem = m_selected;
                 m_resizeStartW = it.w;
                 m_resizeStartH = it.h;
-                m_resizeStartDist = std::hypot(mx - it.x, my - it.y);
+                // Anchor is the point opposite the grabbed handle; it stays fixed
+                // while the grabbed handle tracks the cursor (no size cap).
+                int L = it.x - it.w/2, T = it.y - it.h/2;
+                int R = L + it.w, B = T + it.h;
+                switch (rhandle) {
+                case 1: m_resizeAnchorX = R;    m_resizeAnchorY = B;    break; // TL
+                case 2: m_resizeAnchorX = L;    m_resizeAnchorY = B;    break; // TR
+                case 3: m_resizeAnchorX = R;    m_resizeAnchorY = T;    break; // BL
+                case 4: m_resizeAnchorX = L;    m_resizeAnchorY = T;    break; // BR
+                case 5: m_resizeAnchorX = it.x; m_resizeAnchorY = B;    break; // top
+                case 6: m_resizeAnchorX = it.x; m_resizeAnchorY = T;    break; // bottom
+                case 7: m_resizeAnchorX = R;    m_resizeAnchorY = it.y; break; // left
+                case 8: m_resizeAnchorX = L;    m_resizeAnchorY = it.y; break; // right
+                }
                 setFocus();
                 update();
                 emit selectionChanged(m_selected);
@@ -964,12 +983,53 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
     // giving the same result as the scroll wheel.
     if (m_resizeHandle > 0 && m_resizeItem >= 0 && m_resizeItem < m_items.size()) {
         auto &item = m_items[m_resizeItem];
-        double dist = std::hypot(mx - item.x, my - item.y);
-        if (m_resizeStartDist > 1.0) {
-            double scale = dist / m_resizeStartDist;
-            int newW = int(std::lround(m_resizeStartW * scale));
-            int textH = (item.type == 3) ? int(std::lround(m_resizeStartH * scale)) : -1;
-            setItemWidthKeepingAspect(item, newW, textH);
+        bool isText = (item.type == 3);
+        bool corner = (m_resizeHandle >= 1 && m_resizeHandle <= 4);
+        bool horizEdge = (m_resizeHandle == 7 || m_resizeHandle == 8); // left/right
+        bool vertEdge = (m_resizeHandle == 5 || m_resizeHandle == 6);  // top/bottom
+        // Raw box dimensions from the fixed anchor to the cursor (no cap).
+        int rawW = std::abs(mx - m_resizeAnchorX);
+        int rawH = std::abs(my - m_resizeAnchorY);
+        double aspect = m_resizeStartH > 0 ? double(m_resizeStartW) / m_resizeStartH : 1.0;
+
+        if (isText) {
+            // Text resizes to any size. Corners keep the box aspect (Shift = free);
+            // edges stretch a single axis so text can be any width/height.
+            if (corner) {
+                if (shiftHeld) {
+                    item.w = std::max(20, rawW);
+                    item.h = std::max(10, rawH);
+                } else {
+                    int w = std::max(rawW, int(std::lround(rawH * aspect)));
+                    item.w = std::max(20, w);
+                    item.h = std::max(10, int(std::lround(item.w / aspect)));
+                }
+            } else if (horizEdge) {
+                item.w = std::max(20, rawW);
+            } else { // vertEdge
+                item.h = std::max(10, rawH);
+            }
+        } else {
+            // Other items stay aspect-locked; the grabbed handle's axis drives it.
+            int newW;
+            if (vertEdge) newW = int(std::lround(rawH * aspect));
+            else if (horizEdge) newW = rawW;
+            else newW = std::max(rawW, int(std::lround(rawH * aspect)));
+            setItemWidthKeepingAspect(item, newW);
+        }
+
+        // Keep the anchor point fixed: the box extends from it toward the cursor.
+        int signX = (mx >= m_resizeAnchorX) ? 1 : -1;
+        int signY = (my >= m_resizeAnchorY) ? 1 : -1;
+        if (horizEdge) {
+            item.x = m_resizeAnchorX + signX * item.w / 2;
+            item.y = m_resizeAnchorY;
+        } else if (vertEdge) {
+            item.y = m_resizeAnchorY + signY * item.h / 2;
+            item.x = m_resizeAnchorX;
+        } else {
+            item.x = m_resizeAnchorX + signX * item.w / 2;
+            item.y = m_resizeAnchorY + signY * item.h / 2;
         }
         update();
         return;
@@ -1024,6 +1084,10 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
                     setCursor(Qt::SizeFDiagCursor);
                 else if (rhandle == 2 || rhandle == 3)
                     setCursor(Qt::SizeBDiagCursor);
+                else if (rhandle == 5 || rhandle == 6)
+                    setCursor(Qt::SizeVerCursor);
+                else if (rhandle == 7 || rhandle == 8)
+                    setCursor(Qt::SizeHorCursor);
                 else
                     setCursor(Qt::ArrowCursor);
             }
@@ -1681,9 +1745,14 @@ void Canvas::drawResizeHandles(QPainter &painter, const CanvasItem &item) {
     QColor handleColor(223, 158, 47); // Kartoza highlight1 #DF9E2F — resize mode
     painter.setPen(Qt::NoPen);
     painter.setBrush(handleColor);
-    // Four corner squares centred on the item corners.
+    // Corner squares (aspect-locked resize).
     painter.drawRect(left - hs/2, top - hs/2, hs, hs);
     painter.drawRect(right - hs/2, top - hs/2, hs, hs);
     painter.drawRect(left - hs/2, bottom - hs/2, hs, hs);
     painter.drawRect(right - hs/2, bottom - hs/2, hs, hs);
+    // Edge midpoint squares (single-axis / free resize).
+    painter.drawRect(item.x - hs/2, top - hs/2, hs, hs);
+    painter.drawRect(item.x - hs/2, bottom - hs/2, hs, hs);
+    painter.drawRect(left - hs/2, item.y - hs/2, hs, hs);
+    painter.drawRect(right - hs/2, item.y - hs/2, hs, hs);
 }

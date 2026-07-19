@@ -559,8 +559,11 @@ void RecordPage::setupUI() {
     textLayout->addWidget(m_textContentInput);
 
     QString comboStyle = "background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; border-radius: 3px; padding: 2px; font-size: 11px;";
+    // The dropdown popup (QAbstractItemView) needs its own light-on-dark colours,
+    // otherwise items render as dark text on the platform's default light/ dark view.
+    QString comboViewStyle = " QAbstractItemView { background: #2d2d44; color: #e8e8ec; border: 1px solid #3d3d56; selection-background-color: #3d3d56; selection-color: #e8e8ec; }";
     m_fontCombo = new QFontComboBox;
-    m_fontCombo->setStyleSheet("QFontComboBox { " + comboStyle + " }");
+    m_fontCombo->setStyleSheet("QFontComboBox { " + comboStyle + " }" + comboViewStyle);
     m_fontCombo->setMaximumWidth(150);
     m_fontCombo->setToolTip("Font family. Size derives from the box height.");
     textLayout->addWidget(m_fontCombo);
@@ -570,7 +573,7 @@ void RecordPage::setupUI() {
     m_weightCombo->addItem("Normal", 400);
     m_weightCombo->addItem("Bold", 700);
     m_weightCombo->setCurrentIndex(1);
-    m_weightCombo->setStyleSheet("QComboBox { " + comboStyle + " }");
+    m_weightCombo->setStyleSheet("QComboBox { " + comboStyle + " }" + comboViewStyle);
     m_weightCombo->setToolTip("Font weight.");
     textLayout->addWidget(m_weightCombo);
 

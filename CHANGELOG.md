@@ -53,6 +53,26 @@ The Layers and Presets lists set a dark selection background but left the
 selected-row text colour to Qt's palette default, rendering dark text on the dark
 highlight. Both lists now keep the light text colour when selected.
 
+#### Text boxes resize to any size, with or without aspect lock
+Text boxes were effectively capped in size because handle resize scaled about the
+item centre, so the reachable size was bounded by the preview. Resize now anchors
+to the opposite handle and tracks the cursor, so a box can be made as large (or
+small) as you like. Corner handles keep the box aspect (hold **Shift** to stretch
+freely); the new **edge** handles resize a single axis, so text can be any width
+or height independently.
+
+#### Font and weight dropdowns are legible
+The font-family and weight dropdown popups rendered dark text on a dark list. Both
+popups now use the light-on-dark palette, matching the rest of the panel.
+
+### Changed
+
+#### Closing the window hides it to the system tray
+Clicking the window's close (X) button now fully hides the window to the system
+tray (the app keeps running and is restored from the tray icon) when a tray is
+available, instead of only minimising. Without a system tray it falls back to
+minimising so there is always a way back.
+
 _Work toward 2.2.0._
 
 ## [2.1.0] - 2026-07-18
