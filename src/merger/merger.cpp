@@ -23,12 +23,20 @@ QString outputFileName(int number, const QString &title, const QString &suffix) 
     return name + ".mp4";
 }
 
-// Escape a string for use inside an FFmpeg drawtext text='...' value.
-static QString escapeDrawtext(const QString &in) {
+// Escape a string for use inside a single-quoted FFmpeg filter value (family,
+// fontfile path, etc.): backslash, colon (option separator) and single quote.
+static QString escapeFilterValue(const QString &in) {
     QString s = in;
     s.replace("\\", "\\\\");
-    s.replace("'", "\\'");
     s.replace(":", "\\:");
+    s.replace("'", "\\'");
+    return s;
+}
+
+// Escape a string for an FFmpeg drawtext text='...' value: as above plus '%'
+// (drawtext expands %-sequences).
+static QString escapeDrawtext(const QString &in) {
+    QString s = escapeFilterValue(in);
     s.replace("%", "\\%");
     return s;
 }
@@ -49,12 +57,9 @@ void appendTextBoxFilters(QString &filter, QString &current, int &vIdx,
         // hand the family name to fontconfig.
         QString fontSel;
         if (!tb.fontFile.isEmpty()) {
-            QString ff = tb.fontFile;
-            ff.replace("\\", "\\\\");
-            ff.replace(":", "\\:");
-            fontSel = QString("fontfile='%1'").arg(ff);
+            fontSel = QString("fontfile='%1'").arg(escapeFilterValue(tb.fontFile));
         } else {
-            fontSel = QString("font='%1'").arg(tb.fontFamily);
+            fontSel = QString("font='%1'").arg(escapeFilterValue(tb.fontFamily));
         }
 
         QString tag = QString("v%1").arg(++vIdx);
@@ -324,11 +329,10 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
         }
     }
 
-    bool needsFilter = !logoInputs.isEmpty() || mergeWebcam;
-    // Check if any logo inputs are actually valid
+    // A filter graph is needed only if there's a real logo or a webcam to overlay.
     bool hasAnyLogo = false;
     for (int idx : logoInputs) { if (idx >= 0) { hasAnyLogo = true; break; } }
-    needsFilter = hasAnyLogo || mergeWebcam;
+    bool needsFilter = hasAnyLogo || mergeWebcam;
 
     // Check if screen needs cropping
     bool needsCrop = in.opts.screenCropTop > 0 || in.opts.screenCropBottom > 0 ||

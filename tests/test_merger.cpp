@@ -121,6 +121,22 @@ private slots:
         QCOMPARE(current, QString("[v1]"));
     }
 
+    void testAppendTextBoxFilters_escapesFontFamily() {
+        QVector<RecordingOptions::TextBox> boxes;
+        RecordingOptions::TextBox tb;
+        tb.text = "Hi"; tb.fontFamily = "My:Font"; tb.color = "#fff";
+        tb.relW = 0.3; tb.relH = 0.1;
+        boxes.append(tb);
+
+        QString filter;
+        QString current = "[in]";
+        int vIdx = 0;
+        Merger::appendTextBoxFilters(filter, current, vIdx, boxes, 1920, 1080);
+        // The colon in the family must be escaped so it does not terminate the
+        // font option and corrupt the filtergraph.
+        QVERIFY(filter.contains("font='My\\:Font'"));
+    }
+
     void testAppendTextBoxFilters_skipsEmpty() {
         QVector<RecordingOptions::TextBox> boxes;
         RecordingOptions::TextBox tb; tb.text = "   ";

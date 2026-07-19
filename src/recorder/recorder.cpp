@@ -1196,7 +1196,7 @@ void Recorder::processRecordings() {
             emit processingStepError(2, "Merging", "FFmpeg merge failed");
         }
     } else {
-        emit processingStepDone(2, "Merging video & audio", !isVerticalMode ? true : true);
+        emit processingStepDone(2, "Merging video & audio", true);
     }
 
     if (m_cancelRequested) { m_processing = false; emit processingFinished(false); return; }
