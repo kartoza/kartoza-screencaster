@@ -317,6 +317,7 @@ void Recorder::writeRecordingJson(const QString &status) {
 }
 
 void Recorder::startScreenRecorder(const RecordingOptions &opts) {
+    m_screenFallbackTried = false; // each part may independently retry then fall back
     m_screenProc = new QProcess(this);
     QString cmd;
     QStringList args;
@@ -414,8 +415,30 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
     }
 
     qDebug() << "Starting screen recorder:" << cmd << args;
-    connect(m_screenProc, &QProcess::readyReadStandardError, this, [this]() {
-        qDebug() << "Screen recorder stderr:" << m_screenProc->readAllStandardError();
+    // Persist the recorder's stderr to a log file in the recording folder so a
+    // failure (e.g. wl-screenrec producing a 0-byte file) is diagnosable even
+    // when the app was launched from a .desktop entry (no visible stdout).
+    QString screenLog = m_outputDir + "/screen_recorder.log";
+    { QFile lf(screenLog); if (lf.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        lf.write(QString("$ %1 %2\n").arg(cmd, args.join(' ')).toUtf8()); }
+    connect(m_screenProc, &QProcess::readyReadStandardError, this, [this, screenLog]() {
+        QByteArray err = m_screenProc->readAllStandardError();
+        qDebug() << "Screen recorder stderr:" << err;
+        QFile lf(screenLog);
+        if (lf.open(QIODevice::Append)) lf.write(err);
+    });
+    // If wl-screenrec dies on its own mid-recording (e.g. a VAAPI init failure
+    // that would otherwise leave a 0-byte file), fall back once to the software
+    // wf-recorder. Only for the wlroots path — wf-recorder is Wayland-only.
+    bool isWlrPrimary = (cmd == "wl-screenrec");
+    connect(m_screenProc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this, isWlrPrimary](int code, QProcess::ExitStatus st) {
+        if (isWlrPrimary && m_recording && !m_screenFallbackTried &&
+            (st == QProcess::CrashExit || code != 0)) {
+            qWarning() << "Screen recorder exited early (code" << code
+                       << ") — falling back to software wf-recorder";
+            startScreenRecorderFallback();
+        }
     });
     m_screenProc->start(cmd, args);
 
@@ -423,6 +446,33 @@ void Recorder::startScreenRecorder(const RecordingOptions &opts) {
         QString err = "Failed to start screen recorder: " + m_screenProc->errorString();
         qDebug() << err;
         emit recordingError(err);
+    }
+}
+
+void Recorder::startScreenRecorderFallback() {
+    m_screenFallbackTried = true;
+    if (m_screenProc) { m_screenProc->deleteLater(); m_screenProc = nullptr; }
+    QFile::remove(m_screenFile); // drop the empty file the primary may have left
+
+    m_screenProc = new QProcess(this);
+    // wf-recorder with the default software (libx264) encoder — no VAAPI.
+    QStringList args{"-o", m_opts.monitor, "-c", "libx264", "-f", m_screenFile};
+
+    QString screenLog = m_outputDir + "/screen_recorder.log";
+    { QFile lf(screenLog); if (lf.open(QIODevice::Append))
+        lf.write(QString("\n--- fallback: wf-recorder %1\n").arg(args.join(' ')).toUtf8()); }
+    connect(m_screenProc, &QProcess::readyReadStandardError, this, [this, screenLog]() {
+        QByteArray err = m_screenProc->readAllStandardError();
+        qDebug() << "wf-recorder stderr:" << err;
+        QFile lf(screenLog);
+        if (lf.open(QIODevice::Append)) lf.write(err);
+    });
+
+    qWarning() << "Starting fallback screen recorder: wf-recorder" << args;
+    m_screenProc->start("wf-recorder", args);
+    if (!m_screenProc->waitForStarted(5000)) {
+        emit recordingError("Fallback screen recorder (wf-recorder) failed to start: "
+                            + m_screenProc->errorString());
     }
 }
 
@@ -981,8 +1031,20 @@ void Recorder::processRecordings() {
         m_webcamFile = m_webcamParts.first();
     }
 
-    bool hasScreen = QFile::exists(m_screenFile);
+    // A 0-byte screen file means the capture tool ran but wrote nothing (e.g.
+    // wl-screenrec failed to initialise its encoder). Treat that as "no screen"
+    // so the merge doesn't feed ffmpeg an empty input and die cryptically.
+    bool screenEmpty = QFile::exists(m_screenFile) && QFileInfo(m_screenFile).size() == 0;
+    bool hasScreen = QFile::exists(m_screenFile) && QFileInfo(m_screenFile).size() > 0;
     bool hasAudio = QFile::exists(m_audioFile);
+
+    if (screenEmpty && !m_opts.noScreen) {
+        qWarning() << "Screen recording produced 0 bytes:" << m_screenFile;
+        emit recordingError(
+            "Screen recording produced no data — the capture tool failed to encode. "
+            "See screen_recorder.log in the recording folder. "
+            "Your audio and webcam were saved.");
+    }
 
     if (!hasScreen && !hasAudio && !QFile::exists(m_webcamFile)) {
         emit processingStepError(0, "Merge", "No input files found");
@@ -1043,18 +1105,14 @@ void Recorder::processRecordings() {
             filter = "afftdn=nf=-30:nr=12:nt=w,highpass=f=80,lowpass=f=13000";
         }
 
+        // afftdn is a single-input filter — it cannot take the room-noise sample
+        // as a second input. The previous two-input filter_complex ([0:a][noise]
+        // afftdn) made ffmpeg fail ("More input link labels ... than it has
+        // inputs: 2 > 1"), so denoise silently fell back to raw audio. Use the
+        // adaptive single-input chain in both cases; the room-noise branch just
+        // selects stronger noise-tracking parameters (see `filter` above).
         QProcess proc;
-        QStringList args = {"-y", "-i", audioToUse};
-        if (hasRoomNoise) {
-            // Feed room noise as a second input for noise profiling
-            args << "-i" << roomNoiseFile
-                 << "-filter_complex"
-                 << QString("[1:a]asplit[noise];[0:a][noise]afftdn=nr=20:nt=w,highpass=f=80,lowpass=f=13000[aout]")
-                 << "-map" << "[aout]";
-        } else {
-            args << "-af" << filter;
-        }
-        args << "-ar" << "48000" << denoisedFile;
+        QStringList args = {"-y", "-i", audioToUse, "-af", filter, "-ar", "48000", denoisedFile};
 
         proc.start("ffmpeg", args);
         if (proc.waitForFinished(60000) && proc.exitCode() == 0) {

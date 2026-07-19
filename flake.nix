@@ -122,7 +122,8 @@
 
         # Runtime dependencies wrapped into PATH
         runtimeDeps = with pkgs; [
-          wl-screenrec                # Wayland (wlroots) screen recording
+          wl-screenrec                # Wayland (wlroots) screen recording (VAAPI)
+          wf-recorder                 # software fallback when VAAPI is unavailable
           ffmpeg                      # Video/audio processing (includes ffprobe)
           grim                        # Wayland (wlroots) screenshot
           xorg.xrandr                 # X11 monitor enumeration
@@ -251,6 +252,7 @@
 
             # Recording dependencies (for testing)
             wl-screenrec
+            wf-recorder        # software screen-capture fallback (no VAAPI)
             ffmpeg
             pipewire
             libnotify
@@ -266,7 +268,7 @@
             # Nix tools
             nil
             nixpkgs-fmt
-            nixfmt-classic
+            nixfmt              # RFC-style formatter (nixfmt-classic was removed upstream)
 
             # Git
             git
@@ -361,6 +363,30 @@
               set -euo pipefail
               cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
               exec ${mkdocsEnv}/bin/mkdocs build --strict --site-dir site "$@"
+            '');
+          };
+
+          # `nix run .#handbook-pdf -- [name.pdf]` — branded PDF handbook,
+          # assembled from the mkdocs docs via pandoc + pdflatex with the
+          # Kartoza cover/preamble (docs/pdf/). Mirrors qgis-dev-env.
+          handbook-pdf = let
+            texEnv = pkgs.texlive.combine {
+              inherit (pkgs.texlive)
+                scheme-medium lato inconsolata fvextra titlesec fancyhdr
+                sectsty soul enumitem pgf xcolor booktabs
+                # lato/inconsolata font-package dependencies:
+                fontaxes xkeyval mweights
+                # pandoc default LaTeX template dependencies:
+                upquote microtype parskip xurl bookmark footnotehyper;
+            };
+          in {
+            type = "app";
+            program = toString (pkgs.writeShellScript "handbook-pdf" ''
+              #!${pkgs.bash}/bin/bash
+              set -euo pipefail
+              export PATH="${texEnv}/bin:${pkgs.pandoc}/bin:${pkgs.librsvg}/bin:$PATH"
+              cd "$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
+              exec ${pkgs.bash}/bin/bash lib/docs-pdf.sh "$@"
             '');
           };
 

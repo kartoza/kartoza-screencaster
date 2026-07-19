@@ -92,7 +92,7 @@ ksc-dev — Kartoza Screencaster developer command
   ksc-dev configure [-D...]     Re-run cmake with extra flags
   ksc-dev format                clang-format all C++ sources
   ksc-dev clean                 Clean rebuild from scratch
-  ksc-dev docs [serve|build]    mkdocs serve (default) or build
+  ksc-dev docs [serve|build|pdf] mkdocs serve (default) / build / branded PDF handbook
   ksc-dev stats [--graph]       Show build metrics (ccache hit rate, durations)
   ksc-dev help                  This help
 
@@ -109,7 +109,11 @@ case "$cmd" in
   configure) ( cd "$BUILD" && cmake .. -G Ninja "$@" ) ;;
   format)    ( cd "$ROOT" && find src tests \( -name '*.cpp' -o -name '*.h' \) -print0 | xargs -0 clang-format -i ) ;;
   clean)     rm -rf "${BUILD:?}/"* && do_build debug ;;
-  docs)      case "${1:-serve}" in build) ( cd "$ROOT" && mkdocs build ) ;; *) ( cd "$ROOT" && mkdocs serve ) ;; esac ;;
+  docs)      case "${1:-serve}" in
+               build) ( cd "$ROOT" && mkdocs build ) ;;
+               pdf)   ( cd "$ROOT" && nix run .#handbook-pdf -- "${2:-}" ) ;;
+               *)     ( cd "$ROOT" && mkdocs serve ) ;;
+             esac ;;
   stats)     cmd_stats "$@" ;;
   help|-h|--help) usage ;;
   *) echo "ksc-dev: unknown command '$cmd'" >&2; usage; exit 2 ;;

@@ -433,8 +433,8 @@ private:
 
     static constexpr int CROP_HANDLE_SIZE = 6; /**< Radius of crop handle hit area. */
     static constexpr int RESIZE_HANDLE_SIZE = 7; /**< Radius of corner resize handle hit area. */
-    static constexpr int WC_W = 160;              /**< Webcam capture width. */
-    static constexpr int WC_H = 120;              /**< Webcam capture height. */
-    static constexpr int WC_FPS = 10;             /**< Webcam capture frame rate. */
+    static constexpr int WC_W = 480;              /**< Webcam preview width (higher = less pixelated on the canvas). */
+    static constexpr int WC_H = 360;              /**< Webcam preview height (4:3). */
+    static constexpr int WC_FPS = 10;             /**< Webcam preview frame rate. */
     static constexpr int WC_FRAME_SIZE = WC_W * WC_H * 3; /**< Raw RGB frame size in bytes. */
 };

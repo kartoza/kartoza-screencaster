@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Branded PDF handbook
+The full documentation is now available as a single Kartoza-branded PDF handbook,
+assembled from the mkdocs pages via pandoc + LaTeX with a Kartoza cover and
+palette. Build it with `nix run .#handbook-pdf` (or `ksc-dev docs pdf`); CI
+attaches `kartoza-screencaster-handbook.pdf` to every GitHub release.
+
 #### Multiple text boxes with per-box font, weight and colour (WYSIWYG)
 The canvas previously allowed a single title text item with one global colour and
 no font control. You can now add any number of independent text boxes (Add ▸ Text
@@ -69,6 +75,34 @@ popups now use the light-on-dark palette, matching the rest of the panel.
 The FFmpeg `drawtext` filter interpolated the font family and font-file path
 without escaping, so a family or path containing `:`, `'` or `\` corrupted the
 filtergraph and the render failed. All values are now escaped consistently.
+
+#### Audio denoise no longer silently disabled
+The denoise step fed the room-noise sample to FFmpeg's `afftdn` filter as a second
+input, which `afftdn` doesn't accept — FFmpeg errored ("More input link labels …
+than it has inputs") and denoise silently fell back to raw audio on every
+recording. It now uses the correct single-input adaptive `afftdn` chain, so
+denoise actually runs.
+
+#### Automatic software fallback for screen capture
+If the primary `wl-screenrec` recorder dies mid-recording (for example a VAAPI
+init failure on a machine whose GPU stack is unavailable or mismatched), the
+recorder now automatically retries once with **`wf-recorder`** using a pure
+software (libx264) path — no VAAPI — so a recording is still produced. The
+switch is logged to `screen_recorder.log`.
+
+#### A failed screen capture no longer breaks the whole render
+If the screen recorder wrote a 0-byte file (e.g. `wl-screenrec` failing to
+initialise its encoder), the app fed that empty file to ffmpeg and the render
+died with a cryptic error. A 0-byte screen capture is now treated as "no screen":
+the render is skipped with a clear, actionable message and the captured **audio
+and webcam are preserved**. The screen recorder's stderr is also written to
+`screen_recorder.log` in the recording folder so failures are diagnosable even
+when the app was launched from a desktop entry.
+
+#### Sharper webcam preview
+The live webcam preview captured at 160×120 and upscaled on the canvas, so it
+looked pixelated (the recording itself always used full resolution). The preview
+now captures at 480×360, so it reads clearly while composing.
 
 #### Reopening the app restores crop and screen placement
 The startup state restore silently dropped item crops, the screen's saved

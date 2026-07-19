@@ -113,3 +113,6 @@ docs/superpowers
 claude.sh
 claude.out
 git.sh
+
+# Generated PDF handbook
+kartoza-screencaster-handbook.pdf
