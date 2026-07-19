@@ -43,6 +43,18 @@ endif()
 # Compiler warnings (GCC/Clang only — MSVC uses /W4 by default)
 if(NOT MSVC)
     add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
+
+    # GCC 15's -Wtemplate-body eagerly type-checks template *definitions*
+    # (before instantiation). Against Qt 6.10.1 this errors inside Qt's own
+    # <QString> header — QString::assign(InputIterator, InputIterator) calls
+    # d.assign(...), which GCC 15 rejects at parse time. It is a system header
+    # we do not control (and -isystem does not suppress these eager errors), so
+    # disable the eager checking; genuine errors still surface at instantiation.
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-Wno-template-body" KSC_HAS_WNO_TEMPLATE_BODY)
+    if(KSC_HAS_WNO_TEMPLATE_BODY)
+        add_compile_options(-Wno-template-body)
+    endif()
 endif()
 
 # Release: optimize and strip
