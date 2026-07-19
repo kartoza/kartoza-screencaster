@@ -29,6 +29,30 @@ handful of project helpers.
 | `cf`     | Format all C++ code (clang-format).       |
 | `docs`   | Serve mkdocs (`localhost:8000`).          |
 
+## Unified command: `ksc-dev`
+
+Prefer one entry point? `ksc-dev` wraps the whole loop and records build
+metrics, mirroring `qgis-dev` from
+[`qgis-dev-env`](https://github.com/timlinux/qgis-dev-env):
+
+```bash
+ksc-dev build            # configure + build (Debug), log duration + ccache hit rate
+ksc-dev release          # Release build
+ksc-dev run              # run the app
+ksc-dev test -R canvas   # ctest (optionally filtered)
+ksc-dev format           # clang-format all sources
+ksc-dev clean            # clean rebuild
+ksc-dev docs [build]     # mkdocs serve (default) or build
+ksc-dev stats [--graph]  # build history: avg time, ccache hit rate, recent builds
+ksc-dev help
+```
+
+Each `ksc-dev build` appends a row to
+`${XDG_STATE_HOME:-~/.local/state}/kartoza-screencaster/build-log.tsv`
+(timestamp, branch, profile, target, duration, ccache hit %). `ksc-dev stats`
+summarises it; `--graph` also writes a small SVG of recent build durations. The
+single-letter aliases above (`cb`, `ct`, …) remain for muscle memory.
+
 ## Build acceleration (ccache + mold + Ninja)
 
 The dev loop is tuned for fast iterative builds. Three tools do the heavy

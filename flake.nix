@@ -77,6 +77,9 @@
 
         # Dev shell commands (work in any shell: bash, fish, zsh)
         devScripts = [
+          # Unified developer command (build/run/test/docs/stats). The script is
+          # deployed from scripts/ksc-dev.sh rather than embedded inline.
+          (pkgs.writeShellScriptBin "ksc-dev" (builtins.readFile ./scripts/ksc-dev.sh))
           (pkgs.writeShellScriptBin "cb" ''
             cd build && cmake .. -G Ninja && ninja && cd ..
           '')

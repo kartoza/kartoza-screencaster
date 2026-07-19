@@ -95,6 +95,13 @@ The docs landing-page hero now uses the Kartoza slant background under a
 translucent overlay (light and dark variants), aligning it with the
 `qgis-dev-env` documentation styling instead of a flat fill.
 
+#### Unified `ksc-dev` developer command with build metrics
+The dev shell adds a single `ksc-dev` entry point (`build`, `release`, `run`,
+`test`, `configure`, `format`, `clean`, `docs`, `stats`) alongside the existing
+short aliases. `ksc-dev build` logs the build duration and ccache hit rate to a
+TSV, and `ksc-dev stats [--graph]` summarises it — mirroring the `qgis-dev`
+workflow. Documented in the Dev shell guide.
+
 ### Internal
 
 A code-quality pass fixed a `QMovie` use-after-free on window close, moved the
