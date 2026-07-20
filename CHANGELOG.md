@@ -5,7 +5,7 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.2.0] - 2026-07-20
+## [2.3.0] - 2026-07-20
 
 ### Added
 
@@ -30,7 +30,31 @@ freezes only that element's preview — the reported bug where pausing one eleme
 (e.g. a screen) froze all the others (e.g. the webcam) is fixed. A paused element
 keeps its button visible so the frozen state always reads as intentional.
 
+### Fixed
 
+#### Alt-cropping a webcam now trims the recorded region
+Cropping a webcam on the canvas (hold **Alt** and drag a handle) previously only
+affected the preview — the recorded webcam still showed the full frame. The crop
+is now passed through to the recording and applied to the webcam source before
+shaping, so the recorded region matches the WYSIWYG preview. **Alt + a corner
+handle** now crops from that corner (two edges at once) in addition to the edge
+handles, on webcams as well as screen, logo and text items.
+
+#### The whole recording area stays visible
+Overlays and additional monitors are now clamped to the recording frame so nothing
+can be dragged off the recorded area, and the primary screen is kept covering the
+frame so the recording area is never left with an uncovered (dark) gap.
+
+#### Builds under GCC 15.2 / Qt 6.10.1
+The toolchain refresh that brought glibc 2.42 also pulled in GCC 15.2, whose new
+`-Wtemplate-body` eagerly type-checks template definitions — including Qt's own
+`<QString>` header — turning every translation unit into a hard compile error. A
+guarded `-Wno-template-body` restores the build; genuine template errors still
+surface at instantiation.
+
+## [2.2.0] - 2026-07-19
+
+### Added
 
 #### Branded PDF handbook
 The full documentation is now available as a single Kartoza-branded PDF handbook,
@@ -133,26 +157,6 @@ position/size, and start/end sounds — so a layout that looked correct when sav
 came back subtly different after a restart (whereas loading it as a preset
 restored everything). Startup restore and preset load now share one code path,
 so a reopened session matches exactly what was saved.
-
-#### Alt-cropping a webcam now trims the recorded region
-Cropping a webcam on the canvas (hold **Alt** and drag a handle) previously only
-affected the preview — the recorded webcam still showed the full frame. The crop
-is now passed through to the recording and applied to the webcam source before
-shaping, so the recorded region matches the WYSIWYG preview. **Alt + a corner
-handle** now crops from that corner (two edges at once) in addition to the edge
-handles, on webcams as well as screen, logo and text items.
-
-#### The whole recording area stays visible
-Overlays and additional monitors are now clamped to the recording frame so nothing
-can be dragged off the recorded area, and the primary screen is kept covering the
-frame so the recording area is never left with an uncovered (dark) gap.
-
-#### Builds under GCC 15.2 / Qt 6.10.1
-The toolchain refresh that brought glibc 2.42 also pulled in GCC 15.2, whose new
-`-Wtemplate-body` eagerly type-checks template definitions — including Qt's own
-`<QString>` header — turning every translation unit into a hard compile error. A
-guarded `-Wno-template-body` restores the build; genuine template errors still
-surface at instantiation.
 
 ### Changed
 
