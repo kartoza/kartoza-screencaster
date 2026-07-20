@@ -154,6 +154,21 @@ struct MergeInputs {
     };
     /** @brief Additional monitors composited as insets over the primary screen (landscape). */
     QVector<ScreenOverlayInput> extraScreens;
+
+    /**
+     * @brief A recorded additional webcam to composite over the scene.
+     *
+     * Placement is fractions (0.0--1.0) of the primary screen frame, matching the
+     * WYSIWYG canvas overlay.
+     */
+    struct WebcamOverlayInput {
+        QString file;                                 /**< Path to this webcam's capture. */
+        int shape = 0;                                /**< 0=round, 1=square, 2=rect. */
+        double relX = 0, relY = 0, relW = 0.15, relH = 0.2; /**< Placement on the frame. */
+        double cropTop = 0, cropBottom = 0, cropLeft = 0, cropRight = 0; /**< Source crop fractions. */
+    };
+    /** @brief Additional webcams composited over the scene (landscape). */
+    QVector<WebcamOverlayInput> extraWebcams;
 };
 
 /**

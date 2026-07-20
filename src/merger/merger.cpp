@@ -302,6 +302,52 @@ static void appendWebcamFilter(QString &filter, QString &current, int &vIdx,
     current = QString("[v%1]").arg(vIdx);
 }
 
+// Composite one additional webcam. Mirrors appendWebcamFilter but is parameterised
+// by placement/shape/crop and uses index-unique filter labels so several webcams
+// can be chained without label collisions.
+static void appendExtraWebcamFilter(QString &filter, QString &current, int &vIdx,
+                                    int input, const MergeInputs::WebcamOverlayInput &wc,
+                                    int idx, int canvasW, int canvasH) {
+    int wcW = qMax(50, static_cast<int>(wc.relW * canvasW));
+    int wcH = qMax(50, static_cast<int>(wc.relH * canvasH));
+    wcW = (wcW / 2) * 2; wcH = (wcH / 2) * 2;
+    int wcX = static_cast<int>(wc.relX * canvasW);
+    int wcY = static_cast<int>(wc.relY * canvasH);
+    QString S = QString::number(idx); // label suffix
+
+    double cl = qBound(0.0, wc.cropLeft, 0.9), cr = qBound(0.0, wc.cropRight, 0.9);
+    double ct = qBound(0.0, wc.cropTop, 0.9), cb = qBound(0.0, wc.cropBottom, 0.9);
+    QString src = QString("[%1:v]").arg(input);
+    if (cl > 0 || cr > 0 || ct > 0 || cb > 0) {
+        double cw = qMax(0.05, 1.0 - cl - cr), chf = qMax(0.05, 1.0 - ct - cb);
+        filter += QString("%1crop=in_w*%2:in_h*%3:in_w*%4:in_h*%5[ewsrc%6];")
+            .arg(src).arg(cw, 0, 'f', 4).arg(chf, 0, 'f', 4)
+            .arg(cl, 0, 'f', 4).arg(ct, 0, 'f', 4).arg(S);
+        src = QString("[ewsrc%1]").arg(S);
+    }
+
+    if (wc.shape == 0) {
+        int diameter = (qMin(wcW, wcH) / 2) * 2;
+        int r = diameter / 2;
+        filter += QString("%1scale=%2:%2:force_original_aspect_ratio=increase,"
+                          "crop=%2:%2,setsar=1[ew%3];").arg(src).arg(diameter).arg(S);
+        filter += QString("color=black:%1x%1:d=0.04,"
+                          "geq=lum='if(lt(hypot(X-%2,Y-%2),%2),255,0)':cb=128:cr=128[ewm%3];")
+            .arg(diameter).arg(r).arg(S);
+        filter += QString("[ew%1][ewm%1]alphamerge=eof_action=repeat[ewshaped%1];").arg(S);
+        wcX = wcX + (wcW - diameter) / 2;
+        wcY = wcY + (wcH - diameter) / 2;
+    } else {
+        filter += QString("%1scale=%2:%3:force_original_aspect_ratio=decrease,"
+                          "pad=%2:%3:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[ewshaped%4];")
+            .arg(src).arg(wcW).arg(wcH).arg(S);
+    }
+
+    filter += QString("%1[ewshaped%2]overlay=%3:%4[v%5];")
+        .arg(current, S).arg(wcX).arg(wcY).arg(++vIdx);
+    current = QString("[v%1]").arg(vIdx);
+}
+
 // Composite one additional monitor over the current frame: crop its source,
 // scale it to the inset box, and overlay it at the canvas-relative position.
 static void appendScreenOverlayFilter(QString &filter, QString &current, int &vIdx,
@@ -381,12 +427,25 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
         }
     }
 
+    // Additional webcams: one extra input each, composited as overlays.
+    QVector<int> extraWebcamInputs;
+    for (const auto &ew : in.extraWebcams) {
+        if (!ew.file.isEmpty() && QFile::exists(ew.file)) {
+            extraWebcamInputs.append(nextInput++);
+            args << "-i" << ew.file;
+        } else {
+            extraWebcamInputs.append(-1);
+        }
+    }
+
     // A filter graph is needed only if there's a real logo or a webcam to overlay.
     bool hasAnyLogo = false;
     for (int idx : logoInputs) { if (idx >= 0) { hasAnyLogo = true; break; } }
     bool hasExtraScreen = false;
     for (int idx : extraScreenInputs) { if (idx >= 0) { hasExtraScreen = true; break; } }
-    bool needsFilter = hasAnyLogo || mergeWebcam || hasExtraScreen;
+    bool hasExtraWebcam = false;
+    for (int idx : extraWebcamInputs) { if (idx >= 0) { hasExtraWebcam = true; break; } }
+    bool needsFilter = hasAnyLogo || mergeWebcam || hasExtraScreen || hasExtraWebcam;
 
     // Check if screen needs cropping
     bool needsCrop = in.opts.screenCropTop > 0 || in.opts.screenCropBottom > 0 ||
@@ -441,6 +500,13 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
             }
         }
         if (mergeWebcam) appendWebcamFilter(filter, current, vIdx, webcamInput, in.opts, cw, ch);
+
+        // Additional webcams composited over the scene at their placements.
+        for (int i = 0; i < in.extraWebcams.size(); ++i) {
+            if (i < extraWebcamInputs.size() && extraWebcamInputs[i] >= 0)
+                appendExtraWebcamFilter(filter, current, vIdx, extraWebcamInputs[i],
+                                        in.extraWebcams[i], i, cw, ch);
+        }
 
         // Text boxes (WYSIWYG) rendered on top at their relative positions.
         appendTextBoxFilters(filter, current, vIdx, in.opts.textBoxes, cw, ch);

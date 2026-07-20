@@ -16,6 +16,8 @@
 #include <QJsonArray>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
+#include <QImageReader>
 #include <QTextStream>
 #include <QHostInfo>
 #include <QRegularExpression>
@@ -82,9 +84,11 @@ void Recorder::start(const RecordingOptions &opts) {
     m_audioParts.clear();
     m_webcamParts.clear();
     m_partTimestamps.clear();
-    // One accumulating part-list per additional monitor.
+    // One accumulating part-list per additional monitor / webcam.
     m_extraScreenProcs.clear();
     m_extraScreenParts = QVector<QStringList>(opts.extraScreens.size());
+    m_extraWebcamProcs.clear();
+    m_extraWebcamParts = QVector<QStringList>(opts.extraWebcams.size());
 
     // Create output directory
     m_outputDir = opts.outputDir;
@@ -98,7 +102,8 @@ void Recorder::start(const RecordingOptions &opts) {
     }
     QDir().mkpath(m_outputDir);
 
-    // Copy assets (logos, GIFs, sounds) into the output directory
+    // Convert any SVG logo to a PNG the merge can decode, then copy assets.
+    rasterizeSvgLogos();
     copyAssetsToOutputDir();
 
     // Set part filenames and start recorders
@@ -146,9 +151,55 @@ void Recorder::startRecordersForPart() {
         m_webcamParts.append(m_webcamFile);
         startWebcamRecorder(m_opts);
         ts.webcamStartMs = QDateTime::currentMSecsSinceEpoch();
+
+        // Capture each additional webcam into its own per-part file.
+        m_extraWebcamProcs.clear();
+        for (int i = 0; i < m_opts.extraWebcams.size(); ++i) {
+            QString file = m_outputDir + QString("/webcam%1").arg(i + 1) + partSuffix + ".mp4";
+            QProcess *p = startExtraWebcamRecorder(m_opts.extraWebcams[i].device, file);
+            m_extraWebcamProcs.append(p);
+            if (p && i < m_extraWebcamParts.size())
+                m_extraWebcamParts[i].append(file);
+        }
     }
 
     m_partTimestamps.append(ts);
+}
+
+void Recorder::rasterizeSvgLogos() {
+    for (auto &logo : m_opts.logos) {
+        if (logo.path.isEmpty() ||
+            !logo.path.endsWith(".svg", Qt::CaseInsensitive) ||
+            !QFile::exists(logo.path))
+            continue;
+
+        // Render the SVG at a crisp size (longest side ~1024px), preserving aspect.
+        QImageReader reader(logo.path);
+        QSize sz = reader.size();
+        if (!sz.isValid() || sz.width() <= 0 || sz.height() <= 0) sz = QSize(512, 512);
+        const int target = 1024;
+        int longest = std::max(sz.width(), sz.height());
+        if (longest > 0 && longest < target) {
+            double s = double(target) / longest;
+            reader.setScaledSize(QSize(int(sz.width() * s), int(sz.height() * s)));
+        }
+        QImage img = reader.read();
+        if (img.isNull()) img = QImage(logo.path); // fallback to default-size load
+        if (img.isNull()) {
+            qWarning() << "Could not rasterise SVG logo (render will skip it):" << logo.path;
+            continue;
+        }
+
+        QDir().mkpath(m_outputDir + "/assets");
+        QString pngPath = m_outputDir + "/assets/" +
+                          QFileInfo(logo.path).completeBaseName() + ".png";
+        if (img.save(pngPath, "PNG")) {
+            qDebug() << "Rasterised SVG logo" << logo.path << "->" << pngPath;
+            logo.path = pngPath; // merge + recording.json now reference the PNG
+        } else {
+            qWarning() << "Failed to write rasterised logo PNG:" << pngPath;
+        }
+    }
 }
 
 void Recorder::copyAssetsToOutputDir() {
@@ -184,12 +235,15 @@ void Recorder::stopAllProcesses() {
     stopProcess(m_audioProc);
     stopProcess(m_webcamProc);
     for (QProcess *p : m_extraScreenProcs) stopProcess(p);
+    for (QProcess *p : m_extraWebcamProcs) stopProcess(p);
 
     if (m_screenProc) { m_screenProc->deleteLater(); m_screenProc = nullptr; }
     if (m_audioProc) { m_audioProc->deleteLater(); m_audioProc = nullptr; }
     if (m_webcamProc) { m_webcamProc->deleteLater(); m_webcamProc = nullptr; }
     for (QProcess *p : m_extraScreenProcs) { if (p) p->deleteLater(); }
     m_extraScreenProcs.clear();
+    for (QProcess *p : m_extraWebcamProcs) { if (p) p->deleteLater(); }
+    m_extraWebcamProcs.clear();
 
 #ifdef HAS_DBUS
     // Close the portal screencast session so the compositor stops the stream
@@ -732,6 +786,41 @@ void Recorder::startWebcamRecorder(const RecordingOptions &opts) {
     }
 }
 
+QProcess *Recorder::startExtraWebcamRecorder(const QString &device, const QString &file) {
+    // Mirrors startWebcamRecorder for an additional camera, to its own file.
+    // Best-effort: a camera that won't open just drops that overlay.
+    int fps = m_opts.webcamFPS > 0 ? m_opts.webcamFPS : 30;
+    QStringList args;
+    switch (Platform::os()) {
+    case Platform::OS::Linux:
+        args << "-y" << "-f" << "v4l2" << "-framerate" << QString::number(fps)
+             << "-i" << ("/dev/" + device);
+        break;
+    case Platform::OS::macOS:
+        args << "-y" << "-f" << "avfoundation" << "-framerate" << QString::number(fps)
+             << "-i" << (device + ":");
+        break;
+    case Platform::OS::Windows:
+        args << "-y" << "-f" << "dshow" << "-framerate" << QString::number(fps)
+             << "-i" << ("video=" + device);
+        break;
+    default:
+        return nullptr;
+    }
+    args << "-c:v" << "libx264" << "-preset" << "ultrafast" << "-tune" << "zerolatency"
+         << "-crf" << "18" << "-pix_fmt" << "yuv420p" << file;
+
+    auto *proc = new QProcess(this);
+    proc->start("ffmpeg", args);
+    if (!proc->waitForStarted(5000)) {
+        qWarning() << "Extra webcam recorder failed to start for" << device
+                   << ":" << proc->errorString();
+        proc->deleteLater();
+        return nullptr;
+    }
+    return proc;
+}
+
 void Recorder::renameOutputFolder() {
     QString slug = Merger::titleSlug(m_opts.title);
     if (slug == "recording") return; // no meaningful title
@@ -771,6 +860,7 @@ void Recorder::renameOutputFolder() {
     for (auto &p : m_audioParts) updatePath(p);
     for (auto &p : m_webcamParts) updatePath(p);
     for (auto &list : m_extraScreenParts) for (auto &p : list) updatePath(p);
+    for (auto &list : m_extraWebcamParts) for (auto &p : list) updatePath(p);
 }
 
 void Recorder::captureRoomNoise() {
@@ -1126,6 +1216,25 @@ void Recorder::processRecordings() {
         extraScreenInputs.append(si);
     }
 
+    // Concatenate each additional webcam's parts and build its overlay input.
+    QVector<Merger::MergeInputs::WebcamOverlayInput> extraWebcamInputs;
+    for (int i = 0; i < m_extraWebcamParts.size(); ++i) {
+        const QStringList &parts = m_extraWebcamParts[i];
+        if (parts.isEmpty() || i >= m_opts.extraWebcams.size()) continue;
+        QString file = (parts.size() > 1)
+            ? Merger::concatenateParts(parts, m_outputDir + QString("/webcam%1_combined.mp4").arg(i + 1),
+                                       QString("concat_webcam%1").arg(i + 1))
+            : parts.first();
+        if (file.isEmpty() || !QFile::exists(file) || QFileInfo(file).size() == 0) continue;
+        const auto &ov = m_opts.extraWebcams[i];
+        Merger::MergeInputs::WebcamOverlayInput wi;
+        wi.file = file; wi.shape = ov.shape;
+        wi.relX = ov.relX; wi.relY = ov.relY; wi.relW = ov.relW; wi.relH = ov.relH;
+        wi.cropTop = ov.cropTop; wi.cropBottom = ov.cropBottom;
+        wi.cropLeft = ov.cropLeft; wi.cropRight = ov.cropRight;
+        extraWebcamInputs.append(wi);
+    }
+
     // A 0-byte screen file means the capture tool ran but wrote nothing (e.g.
     // wl-screenrec failed to initialise its encoder). Treat that as "no screen"
     // so the merge doesn't feed ffmpeg an empty input and die cryptically.
@@ -1330,6 +1439,11 @@ void Recorder::processRecordings() {
 
     if (m_cancelRequested) { m_processing = false; emit processingFinished(false); return; }
 
+    // Track whether the render that should have run actually produced output, so
+    // the recording is not falsely reported "completed" (e.g. a merge that failed
+    // and left a 0-byte file).
+    bool renderFailed = false;
+
     // Step 2: Merged landscape video
     emit processingProgress(2, 0, "Merging video & audio");
     if (hasScreen && !isVerticalMode) {
@@ -1338,16 +1452,21 @@ void Recorder::processRecordings() {
 
         Merger::MergeInputs in{m_screenFile, audioToUse, m_webcamFile, m_opts, audioOffsetSec, webcamOffsetSec};
         in.extraScreens = extraScreenInputs; // additional monitors composited as insets
+        in.extraWebcams = extraWebcamInputs; // additional webcams composited as overlays
         QStringList args = Merger::buildMergedArgs(in, m_mergedFile);
 
         int exitCode = Merger::runFFmpegWithProgress(args, durationUs, [this](int pct) {
             emit processingProgress(2, pct, "Merging video & audio");
         });
-        if (exitCode == 0) {
+        bool ok = (exitCode == 0) && QFile::exists(m_mergedFile) &&
+                  QFileInfo(m_mergedFile).size() > 0;
+        if (ok) {
             emit processingProgress(2, 100, "Merging video & audio");
             emit processingStepDone(2, "Merging video & audio", false);
         } else {
-            emit processingStepError(2, "Merging", "FFmpeg merge failed");
+            renderFailed = true;
+            emit processingStepError(2, "Merging",
+                "FFmpeg merge failed — the output is empty. See the recording folder.");
         }
     } else {
         emit processingStepDone(2, "Merging video & audio", true);
@@ -1368,17 +1487,20 @@ void Recorder::processRecordings() {
         int exitCode = Merger::runFFmpegWithProgress(args, durationUs, [this](int pct) {
             emit processingProgress(3, pct, "Creating vertical video");
         });
-        if (exitCode == 0) {
+        bool ok = (exitCode == 0) && QFile::exists(vertFile) && QFileInfo(vertFile).size() > 0;
+        if (ok) {
             emit processingProgress(3, 100, "Creating vertical video");
             emit processingStepDone(3, "Creating vertical video", false);
         } else {
-            emit processingStepError(3, "Creating vertical video", "FFmpeg vertical video failed");
+            renderFailed = true;
+            emit processingStepError(3, "Creating vertical video",
+                "FFmpeg vertical video failed — the output is empty.");
         }
     } else {
         emit processingStepDone(3, "Creating vertical video", true);
     }
 
-    writeRecordingJson("completed");
+    writeRecordingJson(renderFailed ? "failed" : "completed");
     m_processing = false;
-    emit processingFinished(true);
+    emit processingFinished(!renderFailed);
 }

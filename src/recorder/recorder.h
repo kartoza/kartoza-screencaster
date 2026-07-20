@@ -85,6 +85,21 @@ struct RecordingOptions {
     };
     /** @brief Additional monitors beyond the primary (0..N). */
     QVector<ScreenOverlay> extraScreens;
+
+    /**
+     * @brief An additional webcam to capture and composite as an overlay.
+     *
+     * The first/primary webcam is the `webcam*` fields above; these are the extra
+     * cameras added to the canvas. Placement is fractions (0.0--1.0) of the frame.
+     */
+    struct WebcamOverlay {
+        QString device;                               /**< V4L2 device path (e.g. video2). */
+        int shape = 0;                                /**< 0=round, 1=square, 2=rect. */
+        double relX = 0, relY = 0, relW = 0.15, relH = 0.2; /**< Placement on the frame. */
+        double cropTop = 0, cropBottom = 0, cropLeft = 0, cropRight = 0; /**< Source crop fractions. */
+    };
+    /** @brief Additional webcams beyond the primary (0..N). */
+    QVector<WebcamOverlay> extraWebcams;
     /** @brief Overlay logos/GIFs placed on the canvas (0..N). */
     QVector<LogoOpts> logos;
 
@@ -232,6 +247,13 @@ private:
      * are best-effort insets, so a failure just drops that inset.
      */
     QProcess *startExtraScreenRecorder(const QString &monitor, const QString &file);
+    /**
+     * @brief Launch a capture process for one additional webcam.
+     * @param device V4L2 device path (without /dev/ prefix).
+     * @param file   Output file path for this part.
+     * @return The started QProcess (owned by this Recorder), or nullptr on failure.
+     */
+    QProcess *startExtraWebcamRecorder(const QString &device, const QString &file);
     /** @brief Launch the FFmpeg audio-capture process. */
     void startAudioRecorder(const RecordingOptions &opts);
     /** @brief Launch the FFmpeg webcam-capture process. */
@@ -250,6 +272,8 @@ private:
     bool m_screenFallbackTried = false;    /**< True once the wf-recorder fallback has been used this session. */
     QVector<QProcess*> m_extraScreenProcs; /**< Live capture processes for additional monitors (current part). */
     QVector<QStringList> m_extraScreenParts; /**< Per additional monitor: its ordered part-file paths. */
+    QVector<QProcess*> m_extraWebcamProcs; /**< Live capture processes for additional webcams (current part). */
+    QVector<QStringList> m_extraWebcamParts; /**< Per additional webcam: its ordered part-file paths. */
     QProcess *m_audioProc = nullptr;       /**< FFmpeg process for audio capture. */
     QProcess *m_webcamProc = nullptr;      /**< FFmpeg process for webcam capture. */
 
@@ -278,6 +302,15 @@ private:
 
     /** @brief Copy logos, GIFs, and sound assets into the output directory. */
     void copyAssetsToOutputDir();
+    /**
+     * @brief Rasterise any SVG logo to a PNG the merge can read.
+     *
+     * FFmpeg has no SVG decoder, so an SVG logo path would fail the whole merge.
+     * SVGs are filtered from the chooser, but one can still arrive via drag-drop,
+     * a saved preset or reprocessing an old recording — this converts it to a PNG
+     * in the output dir and rewrites the logo path in place.
+     */
+    void rasterizeSvgLogos();
     /** @brief Stop all running FFmpeg sub-processes. */
     void stopAllProcesses();
     /** @brief Record a short room-noise sample before the main capture. */

@@ -234,6 +234,29 @@ private slots:
         QVERIFY(filter.contains("overlay="));
     }
 
+    void testExtraWebcam_compositesOverlay() {
+        // A second webcam is fed as an extra input and composited as a shaped
+        // overlay with index-unique filter labels (no collision with the primary).
+        QTemporaryFile screen, cam2;
+        QVERIFY(screen.open()); QVERIFY(cam2.open());
+        Merger::MergeInputs in;
+        in.screenFile = screen.fileName();
+        in.opts.noScreen = false;
+        Merger::MergeInputs::WebcamOverlayInput wc;
+        wc.file = cam2.fileName();
+        wc.shape = 0; // round
+        wc.relX = 0.1; wc.relY = 0.6; wc.relW = 0.15; wc.relH = 0.2;
+        in.extraWebcams.append(wc);
+
+        QStringList args = Merger::buildMergedArgs(in, "/tmp/out.mp4");
+        QVERIFY(args.contains(cam2.fileName()));
+        int fc = args.indexOf("-filter_complex");
+        QVERIFY(fc >= 0);
+        const QString &filter = args[fc + 1];
+        QVERIFY(filter.contains("ewshaped0")); // index-unique overlay label
+        QVERIFY(filter.contains("overlay="));
+    }
+
     void testNoExtraScreen_noOverlayInput() {
         // With no additional monitors and nothing else to composite, there is no
         // filtergraph at all.
