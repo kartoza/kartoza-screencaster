@@ -126,6 +126,26 @@ Kartoza Screencaster is a screen recording and video processing application for 
 - A paused element keeps its button visible so the frozen state is evident
 - Pausing the preview does not affect the recording
 
+### US-006e: Multiple Webcams
+**As a** content creator with more than one camera
+**I want** to add several webcams to the scene
+**So that** I can show multiple angles at once
+
+**Acceptance Criteria:**
+- More than one webcam can be added; the recording captures each webcam separately and composites them all at their canvas placement, shape and crop
+- The first webcam uses the existing single-webcam path; additional cameras are captured to their own files and composited as overlays
+- An additional camera that fails to open drops its overlay without failing the recording
+
+### US-006f: Overlay Image Formats
+**As a** content creator
+**I want** logo/overlay images to always appear in the recording
+**So that** my branding is not silently dropped
+
+**Acceptance Criteria:**
+- The logo chooser and asset gallery offer raster formats and GIF, not SVG (FFmpeg cannot decode SVG)
+- An SVG that reaches a recording via drag-drop, a saved preset or reprocessing is rasterised to PNG before the merge
+- A merge that produces no output is reported as **failed** (not "completed")
+
 ### US-007: Output File Naming
 **As a** content creator
 **I want my** output files to be named with a sequence number and title

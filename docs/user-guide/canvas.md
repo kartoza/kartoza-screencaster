@@ -18,8 +18,11 @@ sting; arrange them; record.
   monitor**: the first becomes the primary background, and each additional
   monitor drops in as a movable inset you can place anywhere (for example
   side-by-side). Every screen previews live and independently.
-- **Webcam** — pick the camera you want to use. Add as many as you like.
-- **Logo** — drop any image (PNG, SVG, JPG).
+- **Webcam** — pick the camera you want to use. Add as many as you like; each
+  camera is captured separately and composited at its own position, shape and crop.
+- **Logo** — drop a raster image (PNG, JPG, WebP, BMP) or an animated GIF. SVG
+  isn't offered because FFmpeg can't render it into the recording; if you do drop
+  an SVG it's rasterised to PNG automatically.
 - **GIF** — drop an animated GIF with an optional loop limit.
 - **Intro / outro sound** — drop a WAV or MP3 to play once at the
   start / end of the recording.

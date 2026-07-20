@@ -23,6 +23,13 @@ GNOME/KDE Wayland (portal capture) only the primary monitor is captured (the por
 is single-source), and additional monitors are composited into the **landscape**
 output only (the vertical/split output uses the primary screen).
 
+#### Multiple webcams recorded and composited
+More than one webcam can be added to the scene, and the recording now **captures
+each webcam separately and composites them all** at their canvas placements,
+shapes and crops (previously only the first webcam was recorded and the others'
+placement overwrote it, which could break the render). Additional cameras are
+best-effort — one that won't open just drops its overlay.
+
 #### Per-element pause with a centred hover button
 Live previews now pause **per element** instead of globally: hovering a monitor or
 webcam reveals a pause/continue button centred on that element, and clicking it
@@ -50,6 +57,14 @@ part of the camera you want to show.
 Overlays and additional monitors are now clamped to the recording frame so nothing
 can be dragged off the recorded area, and the primary screen is kept covering the
 frame so the recording area is never left with an uncovered (dark) gap.
+
+#### SVG logos no longer break the render
+FFmpeg has no SVG decoder, so a recording with an SVG logo failed to merge and
+produced a **0-byte output** (while screen and audio recorded fine). SVGs are now
+filtered out of the logo chooser and asset gallery, and any SVG that still reaches
+a recording (drag-drop, a saved preset, reprocessing an old recording) is
+**rasterised to a PNG** the merge can read. A merge that produces no output is now
+reported as **failed** instead of silently "completed".
 
 #### Builds under GCC 15.2 / Qt 6.10.1
 The toolchain refresh that brought glibc 2.42 also pulled in GCC 15.2, whose new
