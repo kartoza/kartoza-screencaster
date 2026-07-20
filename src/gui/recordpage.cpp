@@ -754,12 +754,20 @@ void RecordPage::onCountdownTick() {
                 lo.relW = e.w / cw;
                 lo.relH = e.h / ch;
                 opts.logos.append(lo);
-            } else if (e.type == 1) { // webcam — capture placement and shape
+            } else if (e.type == 1) { // webcam — capture placement, shape and crop
                 opts.webcamRelX = (e.x - e.w/2.0) / cw;
                 opts.webcamRelY = (e.y - e.h/2.0) / ch;
                 opts.webcamRelW = e.w / cw;
                 opts.webcamRelH = e.h / ch;
                 opts.webcamShape = e.shape; // 0=round, 1=square, 2=rect
+                if (e.w > 0 && e.h > 0) {
+                    // Alt-crop on the canvas trims the recorded webcam region to the
+                    // shown portion (fractions of the webcam frame).
+                    opts.webcamCropTop = double(e.cropTop) / e.h;
+                    opts.webcamCropBottom = double(e.cropBottom) / e.h;
+                    opts.webcamCropLeft = double(e.cropLeft) / e.w;
+                    opts.webcamCropRight = double(e.cropRight) / e.w;
+                }
             } else if (e.type == 3) { // text box
                 if (e.label.trimmed().isEmpty()) continue;
                 RecordingOptions::TextBox tb;

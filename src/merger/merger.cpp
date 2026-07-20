@@ -257,15 +257,32 @@ static void appendWebcamFilter(QString &filter, QString &current, int &vIdx,
     int wcX = static_cast<int>(opts.webcamRelX * canvasW);
     int wcY = static_cast<int>(opts.webcamRelY * canvasH);
 
+    // Alt-crop on the canvas trims the recorded webcam source before any shaping,
+    // so the recorded region matches the WYSIWYG preview.
+    double cl = qBound(0.0, opts.webcamCropLeft, 0.9);
+    double cr = qBound(0.0, opts.webcamCropRight, 0.9);
+    double ct = qBound(0.0, opts.webcamCropTop, 0.9);
+    double cb = qBound(0.0, opts.webcamCropBottom, 0.9);
+    QString src = QString("[%1:v]").arg(webcamInput);
+    if (cl > 0 || cr > 0 || ct > 0 || cb > 0) {
+        double cw = qMax(0.05, 1.0 - cl - cr);
+        double chf = qMax(0.05, 1.0 - ct - cb);
+        filter += QString("%1crop=in_w*%2:in_h*%3:in_w*%4:in_h*%5[wcam_src];")
+            .arg(src)
+            .arg(cw, 0, 'f', 4).arg(chf, 0, 'f', 4)
+            .arg(cl, 0, 'f', 4).arg(ct, 0, 'f', 4);
+        src = "[wcam_src]";
+    }
+
     if (opts.webcamShape == 0) {
         // Round bubble: scale to fill a square (preserving aspect ratio) then crop to circle
         int diameter = qMin(wcW, wcH);
         diameter = (diameter / 2) * 2; // ensure even
         int r = diameter / 2;
         // Scale preserving aspect ratio to fill the square, then crop center
-        filter += QString("[%1:v]scale=%2:%2:force_original_aspect_ratio=increase,"
+        filter += QString("%1scale=%2:%2:force_original_aspect_ratio=increase,"
                           "crop=%2:%2,setsar=1[wcam];")
-            .arg(webcamInput).arg(diameter);
+            .arg(src).arg(diameter);
         // Circular mask
         filter += QString("color=black:%1x%1:d=0.04,"
                           "geq=lum='if(lt(hypot(X-%2,Y-%2),%2),255,0)':cb=128:cr=128[cmask];")
@@ -276,9 +293,9 @@ static void appendWebcamFilter(QString &filter, QString &current, int &vIdx,
         wcY = wcY + (wcH - diameter) / 2;
     } else {
         // Rectangle/square: scale preserving aspect ratio, pad to fit target box
-        filter += QString("[%1:v]scale=%2:%3:force_original_aspect_ratio=decrease,"
+        filter += QString("%1scale=%2:%3:force_original_aspect_ratio=decrease,"
                           "pad=%2:%3:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[wcam_shaped];")
-            .arg(webcamInput).arg(wcW).arg(wcH);
+            .arg(src).arg(wcW).arg(wcH);
     }
 
     filter += QString("%1[wcam_shaped]overlay=%2:%3[v%4];").arg(current).arg(wcX).arg(wcY).arg(++vIdx);

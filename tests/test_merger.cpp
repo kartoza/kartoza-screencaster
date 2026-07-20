@@ -1,4 +1,5 @@
 #include <QTest>
+#include <QTemporaryFile>
 #include "merger/merger.h"
 
 class TestMerger : public QObject {
@@ -185,6 +186,45 @@ private slots:
     void testConcatenateParts_empty() {
         QString result = Merger::concatenateParts({}, "/tmp/out.mp4");
         QVERIFY(result.isEmpty());
+    }
+
+    void testWebcamCrop_appliesCropFilter() {
+        // Alt-crop on a webcam must trim the recorded source: the filtergraph
+        // should crop the webcam input before shaping/scaling. The merger only
+        // composites a webcam whose file exists, so use a real temp file.
+        QTemporaryFile screen, webcam;
+        QVERIFY(screen.open()); QVERIFY(webcam.open());
+        Merger::MergeInputs in;
+        in.screenFile = screen.fileName();
+        in.webcamFile = webcam.fileName();
+        in.opts.noScreen = false;
+        in.opts.webcamShape = 1; // rectangle
+        in.opts.webcamCropLeft = 0.25;
+        in.opts.webcamCropRight = 0.1;
+        in.opts.webcamCropTop = 0.2;
+
+        QStringList args = Merger::buildMergedArgs(in, "/tmp/out.mp4");
+        int fc = args.indexOf("-filter_complex");
+        QVERIFY(fc >= 0);
+        const QString &filter = args[fc + 1];
+        QVERIFY(filter.contains("crop=in_w*"));
+        QVERIFY(filter.contains("[wcam_src]"));
+    }
+
+    void testWebcamNoCrop_omitsCropFilter() {
+        // With no webcam crop set, the source-crop stage must not appear.
+        QTemporaryFile screen, webcam;
+        QVERIFY(screen.open()); QVERIFY(webcam.open());
+        Merger::MergeInputs in;
+        in.screenFile = screen.fileName();
+        in.webcamFile = webcam.fileName();
+        in.opts.noScreen = false;
+        in.opts.webcamShape = 1;
+
+        QStringList args = Merger::buildMergedArgs(in, "/tmp/out.mp4");
+        int fc = args.indexOf("-filter_complex");
+        QVERIFY(fc >= 0);              // webcam present → filtergraph exists
+        QVERIFY(!args[fc + 1].contains("[wcam_src]"));
     }
 };
 

@@ -11,6 +11,8 @@
 #include <QProcess>
 #include <QMovie>
 #include <QMutex>
+#include <QHash>
+#include <QVector>
 #include "monitor/monitor.h"
 
 /**
@@ -106,15 +108,17 @@ public:
     void suspendPreviews();
     /** @brief Resume all live previews (webcam + screen capture timer). */
     void resumePreviews();
-    /** @brief Toggle the user-initiated pause of the live screen preview. */
-    void togglePreviewPause();
-    /** @brief Whether the user has manually paused the live screen preview. */
-    bool isPreviewPaused() const { return m_userPaused; }
+    /** @brief Toggle the per-item live-preview pause for a screen/webcam item. */
+    void toggleItemPause(int index);
+    /** @brief Whether the item at the given index has its live preview paused. */
+    bool isItemPaused(int index) const { return index >= 0 && index < m_items.size() && m_items[index].paused; }
 
     // -- Queries --
 
-    /** @brief Return the name of the currently selected monitor. */
+    /** @brief Return the name of the primary (first) selected monitor, or empty. */
     QString selectedMonitor() const { return m_monitorName; }
+    /** @brief Return the monitor names of every screen layer on the canvas, in z-order. */
+    QStringList selectedMonitors() const;
     /** @brief Check whether any webcam overlay items exist. */
     bool hasWebcams() const;
     /** @brief Return the device path of the first webcam item, or empty. */
@@ -210,11 +214,6 @@ signals:
     void selectionChanged(int index);
     /** @brief Emitted when items are added, removed, or reordered. */
     void itemsChanged();
-    /**
-     * @brief Emitted when the live preview pause state changes.
-     * @param paused True if the preview is now paused, false if running.
-     */
-    void previewPausedChanged(bool paused);
 
 protected:
     /** @brief Paint the canvas background and all overlay items. */
@@ -260,6 +259,7 @@ private:
         QString filePath;   /**< Source file path for logos. */
         QString device;     /**< V4L2 device path for webcams. */
         bool visible = true; /**< Whether the item is drawn. */
+        bool paused = false; /**< Per-item live-preview pause (screen/webcam): freezes just this item. */
         // Crop insets (pixels cropped from each edge)
         int cropTop = 0;    /**< Pixels cropped from the top edge. */
         int cropBottom = 0; /**< Pixels cropped from the bottom edge. */
@@ -274,6 +274,12 @@ private:
         bool isGif = false;      /**< Whether this item is an animated GIF. */
         int gifLoop = 2;         /**< GIF loop mode. */
         int gifLoopMax = 3;      /**< Max GIF loop iterations. */
+        // Screen live capture fields (type 0) — one per monitor so several
+        // displays can be composited on a single canvas.
+        QString monitorName;    /**< Monitor identifier this screen item captures. */
+        MonitorInfo monitor;    /**< Full monitor info for this screen item. */
+        QPixmap screenPixmap;   /**< Latest captured screenshot for this screen item. */
+        QString pendingScreenPath; /**< Temp file path of the newest capture awaiting load. */
         // Webcam live capture fields
         QProcess *webcamProc = nullptr; /**< ffmpeg process for live webcam capture. */
         QByteArray webcamBuf;           /**< Raw frame buffer from webcam. */
@@ -282,8 +288,12 @@ private:
         bool webcamNewFrame = false;    /**< Flag indicating a new frame is available. */
     };
 
-    /** @brief Capture a screenshot of the selected monitor. */
-    void captureScreen();
+    /** @brief One monitor to grab in a capture pass. */
+    struct ScreenGrab { QString monitorName; bool primary; };
+    /** @brief Build the list of monitors to capture (non-paused screen layers). Call on the UI thread. */
+    QVector<ScreenGrab> screensToCapture() const;
+    /** @brief Capture the given monitors (runs on a thread-pool thread). */
+    void captureScreens(const QVector<ScreenGrab> &targets);
     /**
      * @brief Rescale every non-screen item from one frame rect to another.
      * @param oldFrame The frame the items were laid out against.
@@ -299,10 +309,14 @@ private:
     void updateTimerState();
     /** @brief Whether a screen-capture layer currently exists on the canvas. */
     bool hasScreenItem() const;
-    /** @brief Rect of the centre pause/continue toggle button, in canvas coords (empty if no screen item). */
-    QRect previewToggleRect() const;
-    /** @brief Draw the centre pause/continue toggle over the screen preview. */
-    void drawPreviewToggle(QPainter &painter);
+    /** @brief Whether the item at the given index has a live preview that can be paused (screen/webcam). */
+    bool isLiveItem(int index) const;
+    /** @brief Index of the topmost live (screen/webcam) item at a canvas point, or -1. */
+    int liveItemAt(int mx, int my) const;
+    /** @brief Rect of the centre pause/continue toggle for a live item, in canvas coords (empty if not live). */
+    QRect itemToggleRect(int index) const;
+    /** @brief Draw the centre pause/continue toggle over one live item's preview. */
+    void drawItemToggle(QPainter &painter, int index);
     /** @brief Draw the screen background and all overlay items. */
     void drawScreen(QPainter &painter);
     /** @brief Draw crop handles on a selected item. */
@@ -420,12 +434,14 @@ private:
     QTimer *m_refreshTimer;
     /** @brief True when previews are suspended by the app (window hidden, tab inactive, recording). */
     bool m_suspended = false;
-    /** @brief True when the user has manually paused the live screen preview. */
-    bool m_userPaused = false;
     /** @brief True while the cursor is over the canvas (used to reveal the pause toggle). */
     bool m_hovered = false;
-    /** @brief Temporary file path for the latest screen capture. */
+    /** @brief Index of the live (screen/webcam) item under the cursor, or -1 (reveals its pause toggle). */
+    int m_hoverItem = -1;
+    /** @brief Temporary file path for the latest primary-screen capture. */
     QString m_pendingScreenPath;
+    /** @brief Newest capture temp paths for additional monitors, keyed by monitor name (mutex-guarded). */
+    QHash<QString, QString> m_pendingScreens;
     /** @brief Mutex protecting shared screen capture state. */
     QMutex m_mutex;
     /** @brief Last known frame rect for rescaling items on resize. */

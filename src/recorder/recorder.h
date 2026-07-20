@@ -69,6 +69,8 @@ struct RecordingOptions {
     double webcamRelH = 0.2;
     /** @brief Webcam shape: 0=round/bubble, 1=square, 2=rectangle. */
     int webcamShape = 0;
+    /** @brief Webcam crop as fractions (0.0-1.0) of the webcam frame, applied before shaping/scaling. */
+    double webcamCropTop = 0, webcamCropBottom = 0, webcamCropLeft = 0, webcamCropRight = 0;
     /** @brief Overlay logos/GIFs placed on the canvas (0..N). */
     QVector<LogoOpts> logos;
 

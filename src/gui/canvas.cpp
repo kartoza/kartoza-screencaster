@@ -38,30 +38,50 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
     m_refreshTimer = new QTimer(this);
     m_refreshTimer->setInterval(2000);
     connect(m_refreshTimer, &QTimer::timeout, this, [this]() {
-        // Load pending screenshot
+        // Load pending screenshot for the primary screen — unless it is paused,
+        // in which case the last frame stays frozen (per-item pause).
+        int primary = screenItemIndex();
+        bool primaryPaused = primary >= 0 && m_items[primary].paused;
         m_mutex.lock();
         QString path = m_pendingScreenPath;
         m_pendingScreenPath.clear();
+        QHash<QString, QString> extraScreens = m_pendingScreens;
+        m_pendingScreens.clear();
         m_mutex.unlock();
 
         bool changed = false;
         if (!path.isEmpty()) {
             QPixmap pix(path);
             QFile::remove(path);
-            if (!pix.isNull()) { m_screenPixmap = pix; changed = true; }
+            if (!pix.isNull() && !primaryPaused) { m_screenPixmap = pix; changed = true; }
         }
 
-        // Check webcam frames — use index-based loop (safe for QList modification)
+        // Load newest captures for any additional monitors into their own items.
+        for (auto it = extraScreens.constBegin(); it != extraScreens.constEnd(); ++it) {
+            QPixmap pix(it.value());
+            QFile::remove(it.value());
+            if (pix.isNull()) continue;
+            for (int i = 0; i < m_items.size(); i++) {
+                if (m_items[i].type == 0 && i != primary &&
+                    m_items[i].monitorName == it.key() && !m_items[i].paused) {
+                    m_items[i].screenPixmap = pix;
+                    changed = true;
+                }
+            }
+        }
+
+        // Check webcam frames — use index-based loop (safe for QList modification).
+        // A paused webcam keeps its last frame (drops incoming frames).
         for (int i = 0; i < m_items.size(); i++) {
             if (m_items[i].type == 1 && m_items[i].webcamNewFrame) {
                 m_mutex.lock();
-                if (m_items[i].webcamBuf.size() >= WC_FRAME_SIZE) {
+                if (!m_items[i].paused && m_items[i].webcamBuf.size() >= WC_FRAME_SIZE) {
                     QImage img((const uchar*)m_items[i].webcamBuf.constData(), WC_W, WC_H, WC_W*3, QImage::Format_RGB888);
                     m_items[i].webcamPixmap = QPixmap::fromImage(img);
+                    changed = true;
                 }
                 m_items[i].webcamNewFrame = false;
                 m_mutex.unlock();
-                changed = true;
             }
         }
 
@@ -69,8 +89,11 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
         // 2 s on an idle canvas.
         if (changed) update();
 
-        // Capture screen in background
-        QThreadPool::globalInstance()->start([this]() { captureScreen(); });
+        // Capture every (non-paused) monitor in the background. The target list is
+        // computed here on the UI thread so the pool task never touches m_items.
+        auto targets = screensToCapture();
+        if (!targets.isEmpty())
+            QThreadPool::globalInstance()->start([this, targets]() { captureScreens(targets); });
     });
     m_refreshTimer->start();
     m_lastFrameRect = frameRect();
@@ -121,30 +144,53 @@ Canvas::~Canvas() {
 }
 
 void Canvas::setMonitor(const MonitorInfo &mon) {
-    m_monitor = mon;
-    m_mutex.lock();
-    m_monitorName = mon.name;
-    m_mutex.unlock();
+    QString desc = mon.description.isEmpty() ? mon.name : mon.description;
 
-    bool hasScreen = false;
+    // Already on the canvas? Just refresh its label and re-capture.
     for (auto &item : m_items) {
-        if (item.type == 0) {
-            hasScreen = true;
-            QString desc = mon.description.isEmpty() ? mon.name : mon.description;
+        if (item.type == 0 && item.monitorName == mon.name) {
             item.label = "Screen: " + desc;
-            break;
+            auto again = screensToCapture();
+            if (!again.isEmpty())
+                QThreadPool::globalInstance()->start([this, again]() { captureScreens(again); });
+            update();
+            return;
         }
     }
-    if (!hasScreen) {
-        QString desc = mon.description.isEmpty() ? mon.name : mon.description;
-        CanvasItem item;
-        item.type = 0; item.label = "Screen: " + desc;
-        item.x = m_cw/2; item.y = m_ch/2; item.w = m_cw; item.h = m_ch;
-        m_items.prepend(item);
-        emit itemsChanged();
-    }
 
-    QThreadPool::globalInstance()->start([this]() { captureScreen(); });
+    int existingScreens = 0;
+    for (const auto &item : m_items) if (item.type == 0) existingScreens++;
+
+    CanvasItem item;
+    item.type = 0; item.label = "Screen: " + desc;
+    item.monitorName = mon.name; item.monitor = mon;
+    if (existingScreens == 0) {
+        // Primary screen: fills the canvas and drives the vertical/split modes.
+        // Mirror it into the globals so the tested single-screen capture path is
+        // byte-for-byte unchanged.
+        item.x = m_cw/2; item.y = m_ch/2; item.w = m_cw; item.h = m_ch;
+        m_monitor = mon;
+        m_mutex.lock();
+        m_monitorName = mon.name;
+        m_mutex.unlock();
+        m_items.prepend(item);
+    } else {
+        // Additional monitor: added as a movable/resizable inset the user can
+        // arrange (e.g. side-by-side). Captured into its own per-item pixmap and
+        // composited on top of the primary screen.
+        QRect fr = frameRect();
+        int w = std::max(80, fr.width() / 2);
+        int h = w * 9 / 16;
+        item.w = w; item.h = h;
+        item.x = std::clamp(fr.x() + fr.width() - w/2 - 10 - (existingScreens - 1) * 20, w/2, m_cw - w/2);
+        item.y = std::clamp(fr.y() + fr.height() - h/2 - 10, h/2, m_ch - h/2);
+        m_items.append(item);
+    }
+    emit itemsChanged();
+
+    auto targets = screensToCapture();
+    if (!targets.isEmpty())
+        QThreadPool::globalInstance()->start([this, targets]() { captureScreens(targets); });
     update();
 }
 
@@ -385,10 +431,21 @@ void Canvas::removeItem(int index) {
     }
     m_items.removeAt(index);
     if (wasScreen) {
-        m_screenPixmap = QPixmap(); // Clear cached screenshot
-        m_mutex.lock();
-        m_monitorName.clear();
-        m_mutex.unlock();
+        // If another screen remains, promote the first one to primary; otherwise
+        // clear the primary-screen globals.
+        int p = screenItemIndex();
+        if (p >= 0) {
+            m_screenPixmap = m_items[p].screenPixmap;
+            m_monitor = m_items[p].monitor;
+            m_mutex.lock();
+            m_monitorName = m_items[p].monitorName;
+            m_mutex.unlock();
+        } else {
+            m_screenPixmap = QPixmap(); // Clear cached screenshot
+            m_mutex.lock();
+            m_monitorName.clear();
+            m_mutex.unlock();
+        }
     }
     if (m_selected >= m_items.size()) m_selected = -1;
     emit itemsChanged();
@@ -444,17 +501,18 @@ void Canvas::resumePreviews() {
 
 void Canvas::updateTimerState() {
     if (!m_refreshTimer) return;
-    // The slurp/grim capture only runs while the preview is neither suspended
-    // by the app (window hidden, tab inactive, recording) nor manually paused.
-    bool shouldRun = !m_suspended && !m_userPaused;
+    // The timer only stops when the whole preview is suspended by the app (window
+    // hidden, tab inactive, recording). Per-item pause is handled inside the tick
+    // (paused items simply drop their new frames), so one paused element never
+    // freezes the others.
+    bool shouldRun = !m_suspended;
     if (shouldRun && !m_refreshTimer->isActive()) m_refreshTimer->start();
     else if (!shouldRun && m_refreshTimer->isActive()) m_refreshTimer->stop();
 }
 
-void Canvas::togglePreviewPause() {
-    m_userPaused = !m_userPaused;
-    updateTimerState();
-    emit previewPausedChanged(m_userPaused);
+void Canvas::toggleItemPause(int index) {
+    if (!isLiveItem(index)) return;
+    m_items[index].paused = !m_items[index].paused;
     update();
 }
 
@@ -462,27 +520,49 @@ bool Canvas::hasScreenItem() const {
     return screenItemIndex() >= 0;
 }
 
-QRect Canvas::previewToggleRect() const {
-    if (!hasScreenItem()) return {};
-    const int r = 26;
-    QPoint c = frameRect().center();
+bool Canvas::isLiveItem(int index) const {
+    if (index < 0 || index >= m_items.size() || !m_items[index].visible) return false;
+    return m_items[index].type == 0 || m_items[index].type == 1;
+}
+
+int Canvas::liveItemAt(int mx, int my) const {
+    // Topmost first: overlays (incl. additional screens/webcams) sit above the
+    // primary background screen, which is checked last.
+    int primary = screenItemIndex();
+    for (int i = m_items.size() - 1; i >= 0; i--) {
+        if (i == primary || !isLiveItem(i)) continue;
+        if (hitTest(m_items[i], mx, my)) return i;
+    }
+    if (primary >= 0 && isLiveItem(primary) &&
+        frameRect().contains(mx, my)) return primary;
+    return -1;
+}
+
+QRect Canvas::itemToggleRect(int index) const {
+    if (!isLiveItem(index)) return {};
+    const int r = 22;
+    // Centre the toggle on the item's visible area. The primary screen (which
+    // fills the frame) centres on the frame so the button never drifts off-canvas.
+    QPoint c;
+    if (index == screenItemIndex()) c = frameRect().center();
+    else c = QPoint(m_items[index].x, m_items[index].y);
     return {c.x() - r, c.y() - r, 2 * r, 2 * r};
 }
 
-void Canvas::drawPreviewToggle(QPainter &painter) {
-    QRect btn = previewToggleRect();
+void Canvas::drawItemToggle(QPainter &painter, int index) {
+    QRect btn = itemToggleRect(index);
     if (btn.isEmpty()) return;
-    // While running, the toggle only appears on hover to keep the preview clean;
-    // while paused it stays visible so the frozen state is always explained.
-    if (!m_userPaused && !m_hovered) return;
+    bool paused = m_items[index].paused;
+    // While running, the toggle only appears when hovering that element, keeping
+    // the preview clean; while paused it stays visible so the frozen state reads
+    // as intentional rather than broken.
+    if (!paused && m_hoverItem != index) return;
 
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing, true);
 
-    // Circular button backdrop — more prominent while paused so the frozen
-    // preview reads as intentional rather than broken.
     painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(15, 15, 32, m_userPaused ? 200 : 120));
+    painter.setBrush(QColor(15, 15, 32, paused ? 200 : 120));
     painter.drawEllipse(btn);
     painter.setPen(QPen(QColor(86, 159, 198), 2));
     painter.setBrush(Qt::NoBrush);
@@ -491,19 +571,27 @@ void Canvas::drawPreviewToggle(QPainter &painter) {
     QPoint c = btn.center();
     painter.setPen(Qt::NoPen);
     painter.setBrush(QColor(232, 232, 236));
-    if (m_userPaused) {
-        // Paused → show a play triangle (click to resume).
+    if (paused) {
+        // Paused → show a play triangle (click to resume this element).
         QPolygon tri;
-        tri << QPoint(c.x() - 7, c.y() - 11)
-            << QPoint(c.x() - 7, c.y() + 11)
-            << QPoint(c.x() + 12, c.y());
+        tri << QPoint(c.x() - 6, c.y() - 9)
+            << QPoint(c.x() - 6, c.y() + 9)
+            << QPoint(c.x() + 10, c.y());
         painter.drawPolygon(tri);
     } else {
-        // Running → show pause bars (click to pause).
-        painter.drawRect(c.x() - 9, c.y() - 11, 6, 22);
-        painter.drawRect(c.x() + 3, c.y() - 11, 6, 22);
+        // Running → show pause bars (click to pause this element).
+        painter.drawRect(c.x() - 8, c.y() - 9, 5, 18);
+        painter.drawRect(c.x() + 3, c.y() - 9, 5, 18);
     }
     painter.restore();
+}
+
+QStringList Canvas::selectedMonitors() const {
+    QStringList names;
+    for (const auto &item : m_items)
+        if (item.type == 0 && !item.monitorName.isEmpty())
+            names << item.monitorName;
+    return names;
 }
 
 void Canvas::setSelectedItem(int index) {
@@ -694,72 +782,82 @@ void Canvas::stopWebcamCapture(int idx) {
 
 // === Screen capture ===
 
-void Canvas::captureScreen() {
-    // captureScreen runs on a thread-pool thread; m_monitorName is written on the
-    // UI thread (setMonitor/removeItem). Snapshot it under the mutex once so the
-    // rest of the function works on a stable, race-free local copy.
-    m_mutex.lock();
-    QString monitorName = m_monitorName;
-    m_mutex.unlock();
-    if (monitorName.isEmpty()) return;
-    QString path = QDir::tempPath() + "/kartoza-canvas-" + monitorName + ".png";
+QVector<Canvas::ScreenGrab> Canvas::screensToCapture() const {
+    // Runs on the UI thread (m_items owner). One entry per non-paused screen
+    // layer; the first screen is the primary (mirrored into the globals).
+    QVector<ScreenGrab> targets;
+    int primary = screenItemIndex();
+    for (int i = 0; i < m_items.size(); i++) {
+        if (m_items[i].type != 0 || m_items[i].paused) continue;
+        QString name = m_items[i].monitorName;
+        if (i == primary && name.isEmpty()) name = m_monitorName;
+        if (name.isEmpty()) continue;
+        targets.append({name, i == primary});
+    }
+    return targets;
+}
+
+void Canvas::captureScreens(const QVector<ScreenGrab> &targets) {
+    // Runs on a thread-pool thread. The target list was snapshotted on the UI
+    // thread, so this never touches m_items; results are handed back via the
+    // mutex-guarded pending-path members and drained by the refresh timer.
+    for (const auto &t : targets) {
+        const QString monitorName = t.monitorName;
+        const bool primary = t.primary;
+        if (monitorName.isEmpty()) continue;
+        const QString path = QDir::tempPath() + "/kartoza-canvas-" + monitorName + ".png";
+
+        auto store = [this, primary, monitorName](const QString &p) {
+            m_mutex.lock();
+            if (primary) m_pendingScreenPath = p;
+            else m_pendingScreens.insert(monitorName, p);
+            m_mutex.unlock();
+        };
 
 #if defined(Q_OS_LINUX)
-    if (Platform::isWayland()) {
-        if (Platform::supportsWlrCapture()) {
-            // wlroots compositors (Hyprland, Sway, COSMIC, …) — use grim.
-            QProcess proc;
-            proc.start("grim", {"-o", monitorName, "-t", "png", "-l", "0", path});
-            if (proc.waitForFinished(5000) && proc.exitCode() == 0) {
-                m_mutex.lock();
-                m_pendingScreenPath = path;
-                m_mutex.unlock();
+        if (Platform::isWayland()) {
+            if (Platform::supportsWlrCapture()) {
+                // wlroots compositors (Hyprland, Sway, COSMIC, …) — grim per output.
+                QProcess proc;
+                proc.start("grim", {"-o", monitorName, "-t", "png", "-l", "0", path});
+                if (proc.waitForFinished(5000) && proc.exitCode() == 0) store(path);
+                continue;
             }
-            return;
-        }
-
 #ifdef HAS_DBUS
-        // GNOME (Mutter) / KDE (KWin) — no wlr-screencopy. Fire an
-        // async screenshot request; the Portal singleton emits
-        // screenshotReady() when the portal responds (potentially
-        // after a long user-interaction delay on first run). The
-        // signal is wired in the Canvas constructor and writes the
-        // result into m_pendingScreenPath. We must hop to the main
-        // thread to touch the D-Bus session bus.
-        QMetaObject::invokeMethod(&Portal::instance(),
-                                  &Portal::requestScreenshot,
-                                  Qt::QueuedConnection);
-        return;
-#else
-        // No D-Bus in this build — preview is unavailable on GNOME/KDE.
-        return;
-#endif
-    }
-#endif
-
-    // X11 / macOS / Windows: use Qt's screen grab (works without external tools)
-    // QScreen::grabWindow must be called on the main thread, so we use invokeMethod
-    QMetaObject::invokeMethod(this, [this, path, monitorName]() {
-        QScreen *targetScreen = nullptr;
-        for (auto *screen : QApplication::screens()) {
-            if (screen->name() == monitorName) {
-                targetScreen = screen;
-                break;
+            // GNOME (Mutter) / KDE (KWin) — no wlr-screencopy. Fire an async portal
+            // screenshot; the Portal singleton's screenshotReady (wired in the
+            // constructor) writes m_pendingScreenPath. The portal picks a single
+            // source, so only the primary screen previews on these compositors.
+            if (primary) {
+                QMetaObject::invokeMethod(&Portal::instance(),
+                                          &Portal::requestScreenshot,
+                                          Qt::QueuedConnection);
             }
+            continue;
+#else
+            continue;
+#endif
         }
-        if (!targetScreen) targetScreen = QApplication::primaryScreen();
-        if (!targetScreen) return;
+#endif
 
-        QPixmap pix = targetScreen->grabWindow(0);
-        if (!pix.isNull()) {
-            // Scale down for preview performance
-            QPixmap scaled = pix.scaled(960, 540, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            scaled.save(path, "PNG");
-            m_mutex.lock();
-            m_pendingScreenPath = path;
-            m_mutex.unlock();
-        }
-    }, Qt::QueuedConnection);
+        // X11 / macOS / Windows: Qt's screen grab. QScreen::grabWindow must run on
+        // the main thread, so hop there.
+        QMetaObject::invokeMethod(this, [path, monitorName, store]() {
+            QScreen *targetScreen = nullptr;
+            for (auto *screen : QApplication::screens()) {
+                if (screen->name() == monitorName) { targetScreen = screen; break; }
+            }
+            if (!targetScreen) targetScreen = QApplication::primaryScreen();
+            if (!targetScreen) return;
+
+            QPixmap pix = targetScreen->grabWindow(0);
+            if (!pix.isNull()) {
+                QPixmap scaled = pix.scaled(960, 540, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                scaled.save(path, "PNG");
+                store(path);
+            }
+        }, Qt::QueuedConnection);
+    }
 }
 
 QRect Canvas::frameRect() const {
@@ -775,13 +873,14 @@ QRect Canvas::frameRect() const {
 void Canvas::enterEvent(QEnterEvent *event) {
     QWidget::enterEvent(event);
     m_hovered = true;
-    if (hasScreenItem() && !m_userPaused) update();
+    if (hasScreenItem()) update();
 }
 
 void Canvas::leaveEvent(QEvent *event) {
     QWidget::leaveEvent(event);
     m_hovered = false;
-    if (hasScreenItem() && !m_userPaused) update();
+    if (m_hoverItem != -1) { m_hoverItem = -1; update(); }
+    else if (hasScreenItem()) update();
 }
 
 void Canvas::resizeEvent(QResizeEvent *event) {
@@ -837,29 +936,28 @@ bool Canvas::hitTest(const CanvasItem &item, int mx, int my) const {
 // === Input events ===
 
 int Canvas::hitCropHandle(const CanvasItem &item, int mx, int my) const {
-    // Returns: 0=none, 1=top, 2=bottom, 3=left, 4=right
+    // Returns: 0=none, 1=top, 2=bottom, 3=left, 4=right, 5=TL, 6=TR, 7=BL, 8=BR.
     int left = item.x - item.w/2;
     int top = item.y - item.h/2;
     int right = left + item.w;
     int bottom = top + item.h;
     int hs = CROP_HANDLE_SIZE;
+    int cl = left + item.cropLeft, cr = right - item.cropRight;
+    int ct = top + item.cropTop, cb = bottom - item.cropBottom;
 
+    // Corners first (crop two edges at once — Alt+"scale" crops from the corner).
+    if (std::abs(mx - cl) <= hs && std::abs(my - ct) <= hs) return 5; // TL
+    if (std::abs(mx - cr) <= hs && std::abs(my - ct) <= hs) return 6; // TR
+    if (std::abs(mx - cl) <= hs && std::abs(my - cb) <= hs) return 7; // BL
+    if (std::abs(mx - cr) <= hs && std::abs(my - cb) <= hs) return 8; // BR
     // Top handle: centered horizontally at item top edge
-    if (std::abs(my - (top + item.cropTop)) <= hs &&
-        std::abs(mx - item.x) <= hs*2)
-        return 1;
+    if (std::abs(my - ct) <= hs && std::abs(mx - item.x) <= hs*2) return 1;
     // Bottom handle
-    if (std::abs(my - (bottom - item.cropBottom)) <= hs &&
-        std::abs(mx - item.x) <= hs*2)
-        return 2;
+    if (std::abs(my - cb) <= hs && std::abs(mx - item.x) <= hs*2) return 2;
     // Left handle
-    if (std::abs(mx - (left + item.cropLeft)) <= hs &&
-        std::abs(my - item.y) <= hs*2)
-        return 3;
+    if (std::abs(mx - cl) <= hs && std::abs(my - item.y) <= hs*2) return 3;
     // Right handle
-    if (std::abs(mx - (right - item.cropRight)) <= hs &&
-        std::abs(my - item.y) <= hs*2)
-        return 4;
+    if (std::abs(mx - cr) <= hs && std::abs(my - item.y) <= hs*2) return 4;
 
     return 0;
 }
@@ -895,12 +993,17 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
     bool altHeld = event->modifiers() & Qt::AltModifier;
     m_altActive = altHeld;
 
-    // Centre pause/continue toggle takes priority over item selection/drag.
+    // The per-element pause/continue toggle takes priority over selection/drag.
+    // Prefer the item the cursor is hovering (its button is the one being shown),
+    // then fall back to the topmost live item under the cursor.
     if (event->button() == Qt::LeftButton) {
-        QRect toggle = previewToggleRect();
-        if (!toggle.isEmpty() && toggle.contains(mx, my)) {
-            togglePreviewPause();
-            return;
+        int cand = (m_hoverItem >= 0) ? m_hoverItem : liveItemAt(mx, my);
+        if (cand >= 0) {
+            QRect toggle = itemToggleRect(cand);
+            if (!toggle.isEmpty() && toggle.contains(mx, my)) {
+                toggleItemPause(cand);
+                return;
+            }
         }
     }
 
@@ -1063,19 +1166,19 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
         int bottom = top + item.h;
         int minVisible = 20; // minimum visible area
 
+        auto cropTop    = [&]{ item.cropTop    = std::clamp(my - top,    0, item.h - item.cropBottom - minVisible); };
+        auto cropBottom = [&]{ item.cropBottom = std::clamp(bottom - my, 0, item.h - item.cropTop    - minVisible); };
+        auto cropLeft   = [&]{ item.cropLeft   = std::clamp(mx - left,   0, item.w - item.cropRight  - minVisible); };
+        auto cropRight  = [&]{ item.cropRight  = std::clamp(right - mx,  0, item.w - item.cropLeft   - minVisible); };
         switch (m_cropHandle) {
-        case 1: // top
-            item.cropTop = std::clamp(my - top, 0, item.h - item.cropBottom - minVisible);
-            break;
-        case 2: // bottom
-            item.cropBottom = std::clamp(bottom - my, 0, item.h - item.cropTop - minVisible);
-            break;
-        case 3: // left
-            item.cropLeft = std::clamp(mx - left, 0, item.w - item.cropRight - minVisible);
-            break;
-        case 4: // right
-            item.cropRight = std::clamp(right - mx, 0, item.w - item.cropLeft - minVisible);
-            break;
+        case 1: cropTop();    break;
+        case 2: cropBottom(); break;
+        case 3: cropLeft();   break;
+        case 4: cropRight();  break;
+        case 5: cropTop();    cropLeft();  break; // TL corner
+        case 6: cropTop();    cropRight(); break; // TR corner
+        case 7: cropBottom(); cropLeft();  break; // BL corner
+        case 8: cropBottom(); cropRight(); break; // BR corner
         }
         update();
         return;
@@ -1087,6 +1190,10 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
             m_altActive = altHeld;
             update();
         }
+        // Track which live element the cursor is over so its (and only its)
+        // pause/continue toggle is revealed.
+        int hover = liveItemAt(mx, my);
+        if (hover != m_hoverItem) { m_hoverItem = hover; update(); }
         // Update cursor for handle hover on the selected item.
         if (m_selected >= 0 && m_selected < m_items.size()) {
             if (altHeld) {
@@ -1095,6 +1202,10 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
                     setCursor(Qt::SizeVerCursor);
                 else if (handle == 3 || handle == 4)
                     setCursor(Qt::SizeHorCursor);
+                else if (handle == 5 || handle == 8)
+                    setCursor(Qt::SizeFDiagCursor);
+                else if (handle == 6 || handle == 7)
+                    setCursor(Qt::SizeBDiagCursor);
                 else
                     setCursor(Qt::ArrowCursor);
             } else {
@@ -1118,14 +1229,31 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
     int nx = mx - m_dragOffX;
     int ny = my - m_dragOffY;
 
-    if (item.type == 0) {
-        item.x = std::clamp(nx, 0, m_cw);
-        item.y = std::clamp(ny, 0, m_ch);
+    // Recording frame (output area) bounds — everything is constrained to it so
+    // the entire recording area stays visible and nothing is dragged off it.
+    QRect fr = frameRect();
+    int frL = fr.x(), frR = fr.x() + fr.width();
+    int frT = fr.y(), frB = fr.y() + fr.height();
+
+    if (m_dragging == screenItemIndex()) {
+        // Primary background screen: keep it covering the whole recording frame so
+        // the recorded area is never left with an uncovered (dark) gap.
+        item.x = (item.w >= fr.width())
+            ? std::clamp(nx, frR - item.w/2, frL + item.w/2)
+            : std::clamp(nx, frL + item.w/2, frR - item.w/2);
+        item.y = (item.h >= fr.height())
+            ? std::clamp(ny, frB - item.h/2, frT + item.h/2)
+            : std::clamp(ny, frT + item.h/2, frB - item.h/2);
         m_snapXActive = false;
         m_snapYActive = false;
     } else {
-        item.x = std::clamp(nx, item.w/2, m_cw - item.w/2);
-        item.y = std::clamp(ny, item.h/2, m_ch - item.h/2);
+        // Overlays and additional monitors stay within the recording frame.
+        int loX = frL + item.w/2, hiX = frR - item.w/2;
+        int loY = frT + item.h/2, hiY = frB - item.h/2;
+        if (loX > hiX) loX = hiX = fr.center().x();
+        if (loY > hiY) loY = hiY = fr.center().y();
+        item.x = std::clamp(nx, loX, hiX);
+        item.y = std::clamp(ny, loY, hiY);
 
         // Snap to frame, other objects and half-dimension guides (unless Shift).
         if (!shiftHeld) {
@@ -1399,10 +1527,13 @@ void Canvas::paintEvent(QPaintEvent *) {
     painter.translate(m_offsetX, m_offsetY);
     drawScreen(painter);
 
-    // Draw items (skip screen)
+    // Draw items. The primary screen is the background (drawn by drawScreen);
+    // every other item — including *additional* monitors — is composited on top.
+    int primaryIdx = screenItemIndex();
     for (int i = 0; i < m_items.size(); i++) {
         const auto &item = m_items[i];
-        if (!item.visible || item.type == 0) continue;
+        if (!item.visible) continue;
+        if (item.type == 0 && i == primaryIdx) continue; // primary handled by drawScreen
         bool isDragging = (i == m_dragging);
         bool isSelected = (i == m_selected);
 
@@ -1413,7 +1544,23 @@ void Canvas::paintEvent(QPaintEvent *) {
         int visH = item.h - item.cropTop - item.cropBottom;
         QRect visRect(visLeft, visTop, visW, visH);
 
-        if (item.type == 2) { // Logo
+        if (item.type == 0) { // Additional monitor (composited inset)
+            if (!item.screenPixmap.isNull()) {
+                int pw = item.screenPixmap.width(), ph = item.screenPixmap.height();
+                int srcL = item.cropLeft * pw / item.w;
+                int srcT = item.cropTop * ph / item.h;
+                int srcW = visW * pw / item.w;
+                int srcH = visH * ph / item.h;
+                painter.drawPixmap(visRect, item.screenPixmap, QRect(srcL, srcT, srcW, srcH));
+            } else {
+                painter.fillRect(visRect, QColor(26, 26, 46));
+                painter.setPen(QColor(138, 139, 139));
+                painter.drawText(visRect, Qt::AlignCenter, item.label.left(16));
+            }
+            painter.setPen(isSelected ? QColor(232, 184, 74) : QColor(86, 159, 198));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRect(visRect);
+        } else if (item.type == 2) { // Logo
             if (!item.pixmap.isNull()) {
                 // Source rect within the pixmap (proportional crop)
                 int pw = item.pixmap.width(), ph = item.pixmap.height();
@@ -1583,8 +1730,12 @@ void Canvas::paintEvent(QPaintEvent *) {
         if (m_snapYActive) painter.drawLine(0, m_snapYLine, m_cw, m_snapYLine);
     }
 
-    // Pause/continue toggle over the screen preview (topmost).
-    drawPreviewToggle(painter);
+    // Per-element pause/continue toggles (topmost). Each live element shows its
+    // own centred button — revealed on hover, or kept visible while that element
+    // is paused so the frozen state always reads as intentional.
+    for (int i = 0; i < m_items.size(); i++) {
+        if (isLiveItem(i)) drawItemToggle(painter, i);
+    }
 }
 
 void Canvas::drawScreen(QPainter &painter) {
@@ -1733,14 +1884,18 @@ void Canvas::drawCropHandles(QPainter &painter, const CanvasItem &item) {
     // Draw handle rectangles
     painter.setPen(Qt::NoPen);
     painter.setBrush(handleColor);
-    // Top handle
-    painter.drawRect(item.x - hs, top + item.cropTop - hs/2, hs*2, hs);
-    // Bottom handle
-    painter.drawRect(item.x - hs, bottom - item.cropBottom - hs/2, hs*2, hs);
-    // Left handle
-    painter.drawRect(left + item.cropLeft - hs/2, item.y - hs, hs, hs*2);
-    // Right handle
-    painter.drawRect(right - item.cropRight - hs/2, item.y - hs, hs, hs*2);
+    int cl = left + item.cropLeft, cr = right - item.cropRight;
+    int ct = top + item.cropTop, cb = bottom - item.cropBottom;
+    // Edge handles
+    painter.drawRect(item.x - hs, ct - hs/2, hs*2, hs);       // top
+    painter.drawRect(item.x - hs, cb - hs/2, hs*2, hs);       // bottom
+    painter.drawRect(cl - hs/2, item.y - hs, hs, hs*2);       // left
+    painter.drawRect(cr - hs/2, item.y - hs, hs, hs*2);       // right
+    // Corner handles (crop two edges at once).
+    painter.drawRect(cl - hs/2, ct - hs/2, hs, hs);           // TL
+    painter.drawRect(cr - hs/2, ct - hs/2, hs, hs);           // TR
+    painter.drawRect(cl - hs/2, cb - hs/2, hs, hs);           // BL
+    painter.drawRect(cr - hs/2, cb - hs/2, hs, hs);           // BR
 }
 
 bool Canvas::cropModeActive() const {
