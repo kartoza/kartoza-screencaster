@@ -132,7 +132,7 @@ int runFFmpegWithProgress(const QStringList &args, qint64 durationUs,
 
 /** @brief Aggregated input paths and options needed by the merge filter builders. */
 struct MergeInputs {
-    QString screenFile;       /**< Path to the screen capture file. */
+    QString screenFile;       /**< Path to the primary screen capture file. */
     QString audioFile;        /**< Path to the audio capture file. */
     QString webcamFile;       /**< Path to the webcam capture file. */
     RecordingOptions opts;    /**< Recording options (logos, layout, etc.). */
@@ -140,6 +140,20 @@ struct MergeInputs {
     double audioOffsetSec = 0.0;
     /** @brief Webcam start offset relative to screen in seconds (positive = webcam started later). */
     double webcamOffsetSec = 0.0;
+
+    /**
+     * @brief A recorded additional monitor to composite over the primary screen.
+     *
+     * Placement is expressed as fractions (0.0--1.0) of the primary screen frame,
+     * matching the WYSIWYG canvas inset.
+     */
+    struct ScreenOverlayInput {
+        QString file;                                 /**< Path to this monitor's capture. */
+        double relX = 0, relY = 0, relW = 0.5, relH = 0.28; /**< Placement on the frame. */
+        double cropTop = 0, cropBottom = 0, cropLeft = 0, cropRight = 0; /**< Source crop fractions. */
+    };
+    /** @brief Additional monitors composited as insets over the primary screen (landscape). */
+    QVector<ScreenOverlayInput> extraScreens;
 };
 
 /**

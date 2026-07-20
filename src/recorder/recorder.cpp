@@ -82,6 +82,9 @@ void Recorder::start(const RecordingOptions &opts) {
     m_audioParts.clear();
     m_webcamParts.clear();
     m_partTimestamps.clear();
+    // One accumulating part-list per additional monitor.
+    m_extraScreenProcs.clear();
+    m_extraScreenParts = QVector<QStringList>(opts.extraScreens.size());
 
     // Create output directory
     m_outputDir = opts.outputDir;
@@ -121,6 +124,16 @@ void Recorder::startRecordersForPart() {
         m_screenParts.append(m_screenFile);
         startScreenRecorder(m_opts);
         ts.screenStartMs = QDateTime::currentMSecsSinceEpoch();
+
+        // Capture each additional monitor into its own per-part file.
+        m_extraScreenProcs.clear();
+        for (int i = 0; i < m_opts.extraScreens.size(); ++i) {
+            QString file = m_outputDir + QString("/screen%1").arg(i + 1) + partSuffix + ".mp4";
+            QProcess *p = startExtraScreenRecorder(m_opts.extraScreens[i].monitor, file);
+            m_extraScreenProcs.append(p); // may be nullptr if unsupported
+            if (p && i < m_extraScreenParts.size())
+                m_extraScreenParts[i].append(file);
+        }
     }
     if (!m_opts.noAudio) {
         m_audioFile = m_outputDir + "/audio" + partSuffix + ".wav";
@@ -170,10 +183,13 @@ void Recorder::stopAllProcesses() {
     stopProcess(m_screenProc);
     stopProcess(m_audioProc);
     stopProcess(m_webcamProc);
+    for (QProcess *p : m_extraScreenProcs) stopProcess(p);
 
     if (m_screenProc) { m_screenProc->deleteLater(); m_screenProc = nullptr; }
     if (m_audioProc) { m_audioProc->deleteLater(); m_audioProc = nullptr; }
     if (m_webcamProc) { m_webcamProc->deleteLater(); m_webcamProc = nullptr; }
+    for (QProcess *p : m_extraScreenProcs) { if (p) p->deleteLater(); }
+    m_extraScreenProcs.clear();
 
 #ifdef HAS_DBUS
     // Close the portal screencast session so the compositor stops the stream
@@ -476,6 +492,65 @@ void Recorder::startScreenRecorderFallback() {
     }
 }
 
+QProcess *Recorder::startExtraScreenRecorder(const QString &monitor, const QString &file) {
+    // Best-effort capture of an additional monitor, mirroring the primary's
+    // wlroots/X11 command building without the portal/fallback machinery. On
+    // GNOME/KDE Wayland (portal capture) extra monitors are not captured — the
+    // portal is single-source — so this returns nullptr and the inset is dropped.
+    QString cmd;
+    QStringList args;
+
+    switch (Platform::os()) {
+    case Platform::OS::Linux:
+        if (Platform::isWayland()) {
+            if (!Platform::supportsWlrCapture()) {
+                qWarning() << "Extra-monitor capture unsupported on this compositor:" << monitor;
+                return nullptr;
+            }
+            cmd = "wl-screenrec";
+            if (!m_opts.hwAccel) args << "--no-hw";
+            args << QString("--output=%1").arg(monitor)
+                 << QString("--filename=%1").arg(file);
+        } else {
+            cmd = "ffmpeg";
+            QString display = qEnvironmentVariable("DISPLAY", ":0");
+            int monW = 1920, monH = 1080, monX = 0, monY = 0;
+            for (const auto &mon : Monitor::listMonitors()) {
+                if (mon.name == monitor) {
+                    monW = mon.width; monH = mon.height; monX = mon.x; monY = mon.y;
+                    break;
+                }
+            }
+            args << "-y" << "-f" << "x11grab" << "-framerate" << "30"
+                 << "-video_size" << QString("%1x%2").arg(monW).arg(monH)
+                 << "-i" << QString("%1+%2,%3").arg(display).arg(monX).arg(monY)
+                 << "-c:v" << "libx264" << "-preset" << "ultrafast"
+                 << "-crf" << "18" << "-pix_fmt" << "yuv420p" << file;
+        }
+        break;
+    default:
+        // Extra-monitor compositing is a Linux (wlroots/X11) feature for now.
+        return nullptr;
+    }
+
+    auto *proc = new QProcess(this);
+    QString log = m_outputDir + "/screen_extra.log";
+    { QFile lf(log); if (lf.open(QIODevice::Append))
+        lf.write(QString("$ %1 %2\n").arg(cmd, args.join(' ')).toUtf8()); }
+    connect(proc, &QProcess::readyReadStandardError, this, [proc, log]() {
+        QFile lf(log);
+        if (lf.open(QIODevice::Append)) lf.write(proc->readAllStandardError());
+    });
+    proc->start(cmd, args);
+    if (!proc->waitForStarted(5000)) {
+        qWarning() << "Extra-monitor recorder failed to start for" << monitor
+                   << ":" << proc->errorString();
+        proc->deleteLater();
+        return nullptr;
+    }
+    return proc;
+}
+
 #if defined(HAS_DBUS) && defined(Q_OS_LINUX)
 void Recorder::onScreenCastReady(uint nodeId, int fd) {
     // Only act if a recording is set up but the screen process hasn't
@@ -695,6 +770,7 @@ void Recorder::renameOutputFolder() {
     for (auto &p : m_screenParts) updatePath(p);
     for (auto &p : m_audioParts) updatePath(p);
     for (auto &p : m_webcamParts) updatePath(p);
+    for (auto &list : m_extraScreenParts) for (auto &p : list) updatePath(p);
 }
 
 void Recorder::captureRoomNoise() {
@@ -1031,6 +1107,25 @@ void Recorder::processRecordings() {
         m_webcamFile = m_webcamParts.first();
     }
 
+    // Concatenate each additional monitor's parts and build its overlay input.
+    QVector<Merger::MergeInputs::ScreenOverlayInput> extraScreenInputs;
+    for (int i = 0; i < m_extraScreenParts.size(); ++i) {
+        const QStringList &parts = m_extraScreenParts[i];
+        if (parts.isEmpty() || i >= m_opts.extraScreens.size()) continue;
+        QString file = (parts.size() > 1)
+            ? Merger::concatenateParts(parts, m_outputDir + QString("/screen%1_combined.mp4").arg(i + 1),
+                                       QString("concat_screen%1").arg(i + 1))
+            : parts.first();
+        if (file.isEmpty() || !QFile::exists(file) || QFileInfo(file).size() == 0) continue;
+        const auto &ov = m_opts.extraScreens[i];
+        Merger::MergeInputs::ScreenOverlayInput si;
+        si.file = file;
+        si.relX = ov.relX; si.relY = ov.relY; si.relW = ov.relW; si.relH = ov.relH;
+        si.cropTop = ov.cropTop; si.cropBottom = ov.cropBottom;
+        si.cropLeft = ov.cropLeft; si.cropRight = ov.cropRight;
+        extraScreenInputs.append(si);
+    }
+
     // A 0-byte screen file means the capture tool ran but wrote nothing (e.g.
     // wl-screenrec failed to initialise its encoder). Treat that as "no screen"
     // so the merge doesn't feed ffmpeg an empty input and die cryptically.
@@ -1242,6 +1337,7 @@ void Recorder::processRecordings() {
         qint64 durationUs = Merger::getVideoDurationUs(m_screenFile);
 
         Merger::MergeInputs in{m_screenFile, audioToUse, m_webcamFile, m_opts, audioOffsetSec, webcamOffsetSec};
+        in.extraScreens = extraScreenInputs; // additional monitors composited as insets
         QStringList args = Merger::buildMergedArgs(in, m_mergedFile);
 
         int exitCode = Merger::runFFmpegWithProgress(args, durationUs, [this](int pct) {

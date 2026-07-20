@@ -211,6 +211,42 @@ private slots:
         QVERIFY(filter.contains("[wcam_src]"));
     }
 
+    void testExtraScreen_compositesOverlay() {
+        // An additional monitor is fed as an extra input and composited as a
+        // scaled overlay at its canvas-relative position.
+        QTemporaryFile screen, extra;
+        QVERIFY(screen.open()); QVERIFY(extra.open());
+        Merger::MergeInputs in;
+        in.screenFile = screen.fileName();
+        in.opts.noScreen = false;
+        Merger::MergeInputs::ScreenOverlayInput ov;
+        ov.file = extra.fileName();
+        ov.relX = 0.5; ov.relY = 0.5; ov.relW = 0.4; ov.relH = 0.25;
+        in.extraScreens.append(ov);
+
+        QStringList args = Merger::buildMergedArgs(in, "/tmp/out.mp4");
+        // The extra monitor file is an ffmpeg input.
+        QVERIFY(args.contains(extra.fileName()));
+        int fc = args.indexOf("-filter_complex");
+        QVERIFY(fc >= 0);
+        const QString &filter = args[fc + 1];
+        QVERIFY(filter.contains("scr0"));     // the overlay label
+        QVERIFY(filter.contains("overlay="));
+    }
+
+    void testNoExtraScreen_noOverlayInput() {
+        // With no additional monitors and nothing else to composite, there is no
+        // filtergraph at all.
+        QTemporaryFile screen;
+        QVERIFY(screen.open());
+        Merger::MergeInputs in;
+        in.screenFile = screen.fileName();
+        in.opts.noScreen = false;
+
+        QStringList args = Merger::buildMergedArgs(in, "/tmp/out.mp4");
+        QVERIFY(!args.contains("-filter_complex"));
+    }
+
     void testWebcamNoCrop_omitsCropFilter() {
         // With no webcam crop set, the source-crop stage must not appear.
         QTemporaryFile screen, webcam;

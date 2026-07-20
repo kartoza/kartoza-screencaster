@@ -302,6 +302,30 @@ static void appendWebcamFilter(QString &filter, QString &current, int &vIdx,
     current = QString("[v%1]").arg(vIdx);
 }
 
+// Composite one additional monitor over the current frame: crop its source,
+// scale it to the inset box, and overlay it at the canvas-relative position.
+static void appendScreenOverlayFilter(QString &filter, QString &current, int &vIdx,
+                                      int input, const MergeInputs::ScreenOverlayInput &ov,
+                                      int canvasW, int canvasH) {
+    int w = qMax(2, static_cast<int>(ov.relW * canvasW)); w &= ~1;
+    int h = qMax(2, static_cast<int>(ov.relH * canvasH)); h &= ~1;
+    int x = static_cast<int>(ov.relX * canvasW);
+    int y = static_cast<int>(ov.relY * canvasH);
+    double cl = qBound(0.0, ov.cropLeft, 0.9), cr = qBound(0.0, ov.cropRight, 0.9);
+    double ct = qBound(0.0, ov.cropTop, 0.9), cb = qBound(0.0, ov.cropBottom, 0.9);
+    QString tag = QString("scr%1").arg(vIdx);
+    if (cl > 0 || cr > 0 || ct > 0 || cb > 0) {
+        double cwf = qMax(0.05, 1.0 - cl - cr), chf = qMax(0.05, 1.0 - ct - cb);
+        filter += QString("[%1:v]crop=in_w*%2:in_h*%3:in_w*%4:in_h*%5,scale=%6:%7,setsar=1[%8];")
+            .arg(input).arg(cwf, 0, 'f', 4).arg(chf, 0, 'f', 4)
+            .arg(cl, 0, 'f', 4).arg(ct, 0, 'f', 4).arg(w).arg(h).arg(tag);
+    } else {
+        filter += QString("[%1:v]scale=%2:%3,setsar=1[%4];").arg(input).arg(w).arg(h).arg(tag);
+    }
+    filter += QString("%1[%2]overlay=%3:%4[v%5];").arg(current, tag).arg(x).arg(y).arg(++vIdx);
+    current = QString("[v%1]").arg(vIdx);
+}
+
 static void finalizeFilter(QString &filter) {
     // Replace last output tag with [outv]
     filter.chop(1);
@@ -346,10 +370,23 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
         }
     }
 
+    // Additional monitors: one extra input each, composited as insets.
+    QVector<int> extraScreenInputs;
+    for (const auto &es : in.extraScreens) {
+        if (!es.file.isEmpty() && QFile::exists(es.file)) {
+            extraScreenInputs.append(nextInput++);
+            args << "-i" << es.file;
+        } else {
+            extraScreenInputs.append(-1);
+        }
+    }
+
     // A filter graph is needed only if there's a real logo or a webcam to overlay.
     bool hasAnyLogo = false;
     for (int idx : logoInputs) { if (idx >= 0) { hasAnyLogo = true; break; } }
-    bool needsFilter = hasAnyLogo || mergeWebcam;
+    bool hasExtraScreen = false;
+    for (int idx : extraScreenInputs) { if (idx >= 0) { hasExtraScreen = true; break; } }
+    bool needsFilter = hasAnyLogo || mergeWebcam || hasExtraScreen;
 
     // Check if screen needs cropping
     bool needsCrop = in.opts.screenCropTop > 0 || in.opts.screenCropBottom > 0 ||
@@ -387,6 +424,14 @@ QStringList buildMergedArgs(const MergeInputs &in, const QString &outputFile) {
             current = "[cropped]";
             cw = cropW;
             ch = cropH;
+        }
+
+        // Additional monitors sit just above the primary background; webcam, logos
+        // and text boxes are composited on top of them.
+        for (int i = 0; i < in.extraScreens.size(); ++i) {
+            if (i < extraScreenInputs.size() && extraScreenInputs[i] >= 0)
+                appendScreenOverlayFilter(filter, current, vIdx, extraScreenInputs[i],
+                                          in.extraScreens[i], cw, ch);
         }
 
         for (int i = 0; i < in.opts.logos.size(); ++i) {

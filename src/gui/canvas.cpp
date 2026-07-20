@@ -640,6 +640,7 @@ Canvas::ItemExport Canvas::itemExport(int index) const {
     e.type = item.type; e.label = item.label;
     e.x = item.x; e.y = item.y; e.w = item.w; e.h = item.h;
     e.shape = item.shape; e.filePath = item.filePath; e.device = item.device;
+    e.monitorName = item.monitorName;
     e.gifLoop = item.gifLoop; e.gifLoopMax = item.gifLoopMax;
     e.cropTop = item.cropTop; e.cropBottom = item.cropBottom;
     e.cropLeft = item.cropLeft; e.cropRight = item.cropRight;

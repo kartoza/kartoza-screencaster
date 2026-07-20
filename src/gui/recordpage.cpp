@@ -735,14 +735,35 @@ void RecordPage::onCountdownTick() {
         auto items = m_canvas->exportItems();
         double cw = m_canvas->canvasWidth();
         double ch = m_canvas->canvasHeight();
+        int screenSeen = 0;
         for (const auto &e : items) {
-            if (e.type == 0) { // screen — extract crop
-                if (e.h > 0 && e.w > 0) {
-                    opts.screenCropTop = double(e.cropTop) / e.h;
-                    opts.screenCropBottom = double(e.cropBottom) / e.h;
-                    opts.screenCropLeft = double(e.cropLeft) / e.w;
-                    opts.screenCropRight = double(e.cropRight) / e.w;
+            if (e.type == 0) { // screen layer
+                if (screenSeen == 0) {
+                    // Primary screen — the recorded background. Extract its crop.
+                    if (e.h > 0 && e.w > 0) {
+                        opts.screenCropTop = double(e.cropTop) / e.h;
+                        opts.screenCropBottom = double(e.cropBottom) / e.h;
+                        opts.screenCropLeft = double(e.cropLeft) / e.w;
+                        opts.screenCropRight = double(e.cropRight) / e.w;
+                    }
+                } else if (!e.monitorName.isEmpty()) {
+                    // Additional monitor — captured separately and composited as an
+                    // inset at its canvas-relative placement.
+                    RecordingOptions::ScreenOverlay so;
+                    so.monitor = e.monitorName;
+                    so.relX = (e.x - e.w/2.0) / cw;
+                    so.relY = (e.y - e.h/2.0) / ch;
+                    so.relW = e.w / cw;
+                    so.relH = e.h / ch;
+                    if (e.h > 0 && e.w > 0) {
+                        so.cropTop = double(e.cropTop) / e.h;
+                        so.cropBottom = double(e.cropBottom) / e.h;
+                        so.cropLeft = double(e.cropLeft) / e.w;
+                        so.cropRight = double(e.cropRight) / e.w;
+                    }
+                    opts.extraScreens.append(so);
                 }
+                screenSeen++;
             } else if (e.type == 2) { // logo
                 RecordingOptions::LogoOpts lo;
                 lo.path = e.filePath;

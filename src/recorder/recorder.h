@@ -71,6 +71,20 @@ struct RecordingOptions {
     int webcamShape = 0;
     /** @brief Webcam crop as fractions (0.0-1.0) of the webcam frame, applied before shaping/scaling. */
     double webcamCropTop = 0, webcamCropBottom = 0, webcamCropLeft = 0, webcamCropRight = 0;
+
+    /**
+     * @brief An additional monitor to capture and composite as an inset.
+     *
+     * The first/primary monitor is `monitor` above; these are the extra displays
+     * added to the canvas. Placement is fractions (0.0--1.0) of the primary frame.
+     */
+    struct ScreenOverlay {
+        QString monitor;                              /**< Monitor identifier to capture. */
+        double relX = 0, relY = 0, relW = 0.5, relH = 0.28; /**< Placement on the frame. */
+        double cropTop = 0, cropBottom = 0, cropLeft = 0, cropRight = 0; /**< Source crop fractions. */
+    };
+    /** @brief Additional monitors beyond the primary (0..N). */
+    QVector<ScreenOverlay> extraScreens;
     /** @brief Overlay logos/GIFs placed on the canvas (0..N). */
     QVector<LogoOpts> logos;
 
@@ -206,6 +220,18 @@ private:
      * 0-byte file. wf-recorder uses a pure software (libx264) path with no VAAPI.
      */
     void startScreenRecorderFallback();
+    /**
+     * @brief Launch a capture process for one additional monitor.
+     * @param monitor Monitor identifier to capture.
+     * @param file    Output file path for this part.
+     * @return The started QProcess (owned by this Recorder), or nullptr if the
+     *         current platform/compositor cannot capture extra monitors.
+     *
+     * Uses the same wlroots (wl-screenrec) / X11 (ffmpeg x11grab) paths as the
+     * primary recorder, without the portal/fallback machinery — extra monitors
+     * are best-effort insets, so a failure just drops that inset.
+     */
+    QProcess *startExtraScreenRecorder(const QString &monitor, const QString &file);
     /** @brief Launch the FFmpeg audio-capture process. */
     void startAudioRecorder(const RecordingOptions &opts);
     /** @brief Launch the FFmpeg webcam-capture process. */
@@ -220,8 +246,10 @@ private:
     QElapsedTimer m_elapsed;               /**< Timer for the current recording segment. */
     qint64 m_elapsedAccumulated = 0;       /**< Milliseconds accumulated before the current segment. */
 
-    QProcess *m_screenProc = nullptr;      /**< FFmpeg process for screen capture. */
+    QProcess *m_screenProc = nullptr;      /**< FFmpeg process for primary screen capture. */
     bool m_screenFallbackTried = false;    /**< True once the wf-recorder fallback has been used this session. */
+    QVector<QProcess*> m_extraScreenProcs; /**< Live capture processes for additional monitors (current part). */
+    QVector<QStringList> m_extraScreenParts; /**< Per additional monitor: its ordered part-file paths. */
     QProcess *m_audioProc = nullptr;       /**< FFmpeg process for audio capture. */
     QProcess *m_webcamProc = nullptr;      /**< FFmpeg process for webcam capture. */
 

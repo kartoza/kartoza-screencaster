@@ -172,6 +172,7 @@ public:
         int shape;        /**< Webcam shape (0=round, 1=square, 2=rect). */
         QString filePath; /**< File path for logo items. */
         QString device;   /**< Device path for webcam items. */
+        QString monitorName; /**< Monitor identifier for screen items. */
         int gifLoop = 2;    /**< GIF loop mode: 0=disabled, 1=once, 2=continuous. */
         int gifLoopMax = 3; /**< Maximum number of GIF loop iterations. */
         int cropTop = 0;    /**< Pixels cropped from top. */
