@@ -17,21 +17,23 @@ set wildignore+=build/*,*.o,*.moc,*_autogen/*,*.so,*.a
 " Project Keybindings (<leader>p)
 " =====================================
 
-" Build
-nnoremap <leader>pbb :!cd build && ninja<CR>
-nnoremap <leader>pbr :!cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja<CR>
-nnoremap <leader>pbc :!cd build && ninja clean<CR>
+" Build — all via ksc-dev (single build path: timing + build-log.tsv + ccache
+" stats -> cmake+ninja -> CMakeLists.txt ccache/mold). Edit ksc-dev.sh only.
+nnoremap <leader>pbb :!ksc-dev build<CR>
+nnoremap <leader>pbr :!ksc-dev release<CR>
+nnoremap <leader>pbc :!ksc-dev clean<CR>
+nnoremap <leader>pbs :!ksc-dev stats --graph<CR>
 
 " Run
-nnoremap <leader>prr :!./build/kartoza-screencaster<CR>
+nnoremap <leader>prr :!ksc-dev run<CR>
 
 " Test
-nnoremap <leader>ptt :!cd build && ctest --output-on-failure<CR>
-nnoremap <leader>ptm :!cd build && ./test_merger -v1<CR>
-nnoremap <leader>ptp :!cd build && ./test_pipeline -v1<CR>
+nnoremap <leader>ptt :!ksc-dev test<CR>
+nnoremap <leader>ptm :!ksc-dev test -R test_merger<CR>
+nnoremap <leader>ptp :!ksc-dev test -R test_pipeline<CR>
 
 " Lint/Format
-nnoremap <leader>plf :!find src tests -name '*.cpp' -o -name '*.h' \| xargs clang-format -i<CR>
+nnoremap <leader>plf :!ksc-dev format<CR>
 nnoremap <leader>plt :!cd build && run-clang-tidy -p . ../src/<CR>
 
 " Debug
