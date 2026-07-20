@@ -9,17 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-#### Multiple monitors on one canvas
+#### Multiple monitors on one canvas — captured and composited
 The Add ▸ Screen menu can now add **more than one monitor** to the layout. The
 first monitor is the primary background (and drives the vertical/split modes); each
 additional monitor is added as a movable, resizable, croppable inset you can
 arrange freely (e.g. side-by-side), with its own independent live preview. Each
 screen layer is captured separately (grim per output on wlroots, `QScreen` per
-display on X11). Note: the **recording pipeline currently captures the primary
-monitor**; compositing additional monitors into the recorded output is a tracked
-follow-up — the additional monitors are fully functional in the WYSIWYG
-layout/preview today. On GNOME/KDE Wayland (portal capture), only the primary
-monitor previews.
+display on X11), and the **recording now captures each monitor and composites the
+additional ones as insets** over the primary at their canvas positions (with their
+crop), so the landscape output matches the layout. Additional monitors are
+captured with `wl-screenrec` (wlroots) or `ffmpeg x11grab` (X11). Caveats: on
+GNOME/KDE Wayland (portal capture) only the primary monitor is captured (the portal
+is single-source), and additional monitors are composited into the **landscape**
+output only (the vertical/split output uses the primary screen).
 
 #### Per-element pause with a centred hover button
 Live previews now pause **per element** instead of globally: hovering a monitor or

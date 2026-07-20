@@ -25,9 +25,10 @@ sting; arrange them; record.
   start / end of the recording.
 
 !!! note "Recording multiple monitors"
-    Additional monitors are fully live in the layout/preview today. The recorded
-    output currently captures the **primary** monitor; compositing additional
-    monitors into the recording is a tracked follow-up.
+    Each monitor is captured separately and the additional ones are composited as
+    insets over the primary in the **landscape** recording, at their canvas
+    positions and crop. On GNOME/KDE Wayland (portal capture) only the primary
+    monitor is captured; the vertical/split output uses the primary screen.
 
 ## Resizing and cropping
 

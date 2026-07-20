@@ -111,7 +111,8 @@ Kartoza Screencaster is a screen recording and video processing application for 
 **Acceptance Criteria:**
 - Add ▸ Screen can add more than one monitor; the first is the primary background and each additional monitor is a movable/resizable/croppable inset
 - Each screen layer previews live and independently (grim per output on wlroots, `QScreen` per display on X11)
-- The recording pipeline currently captures the primary monitor; compositing additional monitors into the recorded output is a planned follow-up
+- The recording captures each monitor separately and composites the additional ones as insets over the primary in the landscape output, at their canvas placement and crop (additional captures use `wl-screenrec` on wlroots / `ffmpeg x11grab` on X11)
+- On GNOME/KDE Wayland (portal capture) only the primary monitor is captured; the vertical/split output uses the primary screen
 - Re-selecting a monitor already on the canvas does not create a duplicate layer
 
 ### US-006d: Per-Element Preview Pause
