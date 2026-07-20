@@ -52,6 +52,15 @@ The toolchain refresh that brought glibc 2.42 also pulled in GCC 15.2, whose new
 guarded `-Wno-template-body` restores the build; genuine template errors still
 surface at instantiation.
 
+### Changed
+
+#### One build path through `ksc-dev`
+The short dev-shell aliases (`cb`, `cbr`, `ct`, `cr`, `cf`, `cclean`) and the
+Neovim `<leader>pb*` shortcuts now all delegate to `ksc-dev`, so every build and
+test is **timed and logged** to `build-log.tsv` (view with `ksc-dev stats
+--graph`) — previously only `ksc-dev` itself did. Build behaviour now lives in
+`scripts/ksc-dev.sh` alone; ccache + mold remain sourced from `CMakeLists.txt`.
+
 ## [2.2.0] - 2026-07-19
 
 ### Added
