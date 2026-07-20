@@ -400,6 +400,10 @@ private:
     int m_cropHandle = 0;
     /** @brief Index of item whose crop handle is being dragged. */
     int m_cropItem = -1;
+    /** @brief Live item whose pause toggle was pressed, pending click-vs-drag disambiguation (-1 = none). */
+    int m_pendingToggle = -1;
+    /** @brief Cursor position (canvas coords) where a pending-toggle press started. */
+    QPoint m_pressPos;
     /** @brief Index of the webcam whose crop window is being panned (Alt+drag body), or -1. */
     int m_cropPanItem = -1;
     /** @brief Crop insets and cursor position at the start of a crop-pan drag. */

@@ -994,15 +994,25 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
     bool altHeld = event->modifiers() & Qt::AltModifier;
     m_altActive = altHeld;
 
-    // The per-element pause/continue toggle takes priority over selection/drag.
-    // Prefer the item the cursor is hovering (its button is the one being shown),
-    // then fall back to the topmost live item under the cursor.
+    // The per-element pause/continue toggle. Only the *visible* toggle (shown on
+    // hover, or while the element is paused) is clickable, so a normal press on
+    // the item body still selects/drags it. A press on the visible toggle is
+    // deferred: a click (release in place) toggles pause, a drag moves the item.
+    m_pendingToggle = -1;
     if (event->button() == Qt::LeftButton) {
         int cand = (m_hoverItem >= 0) ? m_hoverItem : liveItemAt(mx, my);
-        if (cand >= 0) {
+        if (cand >= 0 && (m_items[cand].paused || m_hoverItem == cand)) {
             QRect toggle = itemToggleRect(cand);
             if (!toggle.isEmpty() && toggle.contains(mx, my)) {
-                toggleItemPause(cand);
+                m_pendingToggle = cand;
+                m_pressPos = QPoint(mx, my);
+                m_selected = cand;
+                m_dragging = cand;
+                m_dragOffX = mx - m_items[cand].x;
+                m_dragOffY = my - m_items[cand].y;
+                emit selectionChanged(cand);
+                setFocus();
+                update();
                 return;
             }
         }
@@ -1111,6 +1121,14 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
     int my = event->pos().y() - m_offsetY;
     bool shiftHeld = event->modifiers() & Qt::ShiftModifier;
     bool altHeld = event->modifiers() & Qt::AltModifier;
+
+    // A press that landed on a pause toggle stays a "click" (which toggles on
+    // release) until the cursor moves past a small threshold, at which point it
+    // becomes an ordinary drag of the item.
+    if (m_pendingToggle >= 0) {
+        if ((QPoint(mx, my) - m_pressPos).manhattanLength() <= 4) return;
+        m_pendingToggle = -1; // promoted to a drag; fall through to normal handling
+    }
 
     // Handle resize (corner) handle dragging — aspect-locked scale about centre,
     // giving the same result as the scroll wheel.
@@ -1296,6 +1314,15 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void Canvas::mouseReleaseEvent(QMouseEvent *) {
+    // A pause toggle that was pressed and released without dragging is a click:
+    // toggle that element's pause (the item did not actually move).
+    if (m_pendingToggle >= 0) {
+        int t = m_pendingToggle;
+        m_pendingToggle = -1;
+        m_dragging = -1;
+        toggleItemPause(t);
+        return;
+    }
     if (m_resizeHandle > 0) {
         m_resizeHandle = 0;
         m_resizeItem = -1;
