@@ -1056,9 +1056,19 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
         if (!m_items[i].visible || m_items[i].type == 0) continue;
         if (hitTest(m_items[i], mx, my)) {
             hit = i;
-            m_dragging = i;
-            m_dragOffX = mx - m_items[i].x;
-            m_dragOffY = my - m_items[i].y;
+            if (altHeld && m_items[i].type == 1) {
+                // Alt+drag a webcam body pans its crop window across the source,
+                // so you can aim the (cropped) bubble at the part you want to show.
+                m_cropPanItem = i;
+                m_panStartCropLeft = m_items[i].cropLeft;
+                m_panStartCropTop = m_items[i].cropTop;
+                m_panStartMX = mx;
+                m_panStartMY = my;
+            } else {
+                m_dragging = i;
+                m_dragOffX = mx - m_items[i].x;
+                m_dragOffY = my - m_items[i].y;
+            }
             break;
         }
     }
@@ -1158,6 +1168,21 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
         return;
     }
 
+    // Handle crop-window panning (Alt+drag a webcam body): slide the cropped
+    // window across the source so the shown portion tracks toward the cursor,
+    // keeping the window size fixed. Only pans on an axis that has crop room.
+    if (m_cropPanItem >= 0 && m_cropPanItem < m_items.size()) {
+        auto &item = m_items[m_cropPanItem];
+        int totalH = item.cropLeft + item.cropRight;
+        int totalV = item.cropTop + item.cropBottom;
+        int newLeft = std::clamp(m_panStartCropLeft + (mx - m_panStartMX), 0, totalH);
+        int newTop  = std::clamp(m_panStartCropTop  + (my - m_panStartMY), 0, totalV);
+        item.cropLeft = newLeft;   item.cropRight = totalH - newLeft;
+        item.cropTop = newTop;     item.cropBottom = totalV - newTop;
+        update();
+        return;
+    }
+
     // Handle crop handle dragging
     if (m_cropHandle > 0 && m_cropItem >= 0 && m_cropItem < m_items.size()) {
         auto &item = m_items[m_cropItem];
@@ -1207,6 +1232,8 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
                     setCursor(Qt::SizeFDiagCursor);
                 else if (handle == 6 || handle == 7)
                     setCursor(Qt::SizeBDiagCursor);
+                else if (m_items[m_selected].type == 1 && hitTest(m_items[m_selected], mx, my))
+                    setCursor(Qt::SizeAllCursor); // Alt+drag body pans the crop window
                 else
                     setCursor(Qt::ArrowCursor);
             } else {
@@ -1278,6 +1305,11 @@ void Canvas::mouseReleaseEvent(QMouseEvent *) {
     if (m_cropHandle > 0) {
         m_cropHandle = 0;
         m_cropItem = -1;
+        setCursor(Qt::ArrowCursor);
+        emit itemsChanged();
+    }
+    if (m_cropPanItem >= 0) {
+        m_cropPanItem = -1;
         setCursor(Qt::ArrowCursor);
         emit itemsChanged();
     }
@@ -1583,15 +1615,27 @@ void Canvas::paintEvent(QPaintEvent *) {
             bool hasFrame = !item.webcamPixmap.isNull();
 
             if (item.shape == 0) { // round
-                // For round webcam, crop reduces the visible circle
+                // For round webcam, crop selects the shown portion of the source:
+                // draw the centre square of the cropped region into the circle
+                // (matches the round recording path), so Alt-crop visibly crops
+                // down and the panned crop window aims at the chosen part.
                 int r = std::min(visW, visH) / 2;
                 int cx = visLeft + visW/2, cy = visTop + visH/2;
                 if (hasFrame) {
+                    int pw = item.webcamPixmap.width(), ph = item.webcamPixmap.height();
+                    int srcL = item.cropLeft * pw / item.w;
+                    int srcT = item.cropTop * ph / item.h;
+                    int srcW = visW * pw / item.w;
+                    int srcH = visH * ph / item.h;
+                    int srcSq = std::max(1, std::min(srcW, srcH));
+                    int srcX = srcL + (srcW - srcSq) / 2;
+                    int srcY = srcT + (srcH - srcSq) / 2;
                     painter.save();
                     QPainterPath clipPath;
                     clipPath.addEllipse(cx-r, cy-r, r*2, r*2);
                     painter.setClipPath(clipPath);
-                    painter.drawPixmap(QRect(cx-r, cy-r, r*2, r*2), item.webcamPixmap);
+                    painter.drawPixmap(QRect(cx-r, cy-r, r*2, r*2), item.webcamPixmap,
+                                       QRect(srcX, srcY, srcSq, srcSq));
                     painter.restore();
                 } else {
                     painter.setBrush(QColor(6, 150, 154));

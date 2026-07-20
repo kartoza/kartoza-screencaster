@@ -400,6 +400,10 @@ private:
     int m_cropHandle = 0;
     /** @brief Index of item whose crop handle is being dragged. */
     int m_cropItem = -1;
+    /** @brief Index of the webcam whose crop window is being panned (Alt+drag body), or -1. */
+    int m_cropPanItem = -1;
+    /** @brief Crop insets and cursor position at the start of a crop-pan drag. */
+    int m_panStartCropLeft = 0, m_panStartCropTop = 0, m_panStartMX = 0, m_panStartMY = 0;
     /** @brief Which resize handle is dragged: 0=none, 1=TL, 2=TR, 3=BL, 4=BR, 5=top, 6=bottom, 7=left, 8=right. */
     int m_resizeHandle = 0;
     /** @brief Index of item whose resize handle is being dragged. */

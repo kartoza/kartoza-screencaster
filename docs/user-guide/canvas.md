@@ -41,6 +41,9 @@ Select an element to reveal its handles:
   element instead of scaling it: drag an **edge** to crop one side, or a
   **corner** to crop two sides at once. Cropping a webcam trims the region that
   is actually recorded, matching what you see.
+- **Aim a webcam bubble** — crop a round webcam down to a smaller circle, then
+  hold **Alt** and **drag the bubble body** to pan the crop window across the
+  camera feed until it frames exactly the part you want to show.
 
 As you drag, elements **snap** to the frame edges, the frame centre lines, and
 other objects' edges and centres, with a guide line shown while a snap is

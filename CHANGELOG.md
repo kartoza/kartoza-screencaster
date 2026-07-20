@@ -40,6 +40,12 @@ shaping, so the recorded region matches the WYSIWYG preview. **Alt + a corner
 handle** now crops from that corner (two edges at once) in addition to the edge
 handles, on webcams as well as screen, logo and text items.
 
+A **round (bubble) webcam** now actually crops down — it previously ignored the
+crop and always squeezed the whole feed into the circle; it now shows the chosen
+portion of the source. With the bubble cropped, **Alt + dragging the webcam body
+pans the crop window** across the feed, so you can aim the bubble at exactly the
+part of the camera you want to show.
+
 #### The whole recording area stays visible
 Overlays and additional monitors are now clamped to the recording frame so nothing
 can be dragged off the recorded area, and the primary screen is kept covering the
