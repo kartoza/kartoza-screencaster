@@ -1972,6 +1972,64 @@ private slots:
       QVERIFY(it.y >= fr1.y() && it.y <= fr1.y() + fr1.height());
     }
   }
+
+  // --- Per-element pause (bugs 1 & 2) --------------------------------------
+
+  // toggleItemPause flips only the targeted item's pause state.
+  void testToggleItemPauseFlipsOne() {
+    Canvas c;
+    c.addWebcam("video0", "Cam0", 0);
+    QVERIFY(!c.isItemPaused(0));
+    c.toggleItemPause(0);
+    QVERIFY(c.isItemPaused(0));
+    c.toggleItemPause(0);
+    QVERIFY(!c.isItemPaused(0));
+  }
+
+  // Pausing one element must not pause the others (the reported bug).
+  void testPauseIsPerElement() {
+    Canvas c;
+    c.addWebcam("video0", "Cam0", 0);
+    c.addWebcam("video1", "Cam1", 1);
+    c.toggleItemPause(0);
+    QVERIFY(c.isItemPaused(0));
+    QVERIFY(!c.isItemPaused(1)); // the second webcam keeps running
+  }
+
+  // An out-of-range index can never be paused.
+  void testTogglePauseIgnoresOutOfRange() {
+    Canvas c;
+    c.addWebcam("video0", "Cam0", 0);
+    c.toggleItemPause(5); // out of range — no-op
+    QVERIFY(!c.isItemPaused(5));
+  }
+
+  // --- Multiple monitors (bug 3) -------------------------------------------
+
+  // Adding two different monitors yields two independent screen layers.
+  void testAddTwoMonitors() {
+    Canvas c;
+    c.resize(800, 450);
+    MonitorInfo m0; m0.name = "DP-1"; m0.description = "Left"; m0.width = 1920; m0.height = 1080;
+    MonitorInfo m1; m1.name = "DP-2"; m1.description = "Right"; m1.width = 1920; m1.height = 1080;
+    c.setMonitor(m0);
+    c.setMonitor(m1);
+    QCOMPARE(c.selectedMonitors().size(), 2);
+    // The first monitor stays primary.
+    QCOMPARE(c.selectedMonitor(), QString("DP-1"));
+    QVERIFY(c.selectedMonitors().contains("DP-1"));
+    QVERIFY(c.selectedMonitors().contains("DP-2"));
+  }
+
+  // Re-selecting the same monitor must not create a duplicate screen layer.
+  void testSameMonitorTwiceNoDuplicate() {
+    Canvas c;
+    c.resize(800, 450);
+    MonitorInfo m0; m0.name = "DP-1"; m0.description = "Left"; m0.width = 1920; m0.height = 1080;
+    c.setMonitor(m0);
+    c.setMonitor(m0);
+    QCOMPARE(c.selectedMonitors().size(), 1);
+  }
 };
 
 QTEST_MAIN(TestCanvas)

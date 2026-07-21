@@ -97,9 +97,54 @@ Kartoza Screencaster is a screen recording and video processing application for 
 
 **Acceptance Criteria:**
 - Dragging a selected item's corner handles scales it proportionally (aspect-locked), matching the scroll wheel
-- Holding **Alt** turns the handles Kartoza blue and switches them to crop mode (edge insets); releasing Alt returns to resize
+- Holding **Alt** turns the handles Kartoza blue and switches them to crop mode; dragging an **edge** crops one side and dragging a **corner** crops two sides at once; releasing Alt returns to resize
+- Cropping a webcam trims the region that is recorded (the crop is applied to the webcam source in the output), so the recording matches the preview
 - Dragging an item snaps it to the scene-frame edges, the frame's half-width/half-height centre lines, and other objects' edges and centres, with a guide line shown while a snap is engaged
 - Holding **Shift** disables snapping for free placement
+- Items and additional monitors are constrained to the recording frame so the entire recorded area stays visible and nothing is dragged off it
+
+### US-006c: Multiple Monitors on One Canvas
+**As a** content creator with more than one display
+**I want** to add several monitors to a single layout
+**So that** I can compose a multi-screen scene
+
+**Acceptance Criteria:**
+- Add ▸ Screen can add more than one monitor; the first is the primary background and each additional monitor is a movable/resizable/croppable inset
+- Each screen layer previews live and independently (grim per output on wlroots, `QScreen` per display on X11)
+- The recording captures each monitor separately and composites the additional ones as insets over the primary in the landscape output, at their canvas placement and crop (additional captures use `wl-screenrec` on wlroots / `ffmpeg x11grab` on X11)
+- On GNOME/KDE Wayland (portal capture) only the primary monitor is captured; the vertical/split output uses the primary screen
+- Re-selecting a monitor already on the canvas does not create a duplicate layer
+
+### US-006d: Per-Element Preview Pause
+**As a** content creator
+**I want** to pause the live preview of a single element
+**So that** I can freeze one feed without affecting the others
+
+**Acceptance Criteria:**
+- Hovering a monitor or webcam reveals a pause/continue button centred on that element
+- Clicking the button freezes only that element's live preview; other elements keep updating
+- A paused element keeps its button visible so the frozen state is evident
+- Pausing the preview does not affect the recording
+
+### US-006e: Multiple Webcams
+**As a** content creator with more than one camera
+**I want** to add several webcams to the scene
+**So that** I can show multiple angles at once
+
+**Acceptance Criteria:**
+- More than one webcam can be added; the recording captures each webcam separately and composites them all at their canvas placement, shape and crop
+- The first webcam uses the existing single-webcam path; additional cameras are captured to their own files and composited as overlays
+- An additional camera that fails to open drops its overlay without failing the recording
+
+### US-006f: Overlay Image Formats
+**As a** content creator
+**I want** logo/overlay images to always appear in the recording
+**So that** my branding is not silently dropped
+
+**Acceptance Criteria:**
+- The logo chooser and asset gallery offer raster formats and GIF, not SVG (FFmpeg cannot decode SVG)
+- An SVG that reaches a recording via drag-drop, a saved preset or reprocessing is rasterised to PNG before the merge
+- A merge that produces no output is reported as **failed** (not "completed")
 
 ### US-007: Output File Naming
 **As a** content creator

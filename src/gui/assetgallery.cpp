@@ -135,7 +135,9 @@ void AssetGallery::refresh() {
     }
 
     QDir assetDir(dir);
-    QStringList imageFilters = {"*.png", "*.jpg", "*.jpeg", "*.svg", "*.gif", "*.webp", "*.bmp"};
+    // SVG excluded: FFmpeg has no SVG decoder, so an SVG overlay would break the
+    // render. Raster/GIF formats only.
+    QStringList imageFilters = {"*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.bmp"};
     QStringList audioFilters = {"*.wav", "*.mp3", "*.ogg", "*.flac", "*.aac", "*.m4a", "*.opus"};
     QStringList allFilters = imageFilters + audioFilters;
     auto files = assetDir.entryInfoList(allFilters, QDir::Files, QDir::Name);

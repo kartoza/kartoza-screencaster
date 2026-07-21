@@ -74,10 +74,11 @@ local function run_term(cmd, opts)
   end
 end
 
--- Helper: cmake build
+-- Helper: build via ksc-dev — the single build path (timing + build-log.tsv +
+-- ccache stats -> cmake+ninja -> CMakeLists.txt ccache/mold). Keep all build
+-- behaviour in scripts/ksc-dev.sh, not here.
 local function cmake_build(build_type)
-  build_type = build_type or "Debug"
-  run_term("cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=" .. build_type .. " && ninja -j$(nproc)")
+  run_term("ksc-dev " .. (build_type == "Release" and "release" or "build"))
 end
 
 -- Setup which-key
@@ -90,19 +91,20 @@ local function setup_which_key()
 
     -- Build
     { "<leader>pb", group = "Build" },
-    { "<leader>pbb", function() cmake_build("Debug") end, desc = "Build (Debug)" },
-    { "<leader>pbr", function() cmake_build("Release") end, desc = "Build (Release, optimized+stripped)" },
-    { "<leader>pbc", function() run_term("cd build && ninja clean") end, desc = "Clean build" },
-    { "<leader>pbf", function() run_term("cd build && cmake .. -G Ninja && ninja") end, desc = "Reconfigure + build" },
+    { "<leader>pbb", function() cmake_build("Debug") end, desc = "Build (Debug) [ksc-dev]" },
+    { "<leader>pbr", function() cmake_build("Release") end, desc = "Build (Release) [ksc-dev]" },
+    { "<leader>pbc", function() run_term("ksc-dev clean") end, desc = "Clean rebuild [ksc-dev]" },
+    { "<leader>pbf", function() run_term("ksc-dev build") end, desc = "Reconfigure + build [ksc-dev]" },
+    { "<leader>pbs", function() run_term("ksc-dev stats --graph") end, desc = "Build stats (durations, ccache hit rate)" },
 
     -- Run
     { "<leader>pr", group = "Run" },
-    { "<leader>prr", function() run_term("./build/kartoza-screencaster") end, desc = "Run application" },
+    { "<leader>prr", function() run_term("ksc-dev run") end, desc = "Run application [ksc-dev]" },
     { "<leader>prq", function() run_term("QT_LOGGING_RULES='*.debug=true' ./build/kartoza-screencaster") end, desc = "Run with Qt debug logging" },
 
     -- Test
     { "<leader>pt", group = "Test" },
-    { "<leader>ptt", function() run_term("cd build && ctest --output-on-failure") end, desc = "Run all tests" },
+    { "<leader>ptt", function() run_term("ksc-dev test") end, desc = "Run all tests [ksc-dev]" },
     { "<leader>ptm", function() run_term("cd build && ./test_merger -v1") end, desc = "Run merger tests" },
     { "<leader>ptc", function() run_term("cd build && ./test_config -v1") end, desc = "Run config tests" },
     { "<leader>pto", function() run_term("cd build && ./test_monitor -v1") end, desc = "Run monitor tests" },
@@ -110,7 +112,7 @@ local function setup_which_key()
 
     -- Format / Lint
     { "<leader>pl", group = "Lint/Format" },
-    { "<leader>plf", function() run_term("find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format -i") end, desc = "Format all C++ (clang-format)" },
+    { "<leader>plf", function() run_term("ksc-dev format") end, desc = "Format all C++ (clang-format) [ksc-dev]" },
     { "<leader>plt", function() run_term("cd build && run-clang-tidy -p . ../src/") end, desc = "Run clang-tidy" },
     { "<leader>plc", function() run_term("cppcheck --enable=all --suppress=missingInclude -I src/ src/") end, desc = "Run cppcheck" },
 

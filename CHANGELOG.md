@@ -5,6 +5,83 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-07-20
+
+### Added
+
+#### Multiple monitors on one canvas — captured and composited
+The Add ▸ Screen menu can now add **more than one monitor** to the layout. The
+first monitor is the primary background (and drives the vertical/split modes); each
+additional monitor is added as a movable, resizable, croppable inset you can
+arrange freely (e.g. side-by-side), with its own independent live preview. Each
+screen layer is captured separately (grim per output on wlroots, `QScreen` per
+display on X11), and the **recording now captures each monitor and composites the
+additional ones as insets** over the primary at their canvas positions (with their
+crop), so the landscape output matches the layout. Additional monitors are
+captured with `wl-screenrec` (wlroots) or `ffmpeg x11grab` (X11). Caveats: on
+GNOME/KDE Wayland (portal capture) only the primary monitor is captured (the portal
+is single-source), and additional monitors are composited into the **landscape**
+output only (the vertical/split output uses the primary screen).
+
+#### Multiple webcams recorded and composited
+More than one webcam can be added to the scene, and the recording now **captures
+each webcam separately and composites them all** at their canvas placements,
+shapes and crops (previously only the first webcam was recorded and the others'
+placement overwrote it, which could break the render). Additional cameras are
+best-effort — one that won't open just drops its overlay.
+
+#### Per-element pause with a centred hover button
+Live previews now pause **per element** instead of globally: hovering a monitor or
+webcam reveals a pause/continue button centred on that element, and clicking it
+freezes only that element's preview — the reported bug where pausing one element
+(e.g. a screen) froze all the others (e.g. the webcam) is fixed. A paused element
+keeps its button visible so the frozen state always reads as intentional.
+
+### Fixed
+
+#### Alt-cropping a webcam now trims the recorded region
+Cropping a webcam on the canvas (hold **Alt** and drag a handle) previously only
+affected the preview — the recorded webcam still showed the full frame. The crop
+is now passed through to the recording and applied to the webcam source before
+shaping, so the recorded region matches the WYSIWYG preview. **Alt + a corner
+handle** now crops from that corner (two edges at once) in addition to the edge
+handles, on webcams as well as screen, logo and text items.
+
+A **round (bubble) webcam** now actually crops down — it previously ignored the
+crop and always squeezed the whole feed into the circle; it now shows the chosen
+portion of the source. With the bubble cropped, **Alt + dragging the webcam body
+pans the crop window** across the feed, so you can aim the bubble at exactly the
+part of the camera you want to show.
+
+#### The whole recording area stays visible
+Overlays and additional monitors are now clamped to the recording frame so nothing
+can be dragged off the recorded area, and the primary screen is kept covering the
+frame so the recording area is never left with an uncovered (dark) gap.
+
+#### SVG logos no longer break the render
+FFmpeg has no SVG decoder, so a recording with an SVG logo failed to merge and
+produced a **0-byte output** (while screen and audio recorded fine). SVGs are now
+filtered out of the logo chooser and asset gallery, and any SVG that still reaches
+a recording (drag-drop, a saved preset, reprocessing an old recording) is
+**rasterised to a PNG** the merge can read. A merge that produces no output is now
+reported as **failed** instead of silently "completed".
+
+#### Builds under GCC 15.2 / Qt 6.10.1
+The toolchain refresh that brought glibc 2.42 also pulled in GCC 15.2, whose new
+`-Wtemplate-body` eagerly type-checks template definitions — including Qt's own
+`<QString>` header — turning every translation unit into a hard compile error. A
+guarded `-Wno-template-body` restores the build; genuine template errors still
+surface at instantiation.
+
+### Changed
+
+#### One build path through `ksc-dev`
+The short dev-shell aliases (`cb`, `cbr`, `ct`, `cr`, `cf`, `cclean`) and the
+Neovim `<leader>pb*` shortcuts now all delegate to `ksc-dev`, so every build and
+test is **timed and logged** to `build-log.tsv` (view with `ksc-dev stats
+--graph`) — previously only `ksc-dev` itself did. Build behaviour now lives in
+`scripts/ksc-dev.sh` alone; ccache + mold remain sourced from `CMakeLists.txt`.
+
 ## [2.2.0] - 2026-07-19
 
 ### Added

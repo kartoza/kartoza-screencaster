@@ -80,26 +80,18 @@
           # Unified developer command (build/run/test/docs/stats). The script is
           # deployed from scripts/ksc-dev.sh rather than embedded inline.
           (pkgs.writeShellScriptBin "ksc-dev" (builtins.readFile ./scripts/ksc-dev.sh))
-          (pkgs.writeShellScriptBin "cb" ''
-            cd build && cmake .. -G Ninja && ninja && cd ..
-          '')
-          (pkgs.writeShellScriptBin "cbr" ''
-            cd build && cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja && cd ..
-          '')
-          (pkgs.writeShellScriptBin "ct" ''
-            cd build && ctest --output-on-failure && cd ..
-          '')
-          (pkgs.writeShellScriptBin "cr" ''
-            ./build/kartoza-screencaster
-          '')
-          (pkgs.writeShellScriptBin "cf" ''
-            find src tests -name "*.cpp" -o -name "*.h" | xargs clang-format -i
-          '')
-          (pkgs.writeShellScriptBin "cclean" ''
-            rm -rf build/* && cd build && cmake .. -G Ninja && ninja && cd ..
-          '')
+          # The short aliases are thin wrappers over `ksc-dev` so there is ONE
+          # build path: alias -> ksc-dev (timing + build-log.tsv + ccache stats)
+          # -> cmake+ninja -> CMakeLists.txt (ccache + mold). Edit build behaviour
+          # in ksc-dev.sh only.
+          (pkgs.writeShellScriptBin "cb"   ''exec ksc-dev build "$@"'')
+          (pkgs.writeShellScriptBin "cbr"  ''exec ksc-dev release "$@"'')
+          (pkgs.writeShellScriptBin "ct"   ''exec ksc-dev test "$@"'')
+          (pkgs.writeShellScriptBin "cr"   ''exec ksc-dev run "$@"'')
+          (pkgs.writeShellScriptBin "cf"   ''exec ksc-dev format'')
+          (pkgs.writeShellScriptBin "cclean" ''exec ksc-dev clean'')
           (pkgs.writeShellScriptBin "ctr" ''
-            cd build && QT_QPA_PLATFORM=offscreen ctest --output-on-failure -R test_merger_exhaustive && cd ..
+            QT_QPA_PLATFORM=offscreen ksc-dev test -R test_merger_exhaustive
             echo "Opening test renders..."
             for f in $(ls tests/test_outputs/land_*.mp4 tests/test_outputs/vert_*.mp4 2>/dev/null | sort); do
               xdg-open "$f"

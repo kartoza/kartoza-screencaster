@@ -455,7 +455,12 @@ void RecordPage::setupUI() {
 
     auto *logoAction = addMenu->addAction("Logo");
     connect(logoAction, &QAction::triggered, this, [this]() {
-        QString file = QFileDialog::getOpenFileName(this, "Select Logo");
+        // Raster/GIF only — FFmpeg has no SVG decoder, so an SVG logo would break
+        // the render. (SVGs that still slip in via drag-drop or a saved preset are
+        // rasterised to PNG at record time as a safety net.)
+        QString file = QFileDialog::getOpenFileName(
+            this, "Select Logo", QString(),
+            "Images (*.png *.jpg *.jpeg *.gif *.webp *.bmp);;All files (*)");
         if (!file.isEmpty()) m_canvas->addLogo(file);
     });
 
@@ -735,14 +740,36 @@ void RecordPage::onCountdownTick() {
         auto items = m_canvas->exportItems();
         double cw = m_canvas->canvasWidth();
         double ch = m_canvas->canvasHeight();
+        int screenSeen = 0;
+        int webcamSeen = 0;
         for (const auto &e : items) {
-            if (e.type == 0) { // screen — extract crop
-                if (e.h > 0 && e.w > 0) {
-                    opts.screenCropTop = double(e.cropTop) / e.h;
-                    opts.screenCropBottom = double(e.cropBottom) / e.h;
-                    opts.screenCropLeft = double(e.cropLeft) / e.w;
-                    opts.screenCropRight = double(e.cropRight) / e.w;
+            if (e.type == 0) { // screen layer
+                if (screenSeen == 0) {
+                    // Primary screen — the recorded background. Extract its crop.
+                    if (e.h > 0 && e.w > 0) {
+                        opts.screenCropTop = double(e.cropTop) / e.h;
+                        opts.screenCropBottom = double(e.cropBottom) / e.h;
+                        opts.screenCropLeft = double(e.cropLeft) / e.w;
+                        opts.screenCropRight = double(e.cropRight) / e.w;
+                    }
+                } else if (!e.monitorName.isEmpty()) {
+                    // Additional monitor — captured separately and composited as an
+                    // inset at its canvas-relative placement.
+                    RecordingOptions::ScreenOverlay so;
+                    so.monitor = e.monitorName;
+                    so.relX = (e.x - e.w/2.0) / cw;
+                    so.relY = (e.y - e.h/2.0) / ch;
+                    so.relW = e.w / cw;
+                    so.relH = e.h / ch;
+                    if (e.h > 0 && e.w > 0) {
+                        so.cropTop = double(e.cropTop) / e.h;
+                        so.cropBottom = double(e.cropBottom) / e.h;
+                        so.cropLeft = double(e.cropLeft) / e.w;
+                        so.cropRight = double(e.cropRight) / e.w;
+                    }
+                    opts.extraScreens.append(so);
                 }
+                screenSeen++;
             } else if (e.type == 2) { // logo
                 RecordingOptions::LogoOpts lo;
                 lo.path = e.filePath;
@@ -754,12 +781,39 @@ void RecordPage::onCountdownTick() {
                 lo.relW = e.w / cw;
                 lo.relH = e.h / ch;
                 opts.logos.append(lo);
-            } else if (e.type == 1) { // webcam — capture placement and shape
-                opts.webcamRelX = (e.x - e.w/2.0) / cw;
-                opts.webcamRelY = (e.y - e.h/2.0) / ch;
-                opts.webcamRelW = e.w / cw;
-                opts.webcamRelH = e.h / ch;
-                opts.webcamShape = e.shape; // 0=round, 1=square, 2=rect
+            } else if (e.type == 1) { // webcam — capture placement, shape and crop
+                if (webcamSeen == 0) {
+                    // Primary webcam — the existing single-webcam path.
+                    opts.webcamRelX = (e.x - e.w/2.0) / cw;
+                    opts.webcamRelY = (e.y - e.h/2.0) / ch;
+                    opts.webcamRelW = e.w / cw;
+                    opts.webcamRelH = e.h / ch;
+                    opts.webcamShape = e.shape; // 0=round, 1=square, 2=rect
+                    if (e.w > 0 && e.h > 0) {
+                        // Alt-crop on the canvas trims the recorded webcam region to
+                        // the shown portion (fractions of the webcam frame).
+                        opts.webcamCropTop = double(e.cropTop) / e.h;
+                        opts.webcamCropBottom = double(e.cropBottom) / e.h;
+                        opts.webcamCropLeft = double(e.cropLeft) / e.w;
+                        opts.webcamCropRight = double(e.cropRight) / e.w;
+                    }
+                } else if (!e.device.isEmpty()) {
+                    // Additional webcam — captured separately, composited as overlay.
+                    RecordingOptions::WebcamOverlay wo;
+                    wo.device = e.device; wo.shape = e.shape;
+                    wo.relX = (e.x - e.w/2.0) / cw;
+                    wo.relY = (e.y - e.h/2.0) / ch;
+                    wo.relW = e.w / cw;
+                    wo.relH = e.h / ch;
+                    if (e.w > 0 && e.h > 0) {
+                        wo.cropTop = double(e.cropTop) / e.h;
+                        wo.cropBottom = double(e.cropBottom) / e.h;
+                        wo.cropLeft = double(e.cropLeft) / e.w;
+                        wo.cropRight = double(e.cropRight) / e.w;
+                    }
+                    opts.extraWebcams.append(wo);
+                }
+                webcamSeen++;
             } else if (e.type == 3) { // text box
                 if (e.label.trimmed().isEmpty()) continue;
                 RecordingOptions::TextBox tb;
