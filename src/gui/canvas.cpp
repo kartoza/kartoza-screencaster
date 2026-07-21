@@ -93,7 +93,7 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
         // computed here on the UI thread so the pool task never touches m_items.
         auto targets = screensToCapture();
         if (!targets.isEmpty())
-            QThreadPool::globalInstance()->start([this, targets]() { captureScreens(targets); });
+            m_capturePool.start([this, targets]() { captureScreens(targets); });
     });
     m_refreshTimer->start();
     m_lastFrameRect = frameRect();
@@ -131,6 +131,12 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
 }
 
 Canvas::~Canvas() {
+    // Drain in-flight screen-capture tasks first: they run on a background thread
+    // and touch this Canvas's members (mutex, pending-capture maps). If one is
+    // still running when the members below are destroyed it is a use-after-free
+    // (an intermittent SIGSEGV on the capture thread under test). The refresh
+    // timer stops firing while we are in the destructor, so no new tasks queue.
+    m_capturePool.waitForDone();
     for (int i = 0; i < m_items.size(); i++) {
         stopWebcamCapture(i);
         if (m_items[i].movie) {
@@ -152,7 +158,7 @@ void Canvas::setMonitor(const MonitorInfo &mon) {
             item.label = "Screen: " + desc;
             auto again = screensToCapture();
             if (!again.isEmpty())
-                QThreadPool::globalInstance()->start([this, again]() { captureScreens(again); });
+                m_capturePool.start([this, again]() { captureScreens(again); });
             update();
             return;
         }
@@ -190,7 +196,7 @@ void Canvas::setMonitor(const MonitorInfo &mon) {
 
     auto targets = screensToCapture();
     if (!targets.isEmpty())
-        QThreadPool::globalInstance()->start([this, targets]() { captureScreens(targets); });
+        m_capturePool.start([this, targets]() { captureScreens(targets); });
     update();
 }
 

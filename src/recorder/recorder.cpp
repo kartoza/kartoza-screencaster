@@ -5,6 +5,8 @@
 #include "platform/platform.h"
 #ifdef HAS_DBUS
 #include "portal/portal.h"
+
+#include <algorithm>
 #endif
 #include <QCoreApplication>
 #include <QDebug>

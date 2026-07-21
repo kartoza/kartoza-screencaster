@@ -13,6 +13,7 @@
 #include <QMutex>
 #include <QHash>
 #include <QVector>
+#include <QThreadPool>
 #include "monitor/monitor.h"
 
 /**
@@ -441,6 +442,13 @@ private:
 
     /** @brief Timer driving periodic screen capture refresh. */
     QTimer *m_refreshTimer;
+    /**
+     * @brief Owns the background screen-capture tasks so none can outlive this
+     * Canvas. The destructor drains it (waitForDone) before tearing down the
+     * members those tasks touch, preventing a use-after-free on the capture
+     * thread (which otherwise crashes as an intermittent SIGSEGV under test).
+     */
+    QThreadPool m_capturePool;
     /** @brief True when previews are suspended by the app (window hidden, tab inactive, recording). */
     bool m_suspended = false;
     /** @brief True while the cursor is over the canvas (used to reveal the pause toggle). */
