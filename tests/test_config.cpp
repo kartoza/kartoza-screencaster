@@ -1,5 +1,6 @@
 #include <QTest>
 #include <QTemporaryDir>
+#include <QDir>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -9,6 +10,42 @@ class TestConfig : public QObject {
     Q_OBJECT
 
 private slots:
+    /**
+     * recordingsDir() is the single source of truth shared by the recorder,
+     * the history page and nextRecordingNumber(). Previously each resolved
+     * the default independently and the recorder ignored the configured
+     * directory entirely, writing recordings where the UI never looked.
+     */
+    void testRecordingsDir_usesConfiguredDir() {
+        auto &cfg = Config::instance();
+        QString oldDir = cfg.outputDir;
+        cfg.outputDir = "/tmp/some-custom-location";
+        QCOMPARE(cfg.recordingsDir(), QString("/tmp/some-custom-location"));
+        cfg.outputDir = oldDir;
+    }
+
+    void testRecordingsDir_fallsBackToDefault() {
+        auto &cfg = Config::instance();
+        QString oldDir = cfg.outputDir;
+        cfg.outputDir = QString();
+        QCOMPARE(cfg.recordingsDir(), QDir::homePath() + "/Videos/Screencasts");
+        cfg.outputDir = oldDir;
+    }
+
+    /** nextRecordingNumber() must scan the same directory recordingsDir() names. */
+    void testRecordingsDir_agreesWithNextRecordingNumber() {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        QDir(tmp.path()).mkdir("007-seventh_video");
+
+        auto &cfg = Config::instance();
+        QString oldDir = cfg.outputDir;
+        cfg.outputDir = tmp.path();
+        QCOMPARE(cfg.recordingsDir(), tmp.path());
+        QCOMPARE(cfg.nextRecordingNumber(), 8);
+        cfg.outputDir = oldDir;
+    }
+
     void testNextRecordingNumber_emptyDir() {
         QTemporaryDir tmp;
         QVERIFY(tmp.isValid());
