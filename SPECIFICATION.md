@@ -180,7 +180,10 @@ The recording can be in the following states:
 - `failed` - Processing encountered an error
 
 ### BR-003: File Organization
-- All recordings are stored in `~/Videos/Screencasts/` by default
+- All recordings are stored in `~/Videos/Screencasts/` by default, or in the
+  configured output directory. The recorder, the history view and the
+  recording-number allocator all resolve this through a single
+  `Config::recordingsDir()` so they cannot disagree
 - Each recording has its own folder
 - Temporary folder name during recording: `recording-YYYYMMDD-HHMMSS`
 - Final folder name after metadata entry: `NNN-recording_name`
@@ -206,7 +209,17 @@ The recording can be in the following states:
 - Context menu provides: Start/Stop Recording, Pause/Resume, Status, Open TUI, Quit
 
 ### FR-002: Recording Capabilities
-- Screen recording via wl-screenrec (Wayland)
+- Screen recording via one of three backends, selected at runtime by
+  `Platform::supportsWlrCapture()`:
+  - **wlroots** (Hyprland, Sway, Wayfire, …): `wl-screenrec`, falling back once
+    to `wf-recorder` (software libx264) if it exits early
+  - **GNOME, KDE, COSMIC**: `xdg-desktop-portal` ScreenCast + PipeWire +
+    `gst-launch-1.0`. These compositors do not implement
+    `wlr-screencopy-unstable-v1`, so the wlroots tools cannot capture there.
+    The portal picks a single source, so additional-monitor insets are dropped
+  - **X11**: `ffmpeg x11grab`
+- A recording that was asked to capture the screen but produced no usable video
+  is reported as `failed`, never `completed`
 - Audio recording via FFmpeg with PulseAudio/PipeWire
 - Webcam recording via FFmpeg with v4l2
 - Multi-monitor support with automatic detection
@@ -252,8 +265,10 @@ The recording can be in the following states:
 
 ### TR-001: Platform Support
 - Linux only (Wayland compositor required)
-- Tested compositors: Hyprland, GNOME, KDE
-- Dependencies: FFmpeg, wl-screenrec, PulseAudio/PipeWire
+- Tested compositors: Hyprland, GNOME, KDE, COSMIC
+- Dependencies: FFmpeg, PulseAudio/PipeWire, plus either `wl-screenrec` +
+  `wf-recorder` (wlroots) or a matching `xdg-desktop-portal` backend and
+  GStreamer with `pipewiresrc` and an H.264 encoder (GNOME/KDE/COSMIC)
 
 ### TR-002: Configuration Storage
 - Config file: `~/.config/kartoza-screencaster/config.json`

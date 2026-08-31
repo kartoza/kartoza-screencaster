@@ -28,7 +28,8 @@ src/
 ├── webcam/
 │   └── webcam.cpp               Webcam preview capture
 ├── platform/
-│   └── platform.cpp             OS / display server / compositor detection
+│   └── platform.cpp             OS / display server / compositor detection;
+│                                supportsWlrCapture() picks wlr vs portal capture
 ├── portal/
 │   └── portal.cpp               xdg-desktop-portal QtDBus wrapper (Linux only)
 ├── dbus/

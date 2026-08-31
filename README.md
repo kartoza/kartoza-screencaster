@@ -19,8 +19,11 @@ A screen recording tool for Wayland compositors with multi-monitor support, audi
 
 ## Requirements
 
-- Wayland compositor (Hyprland, Sway, etc.)
-- `wl-screenrec` - Wayland screen recorder
+- Wayland compositor (Hyprland, Sway, GNOME, KDE, COSMIC) or X11
+- Screen capture, depending on the compositor:
+  - wlroots (Hyprland, Sway, …): `wl-screenrec` and `wf-recorder`
+  - GNOME, KDE, COSMIC: a matching `xdg-desktop-portal` backend, plus
+    GStreamer with `pipewiresrc` and an H.264 encoder
 - `ffmpeg` - Video/audio processing
 - `pw-record` (PipeWire) - Audio capture
 - `notify-send` - Desktop notifications

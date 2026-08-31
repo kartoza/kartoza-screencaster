@@ -75,11 +75,13 @@ sudo apt install \
     gstreamer1.0-pipewire \
     x11-xserver-utils libnotify-bin
 
-# Optional: wlroots-only recording helpers (Hyprland, Sway, COSMIC).
-sudo apt install wl-screenrec grim
+# Optional: wlroots-only recording helpers (Hyprland, Sway, Wayfire, …).
+# Not used on COSMIC, which captures through xdg-desktop-portal.
+sudo apt install wl-screenrec wf-recorder grim
 
-# Optional: pick the KDE portal backend if you're running KDE Plasma.
-sudo apt install xdg-desktop-portal-kde
+# Optional: pick the portal backend matching your desktop.
+sudo apt install xdg-desktop-portal-kde      # KDE Plasma
+sudo apt install xdg-desktop-portal-cosmic   # COSMIC
 
 # 2. Force-install the .deb ignoring the obsolete t64 names.
 sudo dpkg -i --ignore-depends=libqt6core6t64,libqt6gui6t64,libqt6widgets6t64,libqt6dbus6t64,libqt6network6t64 \

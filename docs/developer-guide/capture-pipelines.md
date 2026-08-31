@@ -7,7 +7,7 @@ Kartoza Screencaster has three screen-capture paths. Which one runs is
 decided at runtime by `Platform::compositor()` and
 `Platform::supportsWlrCapture()`.
 
-## wlroots (Hyprland, Sway, COSMIC, Wayfire, …)
+## wlroots (Hyprland, Sway, Wayfire, River, Niri, …)
 
 ```text
 wl-screenrec --output <name> --filename <path>
@@ -15,9 +15,16 @@ wl-screenrec --output <name> --filename <path>
 
 `wl-screenrec` reads frames over the `wlr-screencopy` protocol. Single
 process, hardware-accelerated encode where supported, near-zero CPU on
-desktop GPUs.
+desktop GPUs. If it exits early (e.g. a VAAPI init failure) the recorder
+falls back once to `wf-recorder` with software libx264.
 
-## GNOME / KDE Wayland — xdg-desktop-portal + PipeWire
+Both tools require `wlr-screencopy-unstable-v1`, so this path is strictly
+for wlroots-family compositors. **COSMIC is not one of them** despite its
+lineage — it implements its own capture protocol, and `wf-recorder` fails
+there with `compositor doesn't support wlr-screencopy-unstable-v1`. COSMIC
+uses the portal path below.
+
+## GNOME / KDE / COSMIC Wayland — xdg-desktop-portal + PipeWire
 
 ```text
 gst-launch-1.0 -e \
@@ -28,6 +35,11 @@ gst-launch-1.0 -e \
     ! mp4mux fragment-duration=1000 \
     ! filesink location=<path>
 ```
+
+Needs a portal backend for the desktop: `xdg-desktop-portal-gnome`,
+`xdg-desktop-portal-kde` or `xdg-desktop-portal-cosmic`. Because the portal
+picks a single source, only the primary monitor is captured — additional
+monitor insets are dropped on this path.
 
 The portal flow runs CreateSession → SelectSources → Start →
 OpenPipeWireRemote asynchronously. The PipeWire node id and the
