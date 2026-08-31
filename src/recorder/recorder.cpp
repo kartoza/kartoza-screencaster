@@ -93,12 +93,16 @@ void Recorder::start(const RecordingOptions &opts) {
     m_extraWebcamParts = QVector<QStringList>(opts.extraWebcams.size());
 
     // Create output directory
+    // opts.outputDir, when set, is the fully-qualified session folder (used by
+    // reprocess()). Otherwise derive it from the configured base directory —
+    // NOT a hard-coded ~/Videos/Screencasts, which ignored the user's
+    // configured output directory and wrote recordings where the history page
+    // would never find them.
     m_outputDir = opts.outputDir;
     if (m_outputDir.isEmpty()) {
-        QString home = QDir::homePath();
         QString timestamp = m_startTime.toString("yyyy-MM-dd_HH-mm-ss");
-        m_outputDir = QString("%1/Videos/Screencasts/%2-%3")
-            .arg(home)
+        m_outputDir = QString("%1/%2-%3")
+            .arg(Config::instance().recordingsDir())
             .arg(opts.number, 3, 10, QChar('0'))
             .arg(timestamp);
     }
@@ -1244,12 +1248,35 @@ void Recorder::processRecordings() {
     bool hasScreen = QFile::exists(m_screenFile) && QFileInfo(m_screenFile).size() > 0;
     bool hasAudio = QFile::exists(m_audioFile);
 
-    if (screenEmpty && !m_opts.noScreen) {
-        qWarning() << "Screen recording produced 0 bytes:" << m_screenFile;
+    // Screen capture was asked for but there is nothing usable to merge. Two
+    // distinct failure shapes reach here and BOTH must be reported, or the
+    // recording is written out as "completed" with no video in it:
+    //
+    //   1. The file exists but is 0 bytes — the capture tool started and then
+    //      failed to encode (e.g. a VAAPI init failure).
+    //   2. The file does not exist at all — the capture tool never got far
+    //      enough to create it. This is what happens when the compositor
+    //      lacks the protocol the backend needs: wl-screenrec bails, the
+    //      wf-recorder fallback removes the stub file and then bails too.
+    //
+    // Case 2 used to be invisible because the check required the file to
+    // exist, so a compositor-support failure silently produced an audio-only
+    // recording that still reported success.
+    bool captureFailed = !m_opts.noScreen && !hasScreen;
+    if (captureFailed) {
+        qWarning() << (screenEmpty ? "Screen recording produced 0 bytes:"
+                                   : "Screen recording produced no file:")
+                   << m_screenFile;
         emit recordingError(
-            "Screen recording produced no data — the capture tool failed to encode. "
-            "See screen_recorder.log in the recording folder. "
-            "Your audio and webcam were saved.");
+            screenEmpty
+                ? QStringLiteral(
+                      "Screen recording produced no data — the capture tool "
+                      "failed to encode. See screen_recorder.log in the "
+                      "recording folder. Your audio and webcam were saved.")
+                : QStringLiteral(
+                      "Screen capture never started — no video was written. "
+                      "See screen_recorder.log in the recording folder for "
+                      "the reason. Your audio and webcam were saved."));
     }
 
     if (!hasScreen && !hasAudio && !QFile::exists(m_webcamFile)) {
@@ -1502,7 +1529,10 @@ void Recorder::processRecordings() {
         emit processingStepDone(3, "Creating vertical video", true);
     }
 
-    writeRecordingJson(renderFailed ? "failed" : "completed");
+    // captureFailed is folded in here: a recording with no screen video is a
+    // failure even though every step that *did* run succeeded.
+    bool failed = renderFailed || captureFailed;
+    writeRecordingJson(failed ? "failed" : "completed");
     m_processing = false;
-    emit processingFinished(!renderFailed);
+    emit processingFinished(!failed);
 }

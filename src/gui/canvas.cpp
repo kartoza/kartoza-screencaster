@@ -824,14 +824,14 @@ void Canvas::captureScreens(const QVector<ScreenGrab> &targets) {
 #if defined(Q_OS_LINUX)
         if (Platform::isWayland()) {
             if (Platform::supportsWlrCapture()) {
-                // wlroots compositors (Hyprland, Sway, COSMIC, …) — grim per output.
+                // wlroots compositors (Hyprland, Sway, river, …) — grim per output.
                 QProcess proc;
                 proc.start("grim", {"-o", monitorName, "-t", "png", "-l", "0", path});
                 if (proc.waitForFinished(5000) && proc.exitCode() == 0) store(path);
                 continue;
             }
 #ifdef HAS_DBUS
-            // GNOME (Mutter) / KDE (KWin) — no wlr-screencopy. Fire an async portal
+            // GNOME (Mutter) / KDE (KWin) / COSMIC — no wlr-screencopy. Fire an async portal
             // screenshot; the Portal singleton's screenshotReady (wired in the
             // constructor) writes m_pendingScreenPath. The portal picks a single
             // source, so only the primary screen previews on these compositors.

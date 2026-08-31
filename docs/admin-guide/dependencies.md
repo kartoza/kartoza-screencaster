@@ -25,15 +25,20 @@ Pick one based on the compositor:
 
 | Compositor family                  | Capture path                                |
 | ---------------------------------- | ------------------------------------------- |
-| wlroots (Hyprland, Sway, COSMIC)   | `wl-screenrec`                              |
-| GNOME (Mutter), KDE (KWin)         | `xdg-desktop-portal` + PipeWire + GStreamer |
+| wlroots (Hyprland, Sway, Wayfire, …) | `wl-screenrec`, falling back to `wf-recorder` |
+| GNOME (Mutter), KDE (KWin), COSMIC   | `xdg-desktop-portal` + PipeWire + GStreamer   |
 
 For the portal path you also need GStreamer with `pipewiresrc`
 (provided by the `pipewire` GStreamer plugin) and an H.264 encoder
 (`openh264enc` from `gst-plugins-bad` is recommended; `x264enc` from
 `gst-plugins-ugly` is an alternative). You also need a portal backend
 matching your desktop — `xdg-desktop-portal-gnome` on GNOME,
-`xdg-desktop-portal-kde` on KDE Plasma.
+`xdg-desktop-portal-kde` on KDE Plasma, `xdg-desktop-portal-cosmic` on
+COSMIC.
+
+COSMIC belongs on the portal row despite its wlroots-adjacent lineage: it
+does not implement `wlr-screencopy-unstable-v1`, so `wl-screenrec` and
+`wf-recorder` cannot capture there.
 
 The Qt Wayland platform plugin (`qt6-wayland` on apt / `qt6-qtwayland`
 on dnf / `qt6-wayland` on pacman) is required for the GUI to render on
@@ -66,8 +71,11 @@ sudo apt install \
     gstreamer1.0-pipewire \
     x11-xserver-utils libnotify-bin
 
-# wlroots compositors (Hyprland, Sway, COSMIC):
-sudo apt install wl-screenrec grim
+# wlroots compositors (Hyprland, Sway, Wayfire, …):
+sudo apt install wl-screenrec wf-recorder grim
+
+# COSMIC uses the portal path, not wl-screenrec:
+sudo apt install xdg-desktop-portal-cosmic
 
 # KDE Plasma:
 sudo apt install xdg-desktop-portal-kde

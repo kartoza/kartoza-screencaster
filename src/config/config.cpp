@@ -141,10 +141,13 @@ void Config::load() {
   m_loaded = true;
 }
 
+QString Config::recordingsDir() const {
+  if (!outputDir.isEmpty()) return outputDir;
+  return QDir::homePath() + "/Videos/Screencasts";
+}
+
 int Config::nextRecordingNumber() const {
-  QString dir = outputDir;
-  if (dir.isEmpty()) dir = QDir::homePath() + "/Videos/Screencasts";
-  QDir d(dir);
+  QDir d(recordingsDir());
   if (!d.exists()) return 1;
 
   int highest = 0;

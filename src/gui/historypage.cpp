@@ -600,11 +600,7 @@ void HistoryPage::loadRecordings() {
     m_recordings.clear();
     m_tree->clear();
 
-    auto &cfg = Config::instance();
-    QString videosDir = cfg.outputDir;
-    if (videosDir.isEmpty()) videosDir = QDir::homePath() + "/Videos/Screencasts";
-
-    QDir dir(videosDir);
+    QDir dir(Config::instance().recordingsDir());
     if (!dir.exists()) return;
 
     for (const auto &entry : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {

@@ -97,6 +97,16 @@ public:
     /** Name of the currently active preset, or empty for unsaved. */
     QString activePreset;
 
+    /**
+     * @brief Base directory that recordings are written to and read from.
+     *
+     * Resolves the configured @ref outputDir, falling back to
+     * ~/Videos/Screencasts when it is unset. This is the single source of
+     * truth: the recorder, the history page and nextRecordingNumber() must
+     * all agree, or recordings get written somewhere the UI never looks.
+     */
+    QString recordingsDir() const;
+
     /** @brief Returns the next sequential recording number based on existing files. */
     int nextRecordingNumber() const;
 

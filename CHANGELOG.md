@@ -5,6 +5,40 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-08-31
+
+### Fixed
+
+#### COSMIC recorded audio but never any video
+On System76's COSMIC desktop every recording completed "successfully" and left a
+folder containing only WAV files — no `.mp4` anywhere. COSMIC was classified as a
+wlroots-family compositor, but it does **not** implement
+`wlr-screencopy-unstable-v1`, so the primary capture backend (`wl-screenrec`)
+bailed with `display <name> not found` and the software fallback (`wf-recorder`)
+bailed with `compositor doesn't support wlr-screencopy-unstable-v1`. Audio capture
+runs independently and carried on regardless, which is why the recording looked
+like it worked. COSMIC now routes to the same xdg-desktop-portal capture path used
+by GNOME and KDE — `xdg-desktop-portal-cosmic` implements the standard `ScreenCast`
+and `Screenshot` interfaces. This also fixes the **canvas live preview** on COSMIC,
+which shelled out to `grim` and needs the same missing protocol. As on GNOME/KDE,
+the portal picks a single source, so multi-monitor insets are not captured there.
+
+#### Failed screen capture reported success
+A recording whose screen capture never produced a file was written out with status
+`completed` and no error shown. The guard only fired when the file existed and was
+0 bytes; when the capture tool failed before creating it — or the fallback removed
+the stub on its way out — nothing was reported at all. A recording that was asked
+to capture the screen and has no usable video is now reported as `failed`, with a
+message pointing at `screen_recorder.log`, distinguishing "produced no data" from
+"never started".
+
+#### Configured output directory was ignored
+`RecordingOptions::outputDir` was declared and honoured by the recorder but never
+assigned, so recordings always went to `~/Videos/Screencasts` no matter what the
+Settings output directory said — while the History page read the configured
+location and showed nothing. The default was duplicated in three places. All three
+now resolve through a single `Config::recordingsDir()`.
+
 ## [2.3.0] - 2026-07-20
 
 ### Added
