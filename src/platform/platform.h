@@ -17,7 +17,7 @@ enum class DisplayServer { Wayland, X11, Unknown };
 /** @brief Detected Wayland compositor family (Linux only). */
 enum class Compositor {
   Wlroots,  // Hyprland, Sway, Wayfire, River, Niri — supports wlr-screencopy
-  Cosmic,   // System76 COSMIC — wlroots-based, treated as wlroots
+  Cosmic,   // System76 COSMIC — no wlr-screencopy, requires xdg-desktop-portal
   Mutter,   // GNOME — requires xdg-desktop-portal
   KWin,     // KDE — requires xdg-desktop-portal
   Unknown
@@ -54,12 +54,23 @@ inline bool isX11() { return displayServer() == DisplayServer::X11; }
 /**
  * @brief True if the compositor implements the wlr-screencopy protocol.
  *
- * grim and wl-screenrec only work on wlroots-family compositors. On
- * Mutter (GNOME) and KWin (KDE), capture must go through xdg-desktop-portal.
+ * grim, wl-screenrec and wf-recorder all require
+ * wlr-screencopy-unstable-v1, so they only work on wlroots-family
+ * compositors. Everywhere else — Mutter (GNOME), KWin (KDE) and COSMIC
+ * — capture must go through xdg-desktop-portal.
+ *
+ * COSMIC is deliberately NOT in this set. Despite being written by the
+ * Smithay/wlroots-adjacent community it implements its own capture
+ * protocol, not wlr-screencopy: wf-recorder fails there with
+ * "compositor doesn't support wlr-screencopy-unstable-v1". Classifying
+ * it as wlr-capable silently produced audio-only recordings, because
+ * both the primary (wl-screenrec) and fallback (wf-recorder) backends
+ * bailed while the independent audio capture kept running.
+ * xdg-desktop-portal-cosmic exposes the standard ScreenCast and
+ * Screenshot interfaces, so the portal path covers it.
  */
 inline bool supportsWlrCapture() {
-  auto c = compositor();
-  return c == Compositor::Wlroots || c == Compositor::Cosmic;
+  return compositor() == Compositor::Wlroots;
 }
 
 } // namespace Platform
